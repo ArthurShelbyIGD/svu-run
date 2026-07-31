@@ -279,17 +279,21 @@ try {
     clearRes.reason || `jumped=${clearRes.jumped} survived=${clearRes.alive}`);
 
   // Restart must return everything to a clean start.
-  const restarted = await g.page.evaluate(async () => {
+  const restarted = await g.page.evaluate(() => {
     const S = window.SVU;
     S.ctx.restart();
-    await new Promise((r) => setTimeout(r, 60));
+    // Measured synchronously. The previous version waited 60ms of wall clock
+    // first, which let the game legitimately run a frame or two — so the check
+    // was really asserting "the machine is slow enough", and it started failing
+    // the moment the character got more expensive to draw. A restart is
+    // synchronous; test it synchronously.
     const play = S.ctx.get('play');
     const track = S.ctx.get('track');
     return { alive: play.alive, z: play.z, time: S.ctx.time, chunks: track.chunkCount };
   });
   check('restart revives the player', restarted.alive === true);
   check('restart resets distance and clock',
-    restarted.z < 1 && restarted.time < 1,
+    restarted.z === 0 && restarted.time === 0,
     `z=${restarted.z.toFixed(2)} t=${restarted.time.toFixed(2)}`);
 
   // High-speed tunnelling: at max speed a step covers more ground than an
