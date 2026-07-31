@@ -27,7 +27,7 @@ const TURN_CHANCE = 0.42;      // probability a given chunk ends in a turn
 const MIN_CHUNKS_BETWEEN_TURNS = 2;
 
 const JUNCTION_POOL = 5;
-const CHEVRONS_PER_JUNCTION = 4;   // arrows painted on the approach
+const CHEVRONS_PER_JUNCTION = 5;   // arrows painted on the approach
 
 // Obstacle dimensions as HALF-extents [hx, hy, hz] plus centre height cy.
 // These numbers are the difficulty of the game — they decide what clears what.
@@ -156,8 +156,12 @@ export default class Track {
     const w = T.laneWidth * T.laneCount;
 
     // Corner pad: fills the square the two straight runs leave uncovered.
+    // Deliberately oversized. A pad exactly the width of the corridor abuts
+    // the two straight runs with zero overlap, and any rounding at all leaves
+    // a hairline of background showing through at the corner. 1.6m of overlap
+    // costs nothing and guarantees the corner is paved.
     const padProto = MeshBuilder.CreateBox('cornerPad', {
-      width: w, height: 0.35, depth: w,
+      width: w + 1.6, height: 0.34, depth: w + 1.6,
     }, scene);
     padProto.material = mat.get('trackFloor');
     padProto.receiveShadows = true;
@@ -207,7 +211,7 @@ export default class Track {
       const arrow = i === 0
         ? this.wallArrowProto
         : this.wallArrowProto.createInstance(`arrow${i}`);
-      arrow.scaling.setAll(1.55);
+      arrow.scaling.setAll(2.0);
       arrow.position.set(this._parkZ, this._parkZ, this._parkZ);
 
       this._junctionPool.push({
@@ -395,7 +399,7 @@ export default class Track {
       const js = z0 + CHUNK_LEN;
       const seg = this.path.segmentAt(js - 0.01);
       const d = DIRS[seg.dir];
-      this.path.toWorld(js - 0.01, 0, 0, this._w);
+      this.path.toWorldExact(js - 0.01, 0, 0, this._w);
       this.junctions.push({
         s: js, turn, dir: seg.dir,
         wx: this._w[0] + d[0] * 0.01,
@@ -460,15 +464,19 @@ export default class Track {
 
       // The wall arrow only needs yaw — the mesh is already upright.
       p.arrow.rotation.y = yaw;
+      // Stand the arrow clearly IN FRONT of the wall. It was at +0.02 while
+      // the wall spans +0.0 to +0.6 in the same axis, so the arrow was buried
+      // inside the wall's own volume and never drew — the corner had no
+      // direction signage at all despite the code being there.
       p.arrow.position.set(
-        jn.wx + d[0] * (w * 0.5 + 0.02),
-        2.15,
-        jn.wz + d[1] * (w * 0.5 + 0.02),
+        jn.wx + d[0] * (w * 0.5 - 0.45),
+        2.05,
+        jn.wz + d[1] * (w * 0.5 - 0.45),
       );
 
       for (let c = 0; c < p.chevrons.length; c++) {
-        const s = jn.s - 4 - c * 5.5;      // spread back along the approach
-        this.path.toWorld(s, 0, 0.03, this._w);
+        const s = jn.s - 3.5 - c * 4.2;    // spread back along the approach
+        this.path.toWorldExact(s, 0, 0.07, this._w);
         p.chevrons[c].position.set(this._w[0], this._w[1], this._w[2]);
         p.chevrons[c].rotation.y = yaw;
       }
@@ -498,9 +506,9 @@ export default class Track {
       e.lane = lane;
       e.x = this._laneX(lane);
       e.z = z;
-      this.path.toWorld(z, e.x, s.cy, this._w);
+      this.path.toWorldExact(z, e.x, s.cy, this._w);
       e.mesh.position.set(this._w[0], this._w[1], this._w[2]);
-      e.mesh.rotation.y = this.path.yawAt(z);
+      e.mesh.rotation.y = this.path.yawExactAt(z);
       this.obstacles.push(e);
       return e;
     }
@@ -516,7 +524,7 @@ export default class Track {
       s.x = this._laneX(lane);
       s.y = y;
       s.z = z;
-      this.path.toWorld(z, s.x, y, this._w);
+      this.path.toWorldExact(z, s.x, y, this._w);
       s.mesh.position.set(this._w[0], this._w[1], this._w[2]);
       s.mesh.setEnabled(true);
       this.stars.push(s);
@@ -598,38 +606,47 @@ export default class Track {
     // Sample at the tile's midpoint. Chunk length is a whole number of tiles
     // and junctions sit on chunk boundaries, so a midpoint sample is always
     // safely inside one segment and a tile never straddles a corner.
-    const yaw = this.path.yawAt(mid);
-    this.path.toWorld(mid, 0, -0.175, this._w);
+    // Exact, not blended: see the CORNER_BLEND note in path.js. Placing floor
+    // tiles through the blend pulls them towards the inside of the bend and
+    // tears visible holes in the track at every corner.
+    const yaw = this.path.yawExactAt(mid);
+    this.path.toWorldExact(mid, 0, -0.175, this._w);
     tile.floor.position.set(this._w[0], this._w[1], this._w[2]);
     tile.floor.rotation.y = yaw;
 
     const laneOff = T.laneWidth * 0.5;
-    this.path.toWorld(mid, -laneOff, 0.18, this._w);
+    this.path.toWorldExact(mid, -laneOff, 0.18, this._w);
     tile.lineL.position.set(this._w[0], this._w[1], this._w[2]);
     tile.lineL.rotation.y = yaw;
-    this.path.toWorld(mid, laneOff, 0.18, this._w);
+    this.path.toWorldExact(mid, laneOff, 0.18, this._w);
     tile.lineR.position.set(this._w[0], this._w[1], this._w[2]);
     tile.lineR.rotation.y = yaw;
 
     const railOff = trackWidth / 2 + 0.15;
-    this.path.toWorld(mid, -railOff, 0.275, this._w);
+    this.path.toWorldExact(mid, -railOff, 0.275, this._w);
     tile.railL.position.set(this._w[0], this._w[1], this._w[2]);
     tile.railL.rotation.y = yaw;
-    this.path.toWorld(mid, railOff, 0.275, this._w);
+    this.path.toWorldExact(mid, railOff, 0.275, this._w);
     tile.railR.position.set(this._w[0], this._w[1], this._w[2]);
     tile.railR.rotation.y = yaw;
 
+    // A column from either corridor can land squarely inside the corner
+    // square, where it blocks the player's view of the exit entirely. The
+    // corner is the one place in the game where seeing ahead matters most, so
+    // columns are suppressed around junctions.
+    const nearJunction = this._isNearJunction(s0, T.tileLength);
     if (tile.colL) {
+      tile.colL.setEnabled(!nearJunction);
+      tile.colR.setEnabled(!nearJunction);
       const colOff = trackWidth / 2 + 1.35;
-      this.path.toWorld(mid, -colOff, 2.6, this._w);
+      this.path.toWorldExact(mid, -colOff, 2.6, this._w);
       tile.colL.position.set(this._w[0], this._w[1], this._w[2]);
-      this.path.toWorld(mid, colOff, 2.6, this._w);
+      this.path.toWorldExact(mid, colOff, 2.6, this._w);
       tile.colR.position.set(this._w[0], this._w[1], this._w[2]);
     }
 
-    // Rails would visibly cut through a corner, so the two tiles either side
-    // of a junction go without them. The backstop wall reads as the corner.
-    const nearJunction = this._isNearJunction(s0, T.tileLength);
+    // Rails would visibly cut through a corner, so the tiles either side of a
+    // junction go without them. The backstop wall reads as the corner.
     tile.railL.setEnabled(!nearJunction);
     tile.railR.setEnabled(!nearJunction);
   }
@@ -637,7 +654,7 @@ export default class Track {
   _isNearJunction(s0, len) {
     for (let i = 0; i < this.junctions.length; i++) {
       const js = this.junctions[i].s;
-      if (js >= s0 - len * 0.5 && js <= s0 + len * 1.5) return true;
+      if (js >= s0 - len * 1.5 && js <= s0 + len * 2.5) return true;
     }
     return false;
   }

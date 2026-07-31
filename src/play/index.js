@@ -420,7 +420,17 @@ export default class Play {
     const wantS = Math.max(0, this.z - T.camDistance);
     const wantLat = this.x * 0.55;
     const wantY = T.camHeight + this.y * 0.35;
-    const wantTgtS = this.z + T.camLookAhead;
+    // Pull the look-ahead point in near a corner.
+    //
+    // At full look-ahead the target rounds the corner ~8m before the player
+    // does, so the camera turns to face the new corridor while the player is
+    // still in the old one — and the player slides to the edge of frame at
+    // exactly the moment they most need to see themselves. Shortening the
+    // look-ahead keeps them centred through the bend.
+    const dj = this.junction ? Math.abs(this.junction.s - this.z) : Infinity;
+    const nearCorner = Math.min(1, Math.max(0, (dj - 4) / 14));
+    const lookAhead = 2.6 + (T.camLookAhead - 2.6) * nearCorner;
+    const wantTgtS = this.z + lookAhead;
     const wantTgtLat = this.x * 0.8;
     const wantTgtY = 1.20 + this.y * 0.55;
 

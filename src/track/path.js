@@ -36,6 +36,12 @@ const DIRS = [
  * Blending the two frames across a short window makes position and heading
  * continuous, which rounds the corner slightly. Gameplay is untouched: this is
  * purely the path->world conversion, and collision never leaves path space.
+ *
+ * CRITICAL: the blend is for things that MOVE — the player, the camera, the
+ * character, particles. Static track geometry must NOT use it. A floor tile
+ * placed through the blend gets pulled towards the inside of the bend, so
+ * adjacent tiles stop abutting and the track develops visible holes at every
+ * corner. Static geometry uses toWorldExact / yawExactAt.
  */
 const CORNER_BLEND = 5.0;
 
@@ -179,7 +185,29 @@ export class Path {
   }
 
   /**
-   * Convert path space to world space.
+   * Convert path space to world space with NO corner blending.
+   *
+   * This is the correct conversion for anything static and grid-aligned:
+   * floor tiles, rails, lane lines, columns, obstacles, collectibles. Segments
+   * meet exactly at junctions, so exact placement tiles seamlessly.
+   */
+  toWorldExact(s, lateral, y, out3) {
+    this._evalSeg(this.segments[this.indexAt(s)], s, lateral, this._xz);
+    out3[0] = this._xz[0];
+    out3[1] = y;
+    out3[2] = this._xz[1];
+    return out3;
+  }
+
+  /** Unblended heading. Pairs with toWorldExact for static geometry. */
+  yawExactAt(s) {
+    const d = DIRS[this.segmentAt(s).dir];
+    return Math.atan2(d[0], d[1]);
+  }
+
+  /**
+   * Convert path space to world space, blended across corners.
+   * For MOVING things only — see the CORNER_BLEND note above.
    * `out3` is [x, y, z] and is written in place — no allocation.
    */
   toWorld(s, lateral, y, out3) {
