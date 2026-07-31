@@ -50,6 +50,16 @@ export default class World {
     for (const m of meshes) map.renderList.push(m);
   }
 
+  /**
+   * Register a single mesh as a caster. Instances inherit their source mesh's
+   * shadow participation, so pooled obstacles only need their prototype added.
+   */
+  addCasterMesh(mesh) {
+    if (!this.shadowGen || !mesh) return;
+    const map = this.shadowGen.getShadowMap();
+    if (map) map.renderList.push(mesh);
+  }
+
   /** The shadow-casting light follows the player so the map stays tight. */
   renderUpdate() {
     if (!this.key) return;

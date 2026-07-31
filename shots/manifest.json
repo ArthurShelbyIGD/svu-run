@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-side",
-      "file": "char-side.png",
+      "name": "wide",
+      "file": "wide.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "character profile — proportion and wing read",
+      "note": "wide establishing shot — reads the track and the world silhouette",
       "errors": []
     }
   ]

@@ -91,7 +91,20 @@ export async function boot(opts = {}) {
     const m = ctx.get(name);
     if (typeof m.init === 'function') m.init();
   }
+  // Restarting touches several subsystems in a required order, so it is a lead
+  // concern rather than something any one subsystem owns. ui/ calls this.
+  ctx.restart = () => {
+    ctx.time = 0;
+    ctx.rng.reset();
+    ctx.get('play').reset();
+    ctx.get('track').reset();
+    ctx.loop.setPaused(false);
+    ctx.emit(EV.RUN_START, null);
+  };
+
   ctx.get('play').reset();
+  ctx.get('track').reset();
+  ctx.emit(EV.RUN_START, null);
 
   // --- post-processing ---
   const q = config.q;

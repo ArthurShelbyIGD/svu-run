@@ -83,6 +83,34 @@ const POSES = [
     note: 'slide pose',
   },
   {
+    name: 'obstacles',
+    viewport: 'desktop',
+    time: 30,
+    note: 'gameplay read — can you parse the obstacles in time?',
+  },
+  {
+    name: 'phone-obstacles',
+    viewport: 'phone',
+    time: 30,
+    note: 'the same read, in portrait, where it actually matters',
+  },
+  {
+    name: 'gameover',
+    viewport: 'phone',
+    time: 8,
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('coll').enabled = true;
+      const play = S.ctx.get('play');
+      const track = S.ctx.get('track');
+      const t = track.obstacles.find((o) => o.kind === 2 && o.z > play.z + 6);
+      if (t) { play.lane = play.laneTarget = t.lane; play.laneT = 1; }
+      else play.kill('capture');
+    },
+    settle: 2.5,
+    note: 'results screen',
+  },
+  {
     name: 'wide',
     viewport: 'desktop',
     time: 10,

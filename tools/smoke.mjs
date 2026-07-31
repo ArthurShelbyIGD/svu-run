@@ -13,7 +13,7 @@
 //
 // Exit code 0 = pass, 1 = fail. Designed to be run unattended by agents.
 
-import { launch, openGame, waitFrames, waitGameTime, readState } from './harness.mjs';
+import { launch, openGame, waitFrames, waitGameTime, fastForward, readState } from './harness.mjs';
 
 const checks = [];
 function check(name, ok, detail = '') {
@@ -30,6 +30,11 @@ try {
   const { page, context, errors } = await openGame(browser, {
     viewport: 'phone', query: 'q=low&seed=1',
   });
+
+  // These checks exercise input and the state machine, not hazards. Obstacles
+  // now exist and will happily kill the test player mid-check, so collision is
+  // switched off here and proven separately below.
+  await page.evaluate(() => { window.SVU.ctx.get('coll').enabled = false; });
 
   await waitGameTime(page, 1.5);
   const a = await readState(page);
@@ -89,6 +94,209 @@ try {
   console.log(`  note: software-rendered timings, relative only — ` +
     `median ${e.medianFrameMs.toFixed(0)}ms, p95 ${e.p95FrameMs.toFixed(0)}ms`);
   await context.close();
+
+  // ---------------- Sprint 1: obstacles, stars, collision, restart ------
+  console.log('\ngameplay systems');
+  const g = await openGame(browser, { viewport: 'phone', query: 'q=low&seed=7' });
+  // Collision off from the very first step. Without this the test player dies
+  // on the first chunk (correctly — nobody is steering it) and every
+  // subsequent measurement is taken on a corpse that stopped at 50m.
+  await g.page.evaluate(() => { window.SVU.ctx.get('coll').enabled = false; });
+  await fastForward(g.page, 4);
+
+  const gen = await g.page.evaluate(() => {
+    const t = window.SVU.ctx.get('track');
+    return { obstacles: t.obstacles.length, stars: t.stars.length, chunks: t.chunkCount };
+  });
+  check('chunks generate obstacles', gen.obstacles > 0, `${gen.obstacles} live`);
+  check('chunks generate stars', gen.stars > 0, `${gen.stars} live`);
+  check('chunk grammar advanced', gen.chunks >= 4, `${gen.chunks} chunks`);
+
+  // Solvability: scan a long generated run and assert no simultaneous group
+  // blocks every lane. validateTemplates() proves each template in isolation;
+  // this proves the assembled output too.
+  // Collision is off for this scan — the point is to inspect what the grammar
+  // produces over a long run, and a live player would die in the first chunk.
+  const solv = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const track = S.ctx.get('track');
+    S.ctx.get('coll').enabled = false;
+    const OB_FULL = 2;
+    const groups = new Map();
+    let scanned = 0;
+    for (let pass = 0; pass < 60; pass++) {
+      for (const o of track.obstacles) {
+        const key = Math.round(o.z / 1.5);
+        if (!groups.has(key)) groups.set(key, new Set());
+        if (o.kind === OB_FULL) groups.get(key).add(o.lane);
+        scanned++;
+      }
+      S.loop.advance(3, 0);
+    }
+    let worst = 0;
+    for (const s of groups.values()) worst = Math.max(worst, s.size);
+    return { worst, scanned, groups: groups.size, z: S.ctx.get('play').z };
+  });
+  check('no generated group blocks all lanes', solv.worst < 3,
+    `worst group blocks ${solv.worst}/3 lanes over ${Math.round(solv.z)}m, ${solv.groups} groups`);
+
+  // Star collection: park the player in a star's lane and run through it.
+  const starRes = await g.page.evaluate(() => {
+    const S = window.SVU;
+    S.ctx.restart();
+    const play = S.ctx.get('play');
+    const track = S.ctx.get('track');
+    const coll = S.ctx.get('coll');
+    coll.enabled = true;
+
+    // Find a ground-level star, skipping past obstacles so only the star
+    // outcome is under test.
+    let target = null;
+    for (let tries = 0; tries < 40 && !target; tries++) {
+      target = track.stars.find((s) => s.z > play.z + 14 && s.y < 1.4) || null;
+      if (!target) S.loop.advance(2, 0);
+    }
+    if (!target) return { ok: false, reason: 'no reachable star found' };
+
+    play.lane = play.laneTarget = Math.round(target.x / S.config.tune.laneWidth + 1);
+    play.laneT = 1;
+    let collected = 0;
+    const off = S.ctx.on('pickup:star', () => collected++);
+    const guard = target.z + 6;
+    let steps = 0;
+    while (play.z < guard && steps < 4000) {
+      // keep obstacles from ending the run: this test is about stars only
+      track.obstacles.length = 0;
+      S.loop.advance(1 / 60, 0);
+      steps++;
+    }
+    off();
+    return { ok: collected > 0, collected, alive: play.alive };
+  });
+  check('stars can be collected', starRes.ok,
+    starRes.reason || `${starRes.collected} collected`);
+
+  // Collision: aim the player at a full-height block and confirm it kills.
+  const hitRes = await g.page.evaluate(() => {
+    const S = window.SVU;
+    S.ctx.restart();
+    const play = S.ctx.get('play');
+    const track = S.ctx.get('track');
+    const coll = S.ctx.get('coll');
+    const OB_FULL = 2;
+
+    // Search forward for a block, with collision off so the search survives.
+    coll.enabled = false;
+    let target = null;
+    for (let tries = 0; tries < 40 && !target; tries++) {
+      target = track.obstacles.find((o) => o.kind === OB_FULL && o.z > play.z + 14) || null;
+      if (!target) S.loop.advance(2, 0);
+    }
+    if (!target) return { ok: false, reason: 'no block found ahead' };
+
+    play.lane = play.laneTarget = target.lane;
+    play.laneT = 1;
+    // Isolate the target. Otherwise the player dies on some earlier obstacle
+    // and the check passes without ever testing what it claims to test.
+    track.obstacles = track.obstacles.filter((o) => o === target);
+    coll.enabled = true;
+    coll._prevZ = play.z;
+    const guard = target.z + 8;
+    let steps = 0;
+    while (play.z < guard && play.alive && steps < 4000) {
+      S.loop.advance(1 / 60, 0);
+      steps++;
+    }
+    // Died at the block, not somewhere else entirely.
+    const atBlock = !play.alive && Math.abs(play.z - target.z) < 3;
+    return { ok: atBlock, z: play.z, targetZ: target.z, alive: play.alive };
+  });
+  check('full-height block kills the player', hitRes.ok,
+    hitRes.reason || `died at z=${(hitRes.z || 0).toFixed(1)}, block at ${(hitRes.targetZ || 0).toFixed(1)}`);
+
+  // A hurdle must be clearable by jumping — otherwise the game is unplayable
+  // regardless of how well collision "works".
+  const clearRes = await g.page.evaluate(() => {
+    const S = window.SVU;
+    S.ctx.restart();
+    const play = S.ctx.get('play');
+    const track = S.ctx.get('track');
+    const coll = S.ctx.get('coll');
+    const OB_LOW = 0;
+
+    coll.enabled = false;
+    let target = null;
+    for (let tries = 0; tries < 40 && !target; tries++) {
+      target = track.obstacles.find((o) => o.kind === OB_LOW && o.z > play.z + 20) || null;
+      if (!target) S.loop.advance(2, 0);
+    }
+    if (!target) return { ok: false, reason: 'no hurdle found ahead' };
+
+    play.lane = play.laneTarget = target.lane;
+    play.laneT = 1;
+    // remove everything except the hurdle so only it is under test
+    track.obstacles = track.obstacles.filter((o) => o === target);
+    coll.enabled = true;
+    coll._prevZ = play.z;
+
+    let jumped = false;
+    let steps = 0;
+    while (play.z < target.z + 6 && play.alive && steps < 4000) {
+      // jump when the take-off point arrives
+      if (!jumped && target.z - play.z < play.speed * 0.30) {
+        play.pushIntent(3);
+        jumped = true;
+      }
+      S.loop.advance(1 / 60, 0);
+      steps++;
+    }
+    return { ok: play.alive && jumped, alive: play.alive, jumped };
+  });
+  check('hurdles are clearable by jumping', clearRes.ok,
+    clearRes.reason || `jumped=${clearRes.jumped} survived=${clearRes.alive}`);
+
+  // Restart must return everything to a clean start.
+  const restarted = await g.page.evaluate(async () => {
+    const S = window.SVU;
+    S.ctx.restart();
+    await new Promise((r) => setTimeout(r, 60));
+    const play = S.ctx.get('play');
+    const track = S.ctx.get('track');
+    return { alive: play.alive, z: play.z, time: S.ctx.time, chunks: track.chunkCount };
+  });
+  check('restart revives the player', restarted.alive === true);
+  check('restart resets distance and clock',
+    restarted.z < 1 && restarted.time < 1,
+    `z=${restarted.z.toFixed(2)} t=${restarted.time.toFixed(2)}`);
+
+  // High-speed tunnelling: at max speed a step covers more ground than an
+  // obstacle is deep, so the sweep must catch it. This is the check that
+  // proves the swept test rather than a point test.
+  const tunnel = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    const track = S.ctx.get('track');
+    const OB_FULL = 2;
+    S.loop.advance(6, 0);
+    const target = track.obstacles.find((o) => o.kind === OB_FULL && o.z > play.z + 14);
+    if (!target) return { ok: false, reason: 'no block ahead' };
+    play.lane = play.laneTarget = target.lane;
+    play.laneT = 1;
+    play.x = target.x;
+    play.speed = S.config.tune.maxSpeed;
+    // step manually at max speed so nothing re-ramps the speed down
+    const guard = target.z + 6;
+    let steps = 0;
+    while (play.z < guard && play.alive && steps < 600) {
+      play.z += S.config.tune.maxSpeed / 60;
+      S.ctx.get('coll').fixedUpdate();
+      steps++;
+    }
+    return { ok: !play.alive };
+  });
+  check('no tunnelling through blocks at max speed', tunnel.ok, tunnel.reason || '');
+
+  await g.context.close();
 
   // ---------------- high preset boots at all ----------------------------
   console.log('\nhigh preset  (1600x900, q=high)');

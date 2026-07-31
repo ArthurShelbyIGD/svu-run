@@ -251,6 +251,7 @@ export default class Play {
     this.alive = false;
     this._setState(STATE.DEAD);
     this.ctx.emit(EV.PLAYER_DEATH, { cause });
+    this.ctx.emit(EV.RUN_END, { distance: this.z, cause });
   }
 
   reset() {
@@ -261,8 +262,14 @@ export default class Play {
     this.x = this.y = this.z = this.vy = 0;
     this.speed = T.startSpeed;
     this.stateTime = 0;
+    this.groundedTime = 0;
     this.alive = true;
     this._buffered = INTENT.NONE;
+    this._bufferAge = 0;
+    this.camLocked = false;
+    // Snap the camera rather than letting it fly in from the last run's pose.
+    this._camPos.set(0, T.camHeight, -T.camDistance);
+    this._camTarget.set(0, 1.20, T.camLookAhead);
   }
 
   // ---- camera ----------------------------------------------------------

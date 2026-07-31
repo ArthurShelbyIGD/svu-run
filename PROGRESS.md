@@ -9,10 +9,12 @@ spread across many token windows survivable.
 
 ## Current state
 
-**Sprint 0 — COMPLETE.** Pipeline proven end to end.
+**Sprint 1 — MOSTLY COMPLETE.** It is a game now. Obstacles, collision,
+collectibles, death and restart all work. Junction turns are the one item
+outstanding, and were always scheduled last.
 
-Last verified: build passes, 16/16 smoke checks pass, 7 screenshot poses
-capture cleanly.
+Last verified: build passes, 26/26 smoke checks pass, screenshot poses capture
+cleanly.
 
 ### What exists
 
@@ -32,9 +34,20 @@ capture cleanly.
 - `world/`: key + ambient light, shadow generator, player-following shadow
   frustum.
 - `ui/`: DOM HUD with score and star counter.
-- `coll/`, `fx/`, `audio/`: registered stubs — module graph proven, no
-  implementation yet.
-- `tools/`: `smoke.mjs` (16 checks), `capture.mjs` (7 deterministic poses),
+- `track/chunks.js`: 14 hand-authored chunk templates spanning difficulty 0 to
+  0.9, assembled by a difficulty-weighted grammar that never repeats a template
+  twice running. `validateTemplates()` proves every template survivable at boot
+  and throws on an unwinnable one, so a bad pattern cannot ship.
+- `track/`: pooled obstacles (hurdle / overhead beam / full block) and
+  collectible stars, generated ahead of the player and recycled behind.
+- `coll/`: swept AABB collision. Swept rather than point-tested because at top
+  speed one 1/60 step covers more ground than an obstacle is deep — a point
+  test would let the player tunnel straight through at high speed.
+- `ui/`: results screen with score, distance, stars and session best; restart
+  by button, tap, or space, with a 400ms guard so the input that killed you
+  cannot instantly restart the run.
+- `fx/`, `audio/`: registered stubs — module graph proven, no implementation.
+- `tools/`: `smoke.mjs` (26 checks), `capture.mjs` (10 deterministic poses),
   `harness.mjs` (shared browser plumbing).
 
 ### Key finding from Sprint 0
@@ -66,29 +79,32 @@ adding polish.
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
-| 6 | No collision, no obstacles, no stars, no death — not yet a game | `coll/`, `track/` | Sprint 1 |
+| 6 | No 90° junction turns yet — still a straight corridor | `track/`, `play/` | Sprint 1 (remaining) |
+| 9 | No powerups (wing glide, ruby magnet, shield) | `play/`, `fx/` | Sprint 2 |
+| 10 | No pursuer behind the player — no tension from behind | `world/`, `ai` | Sprint 4 |
 | 7 | No audio at all | `audio/` | Sprint 5 |
 | 8 | Camera framing is a first guess, not tuned with a human in the loop | `core/config.js` | Sprint 1 |
 
 ---
 
-## Next up — Sprint 1: the core loop
+## Next up
 
-Goal: it becomes an actual game. Still grey-box; no art polish.
+**Finish Sprint 1:**
 
-1. **Chunk grammar** in `track/` — replace the uniform tile strip with chunk
-   templates assembled by a difficulty-weighted grammar.
-2. **Obstacles** — low (jump), high (slide), full-lane (dodge). Placed by the
-   grammar with guaranteed-solvable spacing derived from current speed.
-3. **Collision** in `coll/` — swept AABB against the lane grid. No physics
-   engine; a runner needs nothing more.
-4. **Stars** — collectible gold stars, thin-instanced, with a magnet radius.
-5. **Death and restart** — the run ends, results show, restart is instant.
-6. **90° junction turns** — the thing that makes it Temple Run rather than
-   Subway Surfers. Hardest item in the sprint; do it last.
-7. **Camera tuning** with a human looking at it.
+1. **90° junction turns** — the thing that makes it Temple Run rather than
+   Subway Surfers. Requires moving from "z is world space" to a path-space
+   model: the track becomes a sequence of segments each with a heading, and
+   world position is derived from distance-along-path plus lane offset. This
+   touches `track/`, `play/` and the camera, so it is the one genuinely
+   architectural item left in the sprint.
+2. **Camera tuning** with a human actually looking at it.
+3. **Difficulty pass** — the ramp is a first guess (`difficultyAt`), never
+   played to failure by a human.
 
-Sprint 1 stays solo — these systems are tightly coupled and the
+**Then Sprint 2:** material library and studio lighting proper, powerups, and
+the first critic loop against the reference art.
+
+Sprints 0-3 stay solo — these systems are tightly coupled and the
 Claude-of-Duty run found parallel agents actively damage coupled systems.
 Fan-out starts at Sprint 4.
 
@@ -111,3 +127,4 @@ Fan-out starts at Sprint 4.
 | Date | Window | Work |
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
+| 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
