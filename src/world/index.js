@@ -4,8 +4,8 @@
 // decorative (non-collidable) prop. The track surface itself belongs to track/.
 
 import {
-  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3, Color4,
-  DynamicTexture, Texture, Scene, Layer,
+  DirectionalLight, HemisphericLight, PointLight, ShadowGenerator,
+  Vector3, Color3, Color4, DynamicTexture, Texture, Scene, Layer,
 } from '../core/bjs.js';
 import { ZONES, zoneAt, paintZone } from './zones.js';
 
@@ -49,6 +49,49 @@ export default class World {
   }
 
   /**
+   * A light tent that travels with the character.
+   *
+   * Set stones are bright because they sit in a box of light, not because of
+   * anything about the stone. In a dark zone the environment's diffuse
+   * contribution is nearly nothing, so pavé rendered as dark grey lumps no
+   * matter how the material was tuned. These lights are restricted to the
+   * character's own meshes, so the world stays dark and moody while the piece
+   * in front of the camera is lit like it is on a jeweller's bench.
+   *
+   * This is the same trick portrait photography uses, and it is the reason
+   * product shots look the way they do.
+   */
+  attachPortraitRig(node) {
+    const scene = this.ctx.scene;
+    const meshes = node.getChildMeshes ? node.getChildMeshes() : [node];
+    this.portraitLights = [];
+
+    const rig = [
+      // [x, y, z, intensity, r, g, b]  — positions are relative to the char
+      [1.5, 2.2, 2.4, 30, 1.00, 0.94, 0.86],   // key, high front
+      [-2.0, 1.2, 1.6, 16, 0.82, 0.88, 1.00],  // fill, cool, low left
+      [0.2, 2.4, -2.6, 22, 1.00, 0.90, 0.80],  // rim from behind
+      [0.0, -1.2, 1.2, 8, 1.00, 0.86, 0.70],   // bounce from below
+    ];
+
+    // Point lights are a shader permutation cost per lit mesh, so the low
+    // preset gets the key and rim only. Two lights still tent the piece; four
+    // is a luxury for machines that can afford it.
+    const count = this.ctx.config.q.name === 'low' ? 2 : rig.length;
+    for (let i = 0; i < count; i++) {
+      const [x, y, z, inten, r, g, b] = rig[i];
+      const L = new PointLight(`portrait${i}`, new Vector3(x, y, z), scene);
+      L.parent = node;
+      L.intensity = inten;
+      L.range = 14;
+      L.diffuse = new Color3(r, g, b);
+      L.specular = new Color3(r, g, b);
+      L.includedOnlyMeshes = meshes;
+      this.portraitLights.push(L);
+    }
+  }
+
+  /**
    * Sky and atmosphere.
    *
    * A flat clear colour gives no horizon and no depth: the track simply stopped
@@ -57,6 +100,49 @@ export default class World {
    * scene a horizon, it hides the end of the generated track, and it stops
    * distant geometry from reading as hard-edged clutter.
    */
+  /**
+   * A light tent that travels with the character.
+   *
+   * Set stones are bright because they sit in a box of light, not because of
+   * anything about the stone. In a dark zone the environment's diffuse
+   * contribution is nearly nothing, so pavé rendered as dark grey lumps no
+   * matter how the material was tuned. These lights are restricted to the
+   * character's own meshes, so the world stays dark and moody while the piece
+   * in front of the camera is lit like it is on a jeweller's bench.
+   *
+   * This is the same trick portrait photography uses, and it is the reason
+   * product shots look the way they do.
+   */
+  attachPortraitRig(node) {
+    const scene = this.ctx.scene;
+    const meshes = node.getChildMeshes ? node.getChildMeshes() : [node];
+    this.portraitLights = [];
+
+    const rig = [
+      // [x, y, z, intensity, r, g, b]  — positions are relative to the char
+      [1.5, 2.2, 2.4, 30, 1.00, 0.94, 0.86],   // key, high front
+      [-2.0, 1.2, 1.6, 16, 0.82, 0.88, 1.00],  // fill, cool, low left
+      [0.2, 2.4, -2.6, 22, 1.00, 0.90, 0.80],  // rim from behind
+      [0.0, -1.2, 1.2, 8, 1.00, 0.86, 0.70],   // bounce from below
+    ];
+
+    // Point lights are a shader permutation cost per lit mesh, so the low
+    // preset gets the key and rim only. Two lights still tent the piece; four
+    // is a luxury for machines that can afford it.
+    const count = this.ctx.config.q.name === 'low' ? 2 : rig.length;
+    for (let i = 0; i < count; i++) {
+      const [x, y, z, inten, r, g, b] = rig[i];
+      const L = new PointLight(`portrait${i}`, new Vector3(x, y, z), scene);
+      L.parent = node;
+      L.intensity = inten;
+      L.range = 14;
+      L.diffuse = new Color3(r, g, b);
+      L.specular = new Color3(r, g, b);
+      L.includedOnlyMeshes = meshes;
+      this.portraitLights.push(L);
+    }
+  }
+
   /**
    * Sky and atmosphere.
    *
@@ -165,6 +251,7 @@ export default class World {
   }
 
   dispose() {
+    if (this.portraitLights) for (const L of this.portraitLights) L.dispose();
     if (this.layerA) this.layerA.dispose();
     if (this.layerB) this.layerB.dispose();
     if (this.zoneTextures) for (const t of this.zoneTextures) t.dispose();

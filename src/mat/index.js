@@ -9,8 +9,9 @@
 // it is what makes metal read as metal.
 
 import {
-  PBRMaterial, RawCubeTexture, Color3, Constants, Engine,
+  PBRMaterial, RawCubeTexture, RawTexture, Color3, Constants, Engine, Texture,
 } from '../core/bjs.js';
+import { generatePaveMaps, generateBrushedMaps } from './pave.js';
 
 /** Named palette. Keep this list short — a small palette is the art direction. */
 export const PALETTE = {
@@ -44,6 +45,7 @@ export default class Materials {
   init() {
     const { scene, config } = this.ctx;
 
+    this._buildSurfaceMaps();
     this.env = this._buildStudioEnv(config.q.envSize);
     scene.environmentTexture = this.env;
     scene.environmentIntensity = 1.55;
@@ -77,6 +79,32 @@ export default class Materials {
       [ 0.10,  0.35, -0.95, 0.26, 1.05, -0.02],  // rim, behind, cool
       [-0.25,  0.94, -0.22, 0.18, 1.50,  0.02],  // small hot overhead, top glint
     ];
+
+    // A jeweller's light tent: a scattered field of small, very bright
+    // sources. This is not decoration — a pavé surface is thousands of tiny
+    // mirrors, and with only a few broad softboxes to reflect, most stones
+    // reflect nothing and the whole surface reads as dark grey. Many small
+    // sources means every stone catches something, which is what produces
+    // sparkle. It is how jewellery is actually photographed.
+    // Distributed over the FULL sphere, not just above. A pavé stone tilted
+    // downward reflects whatever is below it, and with an upper-hemisphere-only
+    // tent that is darkness — which rendered the suit black while the smooth
+    // face beside it stayed bright. A real light tent surrounds the piece.
+    const TENT = 56;
+    for (let i = 0; i < TENT; i++) {
+      const t = (i + 0.5) / TENT;
+      const y = 1 - 2 * t;                            // full sphere
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = i * 2.39996;                      // golden angle
+      lights.push([
+        r * Math.cos(theta),
+        y * 0.92,
+        r * Math.sin(theta),
+        0.070,
+        y > -0.15 ? 1.75 : 1.05,                      // softer from below
+        (i % 3 === 0) ? 0.05 : -0.02,
+      ]);
+    }
     for (const L of lights) {
       const n = Math.hypot(L[0], L[1], L[2]);
       L[0] /= n; L[1] /= n; L[2] /= n;
@@ -107,9 +135,12 @@ export default class Materials {
           // surroundings. A bright, even environment makes chrome look like
           // grey plastic — which is exactly what the first blockout showed.
           const up = dy * 0.5 + 0.5;             // 0 down, 1 up
-          let r = 0.030 + up * 0.115;
-          let g = 0.034 + up * 0.125;
-          let b = 0.046 + up * 0.150;
+          // Floor raised off pure black. Anything a stone reflects that is
+          // exactly zero becomes a dead facet, and a pavé surface is mostly
+          // facets pointing away from the key light.
+          let r = 0.085 + up * 0.155;
+          let g = 0.090 + up * 0.165;
+          let b = 0.105 + up * 0.190;
           // warm floor bounce
           const down = Math.max(0, -dy);
           r += down * 0.105; g += down * 0.076; b += down * 0.048;
@@ -158,7 +189,128 @@ export default class Materials {
     return tex;
   }
 
+  /**
+   * Generate the shared surface detail textures.
+   *
+   * This is the single most important thing in this file. Everything before it
+   * rendered as smooth flat-shaded metal, which is why the build read as a
+   * prototype regardless of how the geometry or lighting were tuned: modern
+   * rendering gets most of its character from surface detail, not from shape.
+   */
+  _buildSurfaceMaps() {
+    const scene = this.ctx.scene;
+    const q = this.ctx.config.q;
+    const size = q.name === 'low' ? 256 : 512;
+    const cells = q.name === 'low' ? 12 : 18;
+
+    // Keep the raw pixel data, not just the textures.
+    //
+    // Each material needs its own texture object because uScale/vScale live on
+    // the texture, and Texture.clone() does NOT carry a RawTexture's pixel
+    // data — cloning produced empty textures, which is why every pavé surface
+    // rendered black while the smooth materials beside them lit correctly.
+    this._paveSize = size;
+    this._pave = generatePaveMaps(size, cells);
+    this._brushSize = size >> 1;
+    this._brush = generateBrushedMaps(this._brushSize);
+  }
+
+  /** Fresh GPU texture from stored pixel data. Never clone a RawTexture. */
+  _rawTex(name, data, size, gamma) {
+    const t = RawTexture.CreateRGBATexture(
+      data, size, size, this.ctx.scene, true, false,
+      Texture.TRILINEAR_SAMPLINGMODE,
+    );
+    t.name = name;
+    t.wrapU = Texture.WRAP_ADDRESSMODE;
+    t.wrapV = Texture.WRAP_ADDRESSMODE;
+    t.anisotropicFilteringLevel = this.ctx.config.q.anisotropy;
+    t.gammaSpace = !!gamma;
+    return t;
+  }
+
+  /**
+   * Stone-set metal. The hero material of the project.
+   *
+   * `tile` controls stone density on that surface — a hand needs far more
+   * repeats than a torso to keep the stones the same physical size, and stones
+   * that change size between body parts is the fastest way to break the
+   * illusion.
+   */
+  pave(name, col, tile = 4) {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const m = new PBRMaterial(`p_${name}`, this.ctx.scene);
+    m.albedoColor = new Color3(col.r, col.g, col.b);
+    m.metallic = 1.0;              // scaled per-pixel by the ORM blue channel
+    m.roughness = 1.0;             // driven entirely by the ORM map
+    // Set stones sit in a lit tent, not in the room's ambient. Lifting the
+    // environment contribution for this material specifically is what keeps
+    // the piece reading as jewellery when the zone around it is nearly black.
+    m.environmentIntensity = 2.4;
+    m.usePhysicalLightFalloff = true;
+
+    m.bumpTexture = this._rawTex(`${name}_n`, this._pave.normal, this._paveSize, false);
+    m.bumpTexture.uScale = tile;
+    m.bumpTexture.vScale = tile;
+    // Full-strength stone normals throw reflections so wide that most facets
+    // sample the darkest part of the room. Softening keeps the sparkle while
+    // holding the overall value up.
+    m.bumpTexture.level = 0.72;
+    m.invertNormalMapX = false;
+    m.invertNormalMapY = false;
+
+    m.metallicTexture = this._rawTex(`${name}_orm`, this._pave.orm, this._paveSize, false);
+    m.metallicTexture.uScale = tile;
+    m.metallicTexture.vScale = tile;
+    m.useRoughnessFromMetallicTextureGreen = true;
+    m.useMetallnessFromMetallicTextureBlue = true;
+    m.useAmbientOcclusionFromMetallicTextureRed = true;
+
+    m.freeze();
+    this.cache.set(name, m);
+    return m;
+  }
+
+  /** Polished metal with real micro-structure. Chrome, gold trim, hardware. */
+  brushed(name, col, tile = 3, roughScale = 1) {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const m = new PBRMaterial(`b_${name}`, this.ctx.scene);
+    m.albedoColor = new Color3(col.r, col.g, col.b);
+    m.metallic = 1.0;
+    m.roughness = roughScale;
+    m.environmentIntensity = 1.0;
+
+    m.bumpTexture = this._rawTex(`${name}_n`, this._brush.normal, this._brushSize, false);
+    m.bumpTexture.uScale = tile;
+    m.bumpTexture.vScale = tile;
+    m.bumpTexture.level = 0.55;
+
+    m.metallicTexture = this._rawTex(`${name}_orm`, this._brush.orm, this._brushSize, false);
+    m.metallicTexture.uScale = tile;
+    m.metallicTexture.vScale = tile;
+    m.useRoughnessFromMetallicTextureGreen = true;
+    m.useMetallnessFromMetallicTextureBlue = true;
+    m.useAmbientOcclusionFromMetallicTextureRed = true;
+
+    m.freeze();
+    this.cache.set(name, m);
+    return m;
+  }
+
   _defineBaseMaterials() {
+    // --- stone-set surfaces: the onesie, the hood, the ears ---
+    // Tiling chosen so stones are the same physical size everywhere and are
+    // individually readable at gameplay distance. Too fine and pavé stops
+    // being stones and becomes noise.
+    this.pave('paveWhite', PALETTE.whiteGold, 2.6);
+    this.pave('paveWhiteFine', PALETTE.whiteGold, 4.5);   // small parts
+    this.pave('paveRuby', PALETTE.ruby, 3.2);
+
+    // --- polished, unset metal: face, hands, boots, trim ---
+    this.brushed('polRose', PALETTE.roseGold, 3, 0.14);
+    this.brushed('polRhodium', PALETTE.rhodium, 3, 0.10);
+    this.brushed('polGold', PALETTE.yellowGold, 3, 0.13);
+
     // metal(name, colour, roughness)
     this.metal('roseGold',   PALETTE.roseGold,   0.16);
     this.metal('yellowGold', PALETTE.yellowGold, 0.14);

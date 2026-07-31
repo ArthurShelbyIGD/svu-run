@@ -74,7 +74,12 @@ export default class Character {
     this._buildWing(body);
 
     const world = this.ctx.tryGet('world');
-    if (world) world.addCaster(this.root);
+    if (world) {
+      world.addCaster(this.root);
+      // The character carries its own light tent. Without it, pavé in a dark
+      // zone renders as grey lumps regardless of how the material is tuned.
+      world.attachPortraitRig(this.root);
+    }
   }
 
   // ---- construction helpers -------------------------------------------
@@ -92,7 +97,7 @@ export default class Character {
     const mat = this.ctx.get('mat');
     // A rounded box would be ideal; a sphere squashed on all three axes reads
     // the same at this size and costs one primitive instead of a CSG.
-    const torso = this._sphere('torso', P.bodyW, body, mat.get('whiteGold'),
+    const torso = this._sphere('torso', P.bodyW, body, mat.get('paveWhite'),
       1, P.bodyH / P.bodyW, P.bodyD / P.bodyW);
     torso.position.y = P.bodyY;
     this.parts.torso = torso;
@@ -101,7 +106,7 @@ export default class Character {
     const zip = MeshBuilder.CreateBox('zip', {
       width: 0.028, height: P.bodyH * 1.7, depth: 0.02,
     }, this.ctx.scene);
-    zip.material = mat.get('yellowGold');
+    zip.material = mat.get('polGold');
     zip.parent = body;
     zip.position.set(0, P.bodyY, P.bodyD * 0.96);
     zip.isPickable = false;
@@ -117,12 +122,12 @@ export default class Character {
     this.parts.head = head;
 
     // Hood shell, pushed slightly back so the face can sit proud of it.
-    const hood = this._sphere('hood', P.headR, head, mat.get('whiteGold'), 1, 0.99, 1.02);
+    const hood = this._sphere('hood', P.headR, head, mat.get('paveWhite'), 1, 0.99, 1.02);
     hood.position.z = -0.02;
     this.parts.hood = hood;
 
     // Face, in warm metal, protruding through the front of the hood.
-    const face = this._sphere('face', P.faceR, head, mat.get('roseGold'), 1, 1.02, 0.98);
+    const face = this._sphere('face', P.faceR, head, mat.get('polRose'), 1, 1.02, 0.98);
     face.position.z = P.faceZ;
     this.parts.face = face;
 
@@ -134,7 +139,7 @@ export default class Character {
     const rim = CreateTorus('hoodRim', {
       diameter: P.hoodRimR * 2, thickness: 0.098, tessellation: this.seg,
     }, scene);
-    rim.material = mat.get('whiteGold');
+    rim.material = mat.get('paveWhiteFine');
     rim.parent = head;
     rim.rotation.x = Math.PI / 2;
     rim.position.z = 0.095;
@@ -144,12 +149,12 @@ export default class Character {
 
     // Fringe peeking out under the rim. Must sit PROUD of the face sphere or
     // it is swallowed by it — the first version was entirely interior.
-    const fringe = this._sphere('fringe', P.faceR * 0.74, head, mat.get('roseGold'), 1.02, 0.42, 0.40);
+    const fringe = this._sphere('fringe', P.faceR * 0.74, head, mat.get('polRose'), 1.02, 0.42, 0.40);
     fringe.position.set(0, P.faceR * 0.60, P.faceZ + 0.11);
 
     // --- bear ears ---
     for (const s of [-1, 1]) {
-      const ear = this._sphere(`ear${s}`, P.earR, head, mat.get('whiteGold'), 1, 1, 0.72);
+      const ear = this._sphere(`ear${s}`, P.earR, head, mat.get('paveWhiteFine'), 1, 1, 0.72);
       ear.position.set(s * P.earSpread, P.headR * P.earY, -0.035);
       const inner = this._sphere(`earIn${s}`, P.earR * 0.56, head, mat.get('earInner'), 1, 1, 0.5);
       inner.position.set(s * P.earSpread, P.headR * P.earY, 0.055);
@@ -197,7 +202,7 @@ export default class Character {
       const bit = MeshBuilder.CreateCylinder(`stalkBit${i}`, {
         diameter: 0.030, height: P.antennaLen / segs, tessellation: 6,
       }, scene);
-      bit.material = mat.get('whiteGold');
+      bit.material = mat.get('polGold');
       bit.parent = node;
       bit.position.y = P.antennaLen / (segs * 2);
       bit.isPickable = false;
@@ -205,7 +210,7 @@ export default class Character {
       prev = node;
     }
 
-    const orb = this._sphere('orb', P.orbR, prev, mat.get('ruby'));
+    const orb = this._sphere('orb', P.orbR, prev, mat.get('paveRuby'));
     orb.position.y = P.antennaLen / segs;
     this.parts.orb = orb;
     const orbCore = this._sphere('orbCore', P.orbR * 0.52, prev, mat.get('rubyGlow'));
@@ -224,15 +229,15 @@ export default class Character {
       const upper = MeshBuilder.CreateCapsule(`arm${s}`, {
         radius: P.armR, height: P.armLen, tessellation: Math.max(6, this.seg / 2),
       }, scene);
-      upper.material = mat.get('whiteGold');
+      upper.material = mat.get('paveWhiteFine');
       upper.parent = pivot;
       upper.position.y = -P.armLen * 0.5;
       upper.isPickable = false;
 
       // Mitten, not a hand: one rounded mass with a thumb nub.
-      const hand = this._sphere(`hand${s}`, P.handR, pivot, mat.get('rhodium'), 1, 1.12, 0.86);
+      const hand = this._sphere(`hand${s}`, P.handR, pivot, mat.get('polRhodium'), 1, 1.12, 0.86);
       hand.position.y = -P.armLen - P.handR * 0.35;
-      const thumb = this._sphere(`thumb${s}`, P.handR * 0.42, pivot, mat.get('rhodium'), 1, 1.1, 0.9);
+      const thumb = this._sphere(`thumb${s}`, P.handR * 0.42, pivot, mat.get('polRhodium'), 1, 1.1, 0.9);
       thumb.position.set(s * P.handR * 0.7, -P.armLen - P.handR * 0.1, 0.02);
 
       this.parts.arms.push(pivot);
@@ -251,13 +256,13 @@ export default class Character {
       const upper = MeshBuilder.CreateCapsule(`leg${s}`, {
         radius: P.legR, height: P.legLen, tessellation: Math.max(6, this.seg / 2),
       }, scene);
-      upper.material = mat.get('whiteGold');
+      upper.material = mat.get('paveWhiteFine');
       upper.parent = pivot;
       upper.position.y = -P.legLen * 0.5;
       upper.isPickable = false;
 
       // Boot: a rounded mass pushed forward so the silhouette has a toe.
-      const boot = this._sphere(`boot${s}`, P.bootR, pivot, mat.get('rhodium'), 0.95, 0.80, 1.25);
+      const boot = this._sphere(`boot${s}`, P.bootR, pivot, mat.get('polRhodium'), 0.95, 0.80, 1.25);
       boot.position.set(0, -P.legLen - P.bootR * 0.42, 0.045);
 
       this.parts.legs.push(pivot);
@@ -319,7 +324,7 @@ export default class Character {
       const rib = MeshBuilder.CreateCylinder(`rib${i}`, {
         diameter: 0.034, height: Math.hypot(tip[0], tip[1]) * 0.98, tessellation: 5,
       }, scene);
-      rib.material = mat.get('whiteGold');
+      rib.material = mat.get('polRhodium');
       rib.parent = wing;
       // On the VISIBLE side of the membrane. Behind it they may as well not
       // exist, and the wing loses the finger structure that makes it a wing.

@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "hero",
-      "file": "hero.png",
+      "name": "char-rear",
+      "file": "char-rear.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "default chase view, mid-run — the shot the whole game is judged on",
+      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
       "errors": []
     }
   ]
