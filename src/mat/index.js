@@ -306,6 +306,28 @@ export default class Materials {
     this.pave('paveWhiteFine', PALETTE.whiteGold, 4.5);   // small parts
     this.pave('paveRuby', PALETTE.ruby, 3.2);
 
+    // ---------------------------------------------------------------
+    // MATERIAL NAME CONTRACT
+    //
+    // These names exist so that char/, world/ and track/ can be written
+    // against them in parallel with mat/ improving what is behind them.
+    // Placeholder implementations are fine; the NAMES are the interface and
+    // must not change. Anything using a name that does not exist throws, which
+    // is deliberate — a silent fallback would hide the wiring mistake.
+    // ---------------------------------------------------------------
+    this.metal('stoneCarved', { r: 0.62, g: 0.58, b: 0.52 }, 0.72);
+    this.metal('stonePolished', { r: 0.70, g: 0.66, b: 0.60 }, 0.34);
+    this.enamel('marbleDark', { r: 0.16, g: 0.15, b: 0.18 }, 0.28);
+    this.enamel('marbleLight', { r: 0.86, g: 0.84, b: 0.80 }, 0.24);
+    this.metal('goldLeaf', PALETTE.yellowGold, 0.30);
+    this.metal('goldTrim', PALETTE.yellowGold, 0.16);
+    this.metal('trackInlay', PALETTE.yellowGold, 0.22);
+    this.metal('trackStone', { r: 0.30, g: 0.31, b: 0.36 }, 0.46);
+    this.enamel('glassGem', PALETTE.ruby, 0.08);
+    // Cape cloth: double-sided by definition, since a cape is a sheet.
+    this.metal('clothCape', { r: 0.34, g: 0.35, b: 0.40 }, 0.38);
+    this.mutate('clothCape', (m) => { m.backFaceCulling = false; });
+
     // --- polished, unset metal: face, hands, boots, trim ---
     this.brushed('polRose', PALETTE.roseGold, 3, 0.14);
     this.brushed('polRhodium', PALETTE.rhodium, 3, 0.10);
