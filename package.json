@@ -1,0 +1,21 @@
+{
+  "name": "svu-run",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SVU RUN - a third-person endless runner in Babylon.js, shipped as a single HTML file.",
+  "scripts": {
+    "build": "node build.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "shots": "node tools/capture.mjs",
+    "perf": "node tools/perf.mjs",
+    "check": "npm run build && npm run smoke"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.19.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "playwright": "1.62.1"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "preset": "high",
+  "poses": [
+    {
+      "name": "char-side",
+      "file": "char-side.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "character profile — proportion and wing read",
+      "errors": []
+    }
+  ]
+}

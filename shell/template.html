@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SVU RUN</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#f4efe8">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="description" content="SVU RUN — an endless runner.">
+<style>
+  :root {
+    --cream: #f4efe8;
+    --ink: #2b2723;
+    --gold: #d8a93f;
+    --rose: #e8bc9a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--cream);
+    font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+    touch-action: none;
+    user-select: none; -webkit-user-select: none;
+  }
+  #c {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block; outline: none;
+    touch-action: none;
+  }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 18px 18px;
+    z-index: 10;
+  }
+  .hud-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .hud-score {
+    font-size: clamp(30px, 7vw, 46px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+    color: var(--ink);
+    text-shadow: 0 2px 10px rgba(255,255,255,.65);
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-stars {
+    display: flex; align-items: center; gap: 7px;
+    font-size: clamp(19px, 4.6vw, 27px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: rgba(255,255,255,.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.7);
+    border-radius: 999px;
+    padding: 6px 15px 6px 12px;
+    box-shadow: 0 3px 14px rgba(80,60,40,.10);
+  }
+  .hud-stars .star {
+    color: var(--gold);
+    filter: drop-shadow(0 1px 3px rgba(216,169,63,.5));
+  }
+  .hud-debug {
+    position: absolute; left: 18px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    font: 500 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: rgba(43,39,35,.55);
+    white-space: pre;
+  }
+
+  /* ---- boot ---- */
+  #boot {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 18px;
+    background: var(--cream);
+    transition: opacity .5s ease;
+  }
+  #boot.gone { opacity: 0; pointer-events: none; }
+  .boot-mark {
+    font-size: clamp(34px, 9vw, 62px);
+    font-weight: 900; letter-spacing: .10em;
+    background: linear-gradient(105deg, #c9973a 0%, #f0d79a 38%, #b98a34 62%, #e9c98c 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .boot-bar {
+    width: min(200px, 44vw); height: 3px; border-radius: 3px;
+    background: rgba(43,39,35,.10); overflow: hidden;
+  }
+  .boot-bar i {
+    display: block; height: 100%; width: 40%; border-radius: 3px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    animation: sweep 1.15s ease-in-out infinite;
+  }
+  @keyframes sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-bar i { animation: none; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" touch-action="none"></canvas>
+
+<div id="boot">
+  <div class="boot-mark">SVU&nbsp;RUN</div>
+  <div class="boot-bar"><i></i></div>
+</div>
+
+<script>
+/*__SVU_BUNDLE__*/
+</script>
+<script>
+(function () {
+  var el = document.getElementById('boot');
+  var t0 = Date.now();
+  var iv = setInterval(function () {
+    if (window.SVU && window.SVU.ready) {
+      clearInterval(iv);
+      // hold the splash a beat so it never flashes
+      setTimeout(function () {
+        el.classList.add('gone');
+        setTimeout(function () { el.remove(); }, 600);
+      }, Math.max(0, 500 - (Date.now() - t0)));
+    }
+  }, 60);
+})();
+</script>
+</body>
+</html>
