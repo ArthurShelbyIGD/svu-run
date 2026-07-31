@@ -53,3 +53,4 @@ export { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator'
 export { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline';
 
 export { Constants } from '@babylonjs/core/Engines/constants';
+export { Layer } from '@babylonjs/core/Layers/layer';

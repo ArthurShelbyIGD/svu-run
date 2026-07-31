@@ -4,7 +4,8 @@
 // decorative (non-collidable) prop. The track surface itself belongs to track/.
 
 import {
-  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3,
+  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3, Color4,
+  MeshBuilder, StandardMaterial, DynamicTexture, Texture, Scene,
 } from '../core/bjs.js';
 
 export default class World {
@@ -18,6 +19,8 @@ export default class World {
   init() {
     const scene = this.ctx.scene;
     const q = this.ctx.config.q;
+
+    this._buildBackdrop();
 
     // The environment cubemap does most of the lighting work. These two lights
     // exist mainly to produce a directional shadow and a little extra shaping.
@@ -39,6 +42,60 @@ export default class World {
       this.shadowGen.bias = 0.0016;
       this.shadowGen.normalBias = 0.012;
     }
+  }
+
+  /**
+   * Sky and atmosphere.
+   *
+   * A flat clear colour gives no horizon and no depth: the track simply stopped
+   * dead at the far clip plane against a uniform void. A vertical gradient plus
+   * linear fog costs almost nothing and does three jobs at once — it gives the
+   * scene a horizon, it hides the end of the generated track, and it stops
+   * distant geometry from reading as hard-edged clutter.
+   */
+  _buildBackdrop() {
+    const scene = this.ctx.scene;
+
+    // Vertical gradient, painted once into a tall thin texture.
+    const H = 256;
+    const tex = new DynamicTexture('skyGrad', { width: 4, height: H }, scene, false);
+    const ctx2d = tex.getContext();
+    const grad = ctx2d.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0.00, '#c9cdd8');   // cool above
+    grad.addColorStop(0.42, '#e8e4dd');
+    grad.addColorStop(0.62, '#f6f1e8');   // bright band at the horizon
+    grad.addColorStop(0.78, '#efe6d6');
+    grad.addColorStop(1.00, '#ded2bd');   // warm bounce below
+    ctx2d.fillStyle = grad;
+    ctx2d.fillRect(0, 0, 4, H);
+    tex.update(false);
+    tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+    this.skyTex = tex;
+
+    const mat = new StandardMaterial('skyMat', scene);
+    mat.emissiveTexture = tex;
+    mat.diffuseColor = Color3.Black();
+    mat.specularColor = Color3.Black();
+    mat.disableLighting = true;
+    mat.backFaceCulling = false;
+    mat.freeze();
+    this.skyMat = mat;
+
+    const sky = MeshBuilder.CreateSphere('sky', { diameter: 900, segments: 12 }, scene);
+    sky.material = mat;
+    sky.isPickable = false;
+    sky.infiniteDistance = true;   // rides with the camera, never reachable
+    sky.applyFog = false;
+    sky.renderingGroupId = 0;
+    this.sky = sky;
+
+    // Fog colour is sampled from the horizon band so the track dissolves into
+    // the sky rather than fading towards a colour that is not there.
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogColor = new Color3(0.955, 0.937, 0.902);
+    scene.fogStart = 70;
+    scene.fogEnd = 235;
   }
 
   /** Register a node (and its descendants) as a shadow caster. */
@@ -73,6 +130,9 @@ export default class World {
   }
 
   dispose() {
+    if (this.sky) this.sky.dispose();
+    if (this.skyMat) this.skyMat.dispose();
+    if (this.skyTex) this.skyTex.dispose();
     if (this.shadowGen) this.shadowGen.dispose();
     if (this.key) this.key.dispose();
     if (this.ambient) this.ambient.dispose();

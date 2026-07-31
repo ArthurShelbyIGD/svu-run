@@ -54,7 +54,13 @@ cleanly.
 - `ui/`: results screen with score, distance, stars and session best; restart
   by button, tap, or space, with a 400ms guard so the input that killed you
   cannot instantly restart the run.
-- `fx/`, `audio/`: registered stubs — module graph proven, no implementation.
+- `fx/`: pooled particle system on thin instances — one draw call for every
+  particle in the game, zero runtime allocation, pool size driven by the
+  quality preset. Emits on star pickup, landing, death and clean corners, plus
+  speed streaks above 'low'.
+- `world/`: gradient sky dome and linear fog, so the track dissolves into the
+  distance instead of ending at the clip plane.
+- `audio/`: registered stub — module graph proven, no implementation.
 - `tools/`: `smoke.mjs` (26 checks), `capture.mjs` (10 deterministic poses),
   `harness.mjs` (shared browser plumbing).
 
@@ -122,7 +128,7 @@ adding polish.
 
 | # | Issue | Where | Planned |
 |---|---|---|---|
-| 1 | Backdrop is a flat blown-out cream; no sky or depth treatment | `main.js` clear colour | Sprint 4 |
+| 1 | Sky gradient is subtle at eye level; the scene still lacks a strong sense of place | `world/` | Sprint 4 |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
@@ -131,7 +137,7 @@ adding polish.
 | 11 | Turn frequency (42% of chunks) is still an untuned guess | `track/` | needs a human playing |
 | 9 | No powerups (wing glide, ruby magnet, shield) | `play/`, `fx/` | Sprint 2 |
 | 10 | No pursuer behind the player — no tension from behind | `world/`, `ai` | Sprint 4 |
-| 7 | No audio at all | `audio/` | Sprint 5 |
+| 7 | No audio at all — the largest remaining gap in how the game feels | `audio/` | next |
 | 8 | Camera framing is a first guess, not tuned with a human in the loop | `core/config.js` | Sprint 1 |
 
 ---
@@ -174,6 +180,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 1 | Added gradient sky + fog, and a pooled thin-instance particle system (pickup, landing, death, corner, speed streaks). 35 checks. |
 | 2026-07-31 | 1 | Fixed corner discontinuity (3.4m sideways teleport in the outer lane), widened the turn reaction window, added late-turn grace. 32 checks. |
 | 2026-07-31 | 1 | Fixed invisible track (mirror floor blowing out on real hardware), added lane dividers, softened the opening difficulty ramp and start speed after first human playtest. |
 | 2026-07-31 | 1 | Sprint 1 complete: path-space model, 90 degree junction turns with signage, context-sensitive turn input. Smoke test 26 -> 31 checks. Three bugs found by screenshots that no test would have caught. |

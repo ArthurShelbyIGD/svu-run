@@ -331,6 +331,29 @@ try {
   });
   check('no tunnelling through blocks at max speed', tunnel.ok, tunnel.reason || '');
 
+  // ---- particle effects ----
+  const fxRes = await g.page.evaluate(() => {
+    const S = window.SVU;
+    S.ctx.restart();
+    const fx = S.ctx.get('fx');
+    const before = fx.alive;
+    S.ctx.get('fx').burstStar({ x: 0, y: 1, z: S.ctx.get('play').z + 1 });
+    S.loop.advance(0, 1);
+    const afterBurst = fx.alive;
+    // run long enough for every particle to expire
+    for (let i = 0; i < 200; i++) S.loop.advance(0, 1);
+    const settled = fx.alive;
+    // pool must never be exceeded, however hard it is hammered
+    for (let n = 0; n < 400; n++) fx.burstDeath();
+    S.loop.advance(0, 1);
+    return { before, afterBurst, settled, capped: fx.alive, pool: fx.count };
+  });
+  check('particles spawn on pickup', fxRes.afterBurst > fxRes.before,
+    `${fxRes.before} -> ${fxRes.afterBurst}`);
+  check('particles expire', fxRes.settled === 0, `${fxRes.settled} still alive`);
+  check('particle pool is a hard cap', fxRes.capped <= fxRes.pool,
+    `${fxRes.capped} alive, pool ${fxRes.pool}`);
+
   // ---- junction turns ----
   const turnRes = await g.page.evaluate(() => {
     const S = window.SVU;
