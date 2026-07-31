@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { readdirSync, existsSync } from 'node:fs';
 
 export const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-export const BUILD = join(ROOT, 'dist', 'svu-run.html');
+export const BUILD = join(ROOT, 'docs', 'svu-run.html');
 
 const GL_ARGS = [
   '--use-gl=angle',

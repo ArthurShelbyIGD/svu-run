@@ -33,7 +33,7 @@ See [`PROGRESS.md`](PROGRESS.md) for where it is and what is next.
 
 ```bash
 npm install
-npm run build     # -> dist/svu-run.html
+npm run build     # -> docs/svu-run.html  (GitHub Pages serves this)
 npm run smoke     # headless functional test
 npm run shots     # deterministic screenshots -> shots/
 npm run check     # build + smoke, the gate before committing

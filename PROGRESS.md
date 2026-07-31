@@ -16,7 +16,7 @@ capture cleanly.
 
 ### What exists
 
-- Single-file build: `dist/svu-run.html`, ~2.4 MB, fully self-contained.
+- Single-file build: `docs/svu-run.html` (Pages serves /docs), ~2.4 MB, fully self-contained.
   Babylon is tree-shaken and inlined — no CDN, works opened straight off disk.
 - Core: fixed-timestep loop, module registry, event bus, seeded RNG, three
   quality presets with a load-time downgrade benchmark.

@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = dirname(fileURLToPath(import.meta.url));
+const OUT_DIR = 'docs';   // GitHub Pages serves from / or /docs only
 const OUT_NAME = 'svu-run.html';
 const dev = process.argv.includes('--dev');
 
@@ -45,13 +46,13 @@ const safeJs = js.replace(/<\/script/gi, '<\\/script');
 // silently corrupt the output.
 const html = template.replace('/*__SVU_BUNDLE__*/', () => safeJs);
 
-await mkdir(join(root, 'dist'), { recursive: true });
-const outPath = join(root, 'dist', OUT_NAME);
+await mkdir(join(root, OUT_DIR), { recursive: true });
+const outPath = join(root, OUT_DIR, OUT_NAME);
 await writeFile(outPath, html, 'utf8');
 
 // A tiny redirect so the bare repo URL works too. The real file keeps its name.
 await writeFile(
-  join(root, 'dist', 'index.html'),
+  join(root, OUT_DIR, 'index.html'),
   '<!DOCTYPE html><meta charset="utf-8">' +
   '<title>SVU RUN</title>' +
   '<meta http-equiv="refresh" content="0; url=./svu-run.html">' +
@@ -62,7 +63,7 @@ await writeFile(
 
 const s = await stat(outPath);
 const kb = (s.size / 1024).toFixed(0);
-console.log(`build: dist/${OUT_NAME}  ${kb} KB${dev ? '  (dev, unminified)' : ''}`);
+console.log(`build: ${OUT_DIR}/${OUT_NAME}  ${kb} KB${dev ? '  (dev, unminified)' : ''}`);
 
 if (s.size > 6 * 1024 * 1024) {
   console.warn('build: WARNING output exceeds 6 MB — check what got pulled in');
