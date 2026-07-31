@@ -23,6 +23,26 @@ const DIRS = [
   [-1, 0],  // 3: -X
 ];
 
+/**
+ * Half-width of the blend zone either side of a corner, in metres.
+ *
+ * Why this exists at all: the centre line of the path is continuous across a
+ * junction, but positions OFF the centre line are not. Segment A's lateral
+ * axis and segment B's are perpendicular, so a player holding a 2.4m lane
+ * offset teleports 3.4m sideways the instant they cross the corner. That reads
+ * in play as being flung round the bend — the first playtester described it,
+ * unprompted, as "bouncing around the corner".
+ *
+ * Blending the two frames across a short window makes position and heading
+ * continuous, which rounds the corner slightly. Gameplay is untouched: this is
+ * purely the path->world conversion, and collision never leaves path space.
+ */
+const CORNER_BLEND = 3.6;
+
+function smoothstep(t) {
+  return t * t * (3 - 2 * t);
+}
+
 export class Path {
   constructor() {
     /**
@@ -36,6 +56,7 @@ export class Path {
      */
     this.segments = [];
     this._cursor = 0; // last segment index found, for locality of reference
+    this._xz = [0, 0]; // scratch, never reallocated
   }
 
   reset() {
@@ -99,10 +120,62 @@ export class Path {
     return out2;
   }
 
-  /** Yaw in radians such that a mesh's local +Z faces along the path. */
+  /**
+   * Yaw in radians such that a mesh's local +Z faces along the path.
+   * Blended across a corner to match toWorld, so the character rotates through
+   * the turn instead of snapping 90 degrees in one frame.
+   */
   yawAt(s) {
-    const d = DIRS[this.segmentAt(s).dir];
-    return Math.atan2(d[0], d[1]);
+    const bi = this._blendIndexAt(s);
+    if (bi < 0) {
+      const d = DIRS[this.segmentAt(s).dir];
+      return Math.atan2(d[0], d[1]);
+    }
+    const segA = this.segments[bi];
+    const segB = this.segments[bi + 1];
+    const js = segA.s0 + segA.len;
+    const w = smoothstep((s - (js - CORNER_BLEND)) / (2 * CORNER_BLEND));
+    const a = Math.atan2(DIRS[segA.dir][0], DIRS[segA.dir][1]);
+    const b = Math.atan2(DIRS[segB.dir][0], DIRS[segB.dir][1]);
+    // shortest way round, so a +Z to -X turn does not spin the long way
+    let delta = b - a;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    return a + delta * w;
+  }
+
+  /**
+   * Evaluate one segment's frame at path distance `s`, extrapolating freely
+   * outside the segment's own range. Straight lines extrapolate exactly, which
+   * is what makes the corner blend below cheap and correct.
+   */
+  _evalSeg(seg, s, lateral, outXZ) {
+    const d = DIRS[seg.dir];
+    const f = s - seg.s0;
+    // right-hand perpendicular: (dz, -dx)
+    outXZ[0] = seg.ox + d[0] * f + d[1] * lateral;
+    outXZ[1] = seg.oz + d[1] * f - d[0] * lateral;
+    return outXZ;
+  }
+
+  /**
+   * The junction within CORNER_BLEND of `s`, as a segment index pair, or -1.
+   * Returns the index of the segment BEFORE the junction.
+   */
+  _blendIndexAt(s) {
+    const i = this.indexAt(s);
+    const segs = this.segments;
+    const seg = segs[i];
+    // junction at this segment's end
+    if (seg.turn !== 0 && i + 1 < segs.length) {
+      const je = seg.s0 + seg.len;
+      if (Math.abs(s - je) < CORNER_BLEND) return i;
+    }
+    // junction at this segment's start
+    if (i > 0 && segs[i - 1].turn !== 0) {
+      if (Math.abs(s - seg.s0) < CORNER_BLEND) return i - 1;
+    }
+    return -1;
   }
 
   /**
@@ -110,13 +183,26 @@ export class Path {
    * `out3` is [x, y, z] and is written in place — no allocation.
    */
   toWorld(s, lateral, y, out3) {
-    const seg = this.segmentAt(s);
-    const d = DIRS[seg.dir];
-    const f = s - seg.s0;
-    // right-hand perpendicular: (dz, -dx)
-    out3[0] = seg.ox + d[0] * f + d[1] * lateral;
     out3[1] = y;
-    out3[2] = seg.oz + d[1] * f - d[0] * lateral;
+
+    const bi = this._blendIndexAt(s);
+    if (bi < 0) {
+      this._evalSeg(this.segments[this.indexAt(s)], s, lateral, this._xz);
+      out3[0] = this._xz[0];
+      out3[2] = this._xz[1];
+      return out3;
+    }
+
+    const segA = this.segments[bi];
+    const segB = this.segments[bi + 1];
+    const js = segA.s0 + segA.len;
+    const w = smoothstep((s - (js - CORNER_BLEND)) / (2 * CORNER_BLEND));
+
+    this._evalSeg(segA, s, lateral, this._xz);
+    const ax = this._xz[0], az = this._xz[1];
+    this._evalSeg(segB, s, lateral, this._xz);
+    out3[0] = ax + (this._xz[0] - ax) * w;
+    out3[2] = az + (this._xz[1] - az) * w;
     return out3;
   }
 
@@ -164,4 +250,4 @@ export class Path {
   }
 }
 
-export { DIRS };
+export { DIRS, CORNER_BLEND };

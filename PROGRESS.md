@@ -70,6 +70,21 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Fifth finding: a continuous centre line does not mean a continuous path.**
+The second playtest reported "bouncing around the corner". It was real, and it
+was geometric, not a camera artefact: the centre line of the path is continuous
+across a junction, but positions OFF it are not, because the two segments'
+lateral axes are perpendicular. A player holding a 2.4m lane offset teleported
+3.4m sideways the instant they crossed a corner.
+
+No state-based test could see this — every coordinate involved was finite,
+correct and on the path. The fix blends the two segment frames across a 3.6m
+window either side of the junction, which makes both position and heading
+continuous and incidentally rounds the corner. Gameplay is untouched: this is
+purely the path-to-world conversion, and collision never leaves path space.
+There is now a regression check that sweeps the outer lane across every corner
+and measures the largest single-step jump in world space.
+
 **Fourth finding, and the most important one so far: the capture harness lies
 about reflective materials.**
 The track floor shipped as polished rhodium (roughness 0.09). Every captured
@@ -113,7 +128,7 @@ adding polish.
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
 | 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
-| 11 | Turn frequency (42% of chunks) and turn window are untuned guesses | `track/`, `core/config.js` | needs a human playing |
+| 11 | Turn frequency (42% of chunks) is still an untuned guess | `track/` | needs a human playing |
 | 9 | No powerups (wing glide, ruby magnet, shield) | `play/`, `fx/` | Sprint 2 |
 | 10 | No pursuer behind the player — no tension from behind | `world/`, `ai` | Sprint 4 |
 | 7 | No audio at all | `audio/` | Sprint 5 |
@@ -159,5 +174,6 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 1 | Fixed corner discontinuity (3.4m sideways teleport in the outer lane), widened the turn reaction window, added late-turn grace. 32 checks. |
 | 2026-07-31 | 1 | Fixed invisible track (mirror floor blowing out on real hardware), added lane dividers, softened the opening difficulty ramp and start speed after first human playtest. |
 | 2026-07-31 | 1 | Sprint 1 complete: path-space model, 90 degree junction turns with signage, context-sensitive turn input. Smoke test 26 -> 31 checks. Three bugs found by screenshots that no test would have caught. |

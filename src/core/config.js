@@ -31,8 +31,14 @@ export const TUNE = {
   // Within this distance of a corner, left/right means TURN, not lane change.
   // It scales with speed at runtime so the reaction time stays constant
   // rather than shrinking as the run gets faster.
-  turnWindowBase: 11,      // metres at start speed
-  turnWindowPerSpeed: 0.55,// extra metres per m/s above start speed
+  // 11m at start speed gave under a second to spot a corner, decide, and
+  // swipe. The first playtester called corners harsh and was right.
+  turnWindowBase: 19,      // metres at start speed (~1.65s to react)
+  turnWindowPerSpeed: 0.85,// extra metres per m/s above start speed
+  // A turn that lands a fraction late still counts. Without this, an input on
+  // the exact frame you cross the corner is a death, which feels arbitrary
+  // rather than difficult.
+  turnGraceTime: 0.16,     // seconds past the junction that still register
 
   // --- collision volumes ---
   playerRadius: 0.42,

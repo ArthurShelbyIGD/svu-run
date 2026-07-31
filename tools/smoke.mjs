@@ -350,10 +350,26 @@ try {
       const p = track.path;
       const w = [0, 0, 0];
       p.toWorld(play.z, play.x, play.y, w);
+      // Sweep the outer lane across every corner and measure the largest
+      // single-step jump in WORLD space. Before the frame blend this was a
+      // 3.4m instant teleport, which no state-based check could ever see.
+      let maxStep = 0;
+      const a = [0, 0, 0], b = [0, 0, 0];
+      const lat = S.config.tune.laneWidth;
+      for (const seg of p.segments) {
+        if (seg.turn === 0) continue;
+        const js = seg.s0 + seg.len;
+        for (let d = -6; d < 6; d += 0.2) {
+          p.toWorld(js + d, lat, 0, a);
+          p.toWorld(js + d + 0.2, lat, 0, b);
+          const step = Math.hypot(b[0] - a[0], b[2] - a[2]);
+          if (step > maxStep) maxStep = step;
+        }
+      }
       return {
         z: +play.z.toFixed(0), turns: play.turnsMade, alive: play.alive,
         finite: Number.isFinite(w[0]) && Number.isFinite(w[2]),
-        segs: p.segments.length,
+        segs: p.segments.length, maxStep,
       };
     };
     return { correct: run('correct'), never: run('never'), wrong: run('wrong') };
@@ -369,6 +385,8 @@ try {
     !turnRes.wrong.alive,
     `died at ${turnRes.wrong.z}m`);
   check('world stays finite after many corners', turnRes.correct.finite);
+  check('corner path is continuous — no sideways teleport', turnRes.correct.maxStep < 1.2,
+    `largest single-step world jump ${turnRes.correct.maxStep.toFixed(2)}m in the outer lane`);
   check('path segments are pruned, not accumulated',
     turnRes.correct.segs < 40, `${turnRes.correct.segs} segments after ${turnRes.correct.z}m`);
 

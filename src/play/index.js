@@ -167,9 +167,16 @@ export default class Play {
     return T.turnWindowBase + (this.speed - T.startSpeed) * T.turnWindowPerSpeed;
   }
 
+  /** Metres past a corner during which a late turn still counts. */
+  get turnGrace() {
+    return this.ctx.config.tune.turnGraceTime * this.speed;
+  }
+
   /** True when the player is close enough to a corner to be asked to turn. */
   get inTurnZone() {
-    return !!this.junction && (this.junction.s - this.z) <= this.turnWindow;
+    if (!this.junction) return false;
+    const d = this.junction.s - this.z;
+    return d <= this.turnWindow && d >= -this.turnGrace;
   }
 
   _updateJunction() {
@@ -198,7 +205,10 @@ export default class Play {
 
   _checkJunctionCrossed() {
     const j = this.junction;
-    if (!j || this.z < j.s) return;
+    if (!j) return;
+    // Do not judge until the grace period has also elapsed, so a turn landing
+    // a frame or two late still saves the run.
+    if (this.z < j.s + (this._turnOkAt === j.s ? 0 : this.turnGrace)) return;
     if (this._turnOkAt !== j.s) {
       // Ran straight into the backstop wall.
       this.kill('wall');
