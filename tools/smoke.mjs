@@ -160,9 +160,12 @@ try {
     // Find a ground-level star, skipping past obstacles so only the star
     // outcome is under test.
     let target = null;
-    for (let tries = 0; tries < 40 && !target; tries++) {
+    for (let tries = 0; tries < 4000 && !target; tries++) {
       target = track.stars.find((s) => s.z > play.z + 14 && s.y < 1.4) || null;
-      if (!target) S.loop.advance(2, 0);
+      if (target) break;
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      S.loop.advance(1 / 30, 0);
+      if (!play.alive) return { ok: false, reason: 'search run died at ' + play.z.toFixed(0) };
     }
     if (!target) return { ok: false, reason: 'no reachable star found' };
 
@@ -172,9 +175,10 @@ try {
     const off = S.ctx.on('pickup:star', () => collected++);
     const guard = target.z + 6;
     let steps = 0;
-    while (play.z < guard && steps < 4000) {
+    while (play.z < guard && play.alive && steps < 8000) {
       // keep obstacles from ending the run: this test is about stars only
       track.obstacles.length = 0;
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
       S.loop.advance(1 / 60, 0);
       steps++;
     }
@@ -195,10 +199,15 @@ try {
 
     // Search forward for a block, with collision off so the search survives.
     coll.enabled = false;
+    // Corner death is decided in play/, not coll/, so disabling collision is
+    // not enough to keep a search loop alive — it must steer the turns too.
     let target = null;
-    for (let tries = 0; tries < 40 && !target; tries++) {
+    for (let tries = 0; tries < 4000 && !target; tries++) {
       target = track.obstacles.find((o) => o.kind === OB_FULL && o.z > play.z + 14) || null;
-      if (!target) S.loop.advance(2, 0);
+      if (target) break;
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      S.loop.advance(1 / 30, 0);
+      if (!play.alive) return { ok: false, reason: 'search run died at ' + play.z.toFixed(0) };
     }
     if (!target) return { ok: false, reason: 'no block found ahead' };
 
@@ -211,7 +220,8 @@ try {
     coll._prevZ = play.z;
     const guard = target.z + 8;
     let steps = 0;
-    while (play.z < guard && play.alive && steps < 4000) {
+    while (play.z < guard && play.alive && steps < 8000) {
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
       S.loop.advance(1 / 60, 0);
       steps++;
     }
@@ -234,9 +244,12 @@ try {
 
     coll.enabled = false;
     let target = null;
-    for (let tries = 0; tries < 40 && !target; tries++) {
+    for (let tries = 0; tries < 4000 && !target; tries++) {
       target = track.obstacles.find((o) => o.kind === OB_LOW && o.z > play.z + 20) || null;
-      if (!target) S.loop.advance(2, 0);
+      if (target) break;
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      S.loop.advance(1 / 30, 0);
+      if (!play.alive) return { ok: false, reason: 'search run died at ' + play.z.toFixed(0) };
     }
     if (!target) return { ok: false, reason: 'no hurdle found ahead' };
 
@@ -249,9 +262,11 @@ try {
 
     let jumped = false;
     let steps = 0;
-    while (play.z < target.z + 6 && play.alive && steps < 4000) {
-      // jump when the take-off point arrives
-      if (!jumped && target.z - play.z < play.speed * 0.30) {
+    while (play.z < target.z + 6 && play.alive && steps < 8000) {
+      if (play.inTurnZone && play.junction) {
+        play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      } else if (!jumped && target.z - play.z < play.speed * 0.30) {
+        // jump when the take-off point arrives
         play.pushIntent(3);
         jumped = true;
       }
@@ -285,17 +300,29 @@ try {
     const play = S.ctx.get('play');
     const track = S.ctx.get('track');
     const OB_FULL = 2;
-    S.loop.advance(6, 0);
-    const target = track.obstacles.find((o) => o.kind === OB_FULL && o.z > play.z + 14);
+    S.ctx.restart();
+    S.ctx.get('coll').enabled = false;
+    let target = null;
+    for (let tries = 0; tries < 4000 && !target; tries++) {
+      target = track.obstacles.find((o) => o.kind === OB_FULL && o.z > play.z + 14) || null;
+      if (target) break;
+      if (play.inTurnZone && play.junction) play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      S.loop.advance(1 / 30, 0);
+      if (!play.alive) return { ok: false, reason: 'search run died at ' + play.z.toFixed(0) };
+    }
     if (!target) return { ok: false, reason: 'no block ahead' };
     play.lane = play.laneTarget = target.lane;
     play.laneT = 1;
     play.x = target.x;
-    play.speed = S.config.tune.maxSpeed;
-    // step manually at max speed so nothing re-ramps the speed down
+    // Drive coll/ directly at max speed. Stepping z by hand deliberately skips
+    // play.fixedUpdate, which keeps corners out of the picture entirely — this
+    // check is about the collision sweep and nothing else.
+    S.ctx.get('coll').enabled = true;
+    S.ctx.get('coll')._prevZ = play.z;
+    track.obstacles = track.obstacles.filter((o) => o === target);
     const guard = target.z + 6;
     let steps = 0;
-    while (play.z < guard && play.alive && steps < 600) {
+    while (play.z < guard && play.alive && steps < 4000) {
       play.z += S.config.tune.maxSpeed / 60;
       S.ctx.get('coll').fixedUpdate();
       steps++;
