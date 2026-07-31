@@ -46,11 +46,14 @@ export default class Play {
     this._handlers = [];
 
     // --- camera (pre-allocated, no per-frame Vector3 churn) ---
-    this._camPos = new Vector3(0, T.camHeight, -T.camDistance);
     this._camTarget = new Vector3(0, 1, 0);
     this._camInit = false;
     this._wPos = [0, 0, 0];
     this._wTgt = [0, 0, 0];
+    // Camera state lives in PATH space: distance along the path, lateral
+    // offset, height. See renderUpdate for why that matters at corners.
+    this._camS = 0; this._camLat = 0; this._camY = T.camHeight;
+    this._tgtS = 0; this._tgtLat = 0; this._tgtY = 1.2;
 
     // pooled event payloads
     this._pLane = { from: 0, to: 0 };
@@ -371,42 +374,49 @@ export default class Play {
     const kp = 1 - Math.pow(1 - T.camLagPos, dtReal * 60);
     const kr = 1 - Math.pow(1 - T.camLagRot, dtReal * 60);
 
-    // Both camera anchors are sampled in PATH space and converted to world,
-    // which is what makes corners work: the look-ahead point rounds the corner
-    // before the player does, so the camera swings into the new direction
-    // naturally instead of snapping when the heading changes.
     const track = this.ctx.tryGet('track');
     if (!track) return;
     const path = track.path;
 
-    path.toWorld(
-      Math.max(0, this.z - T.camDistance),
-      this.x * 0.55,
-      T.camHeight + this.y * 0.35,
-      this._wPos,
-    );
-    path.toWorld(
-      this.z + T.camLookAhead,
-      this.x * 0.8,
-      1.20 + this.y * 0.55,
-      this._wTgt,
-    );
+    // SMOOTH IN PATH SPACE, NOT WORLD SPACE.
+    //
+    // The previous version lerped the camera's world position towards a target
+    // world position. On a straight that is identical; through a corner it is
+    // not, because a straight line between two points on a right-angled path
+    // cuts across the inside of the bend — taking the camera through the
+    // barrier and the corner wall. The playtester reported it as still
+    // "bouncing off the barrier" after the character's own corner motion had
+    // been fixed.
+    //
+    // Smoothing the path DISTANCE and the lateral offset instead, then
+    // converting once, means the camera is always exactly on the path. It
+    // physically cannot cut a corner or pass through track geometry.
+    const wantS = Math.max(0, this.z - T.camDistance);
+    const wantLat = this.x * 0.55;
+    const wantY = T.camHeight + this.y * 0.35;
+    const wantTgtS = this.z + T.camLookAhead;
+    const wantTgtLat = this.x * 0.8;
+    const wantTgtY = 1.20 + this.y * 0.55;
 
     if (!this._camInit) {
-      // First frame of a run: snap, do not glide in from the last run's pose.
-      this._camPos.set(this._wPos[0], this._wPos[1], this._wPos[2]);
-      this._camTarget.set(this._wTgt[0], this._wTgt[1], this._wTgt[2]);
+      this._camS = wantS; this._camLat = wantLat; this._camY = wantY;
+      this._tgtS = wantTgtS; this._tgtLat = wantTgtLat; this._tgtY = wantTgtY;
       this._camInit = true;
     } else {
-      this._camPos.x += (this._wPos[0] - this._camPos.x) * kp;
-      this._camPos.y += (this._wPos[1] - this._camPos.y) * kp;
-      this._camPos.z += (this._wPos[2] - this._camPos.z) * kp;
-      this._camTarget.x += (this._wTgt[0] - this._camTarget.x) * kr;
-      this._camTarget.y += (this._wTgt[1] - this._camTarget.y) * kr;
-      this._camTarget.z += (this._wTgt[2] - this._camTarget.z) * kr;
+      // Forward motion is never lagged — lagging it reads as stutter.
+      this._camS = wantS;
+      this._tgtS = wantTgtS;
+      this._camLat += (wantLat - this._camLat) * kp;
+      this._camY += (wantY - this._camY) * kp;
+      this._tgtLat += (wantTgtLat - this._tgtLat) * kr;
+      this._tgtY += (wantTgtY - this._tgtY) * kr;
     }
 
-    cam.position.copyFrom(this._camPos);
+    path.toWorld(this._camS, this._camLat, this._camY, this._wPos);
+    path.toWorld(this._tgtS, this._tgtLat, this._tgtY, this._wTgt);
+
+    cam.position.set(this._wPos[0], this._wPos[1], this._wPos[2]);
+    this._camTarget.set(this._wTgt[0], this._wTgt[1], this._wTgt[2]);
     cam.setTarget(this._camTarget);
 
     // Widen the lens with speed. Small effect, big contribution to feel.

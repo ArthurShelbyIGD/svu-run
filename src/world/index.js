@@ -4,8 +4,8 @@
 // decorative (non-collidable) prop. The track surface itself belongs to track/.
 
 import {
-  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3, Color4,
-  MeshBuilder, StandardMaterial, DynamicTexture, Texture, Scene,
+  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3,
+  DynamicTexture, Texture, Scene, Layer,
 } from '../core/bjs.js';
 
 export default class World {
@@ -59,43 +59,43 @@ export default class World {
     // Vertical gradient, painted once into a tall thin texture.
     const H = 256;
     const tex = new DynamicTexture('skyGrad', { width: 4, height: H }, scene, false);
-    const ctx2d = tex.getContext();
-    const grad = ctx2d.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0.00, '#c9cdd8');   // cool above
-    grad.addColorStop(0.42, '#e8e4dd');
-    grad.addColorStop(0.62, '#f6f1e8');   // bright band at the horizon
-    grad.addColorStop(0.78, '#efe6d6');
-    grad.addColorStop(1.00, '#ded2bd');   // warm bounce below
-    ctx2d.fillStyle = grad;
-    ctx2d.fillRect(0, 0, 4, H);
+    const c = tex.getContext();
+    const grad = c.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0.00, '#aeb6c6');   // cool above
+    grad.addColorStop(0.30, '#cdd0d4');
+    grad.addColorStop(0.55, '#eae4da');
+    grad.addColorStop(0.72, '#f7f1e6');   // bright band at the horizon
+    grad.addColorStop(0.86, '#ece1cd');
+    grad.addColorStop(1.00, '#d8c9ae');   // warm bounce below
+    c.fillStyle = grad;
+    c.fillRect(0, 0, 4, H);
     tex.update(false);
     tex.wrapU = Texture.CLAMP_ADDRESSMODE;
     tex.wrapV = Texture.CLAMP_ADDRESSMODE;
     this.skyTex = tex;
 
-    const mat = new StandardMaterial('skyMat', scene);
-    mat.emissiveTexture = tex;
-    mat.diffuseColor = Color3.Black();
-    mat.specularColor = Color3.Black();
-    mat.disableLighting = true;
-    mat.backFaceCulling = false;
-    mat.freeze();
-    this.skyMat = mat;
+    // A background Layer, not a sky sphere.
+    //
+    // The sphere version was a mistake in two ways at once. Its radius (450m)
+    // exceeded the camera's far plane (320m), so it was clipped into a visible
+    // bubble with the clear colour showing through outside it; and at a usable
+    // segment count a UV sphere shows banding along its seams. A background
+    // layer is a single screen-space quad: it cannot be clipped, cannot band,
+    // costs one textured fullscreen draw, and renders behind everything.
+    //
+    // It does not rotate with the camera, which for a chase-cam runner is
+    // correct rather than a compromise — it reads as atmospheric haze, and the
+    // alternative would visibly swing the sky sideways at every corner.
+    const bg = new Layer('sky', null, scene, true);
+    bg.texture = tex;
+    this.skyLayer = bg;
 
-    const sky = MeshBuilder.CreateSphere('sky', { diameter: 900, segments: 12 }, scene);
-    sky.material = mat;
-    sky.isPickable = false;
-    sky.infiniteDistance = true;   // rides with the camera, never reachable
-    sky.applyFog = false;
-    sky.renderingGroupId = 0;
-    this.sky = sky;
-
-    // Fog colour is sampled from the horizon band so the track dissolves into
-    // the sky rather than fading towards a colour that is not there.
+    // Fog colour matches the horizon band so the track dissolves into
+    // something that is actually there.
     scene.fogMode = Scene.FOGMODE_LINEAR;
-    scene.fogColor = new Color3(0.955, 0.937, 0.902);
-    scene.fogStart = 70;
-    scene.fogEnd = 235;
+    scene.fogColor = new Color3(0.960, 0.937, 0.895);
+    scene.fogStart = 65;
+    scene.fogEnd = 215;
   }
 
   /** Register a node (and its descendants) as a shadow caster. */
@@ -130,8 +130,7 @@ export default class World {
   }
 
   dispose() {
-    if (this.sky) this.sky.dispose();
-    if (this.skyMat) this.skyMat.dispose();
+    if (this.skyLayer) this.skyLayer.dispose();
     if (this.skyTex) this.skyTex.dispose();
     if (this.shadowGen) this.shadowGen.dispose();
     if (this.key) this.key.dispose();

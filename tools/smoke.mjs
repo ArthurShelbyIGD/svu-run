@@ -358,17 +358,26 @@ try {
   const turnRes = await g.page.evaluate(() => {
     const S = window.SVU;
     const play = S.ctx.get('play');
+    const cam = S.scene.activeCamera;
     const run = (mode) => {
       S.ctx.restart();
       S.ctx.get('coll').enabled = false;   // obstacles are tested elsewhere
+      let maxCamJump = 0;
+      let lastCam = null;
       for (let i = 0; i < 9000; i++) {
         if (play.inTurnZone && play.junction) {
           if (mode === 'correct') play.pushIntent(play.junction.turn < 0 ? 1 : 2);
           if (mode === 'wrong')   play.pushIntent(play.junction.turn < 0 ? 2 : 1);
         }
-        S.loop.advance(1 / 60, 0);
+        S.loop.advance(1 / 60, 1);
+        if (lastCam) {
+          const d = Math.hypot(cam.position.x - lastCam[0], cam.position.z - lastCam[1]);
+          if (d > maxCamJump) maxCamJump = d;
+        }
+        lastCam = [cam.position.x, cam.position.z];
         if (!play.alive) break;
       }
+      window.__maxCamJump = maxCamJump;
       const track = S.ctx.get('track');
       const p = track.path;
       const w = [0, 0, 0];
@@ -392,7 +401,7 @@ try {
       return {
         z: +play.z.toFixed(0), turns: play.turnsMade, alive: play.alive,
         finite: Number.isFinite(w[0]) && Number.isFinite(w[2]),
-        segs: p.segments.length, maxStep,
+        segs: p.segments.length, maxStep, maxCamJump,
       };
     };
     return { correct: run('correct'), never: run('never'), wrong: run('wrong') };
@@ -410,6 +419,11 @@ try {
   check('world stays finite after many corners', turnRes.correct.finite);
   check('corner path is continuous — no sideways teleport', turnRes.correct.maxStep < 1.2,
     `largest single-step world jump ${turnRes.correct.maxStep.toFixed(2)}m in the outer lane`);
+  // The camera is smoothed in path space precisely so it cannot cut a corner
+  // and swing through the barrier. A world-space lerp would show up here as a
+  // large per-frame jump at every junction.
+  check('camera never whips through a corner', turnRes.correct.maxCamJump < 0.9,
+    `largest per-step camera move ${turnRes.correct.maxCamJump.toFixed(2)}m`);
   check('path segments are pruned, not accumulated',
     turnRes.correct.segs < 40, `${turnRes.correct.segs} segments after ${turnRes.correct.z}m`);
 

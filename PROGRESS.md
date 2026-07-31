@@ -76,6 +76,24 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Sixth finding: fixing the object does not fix the observer.**
+After the corner discontinuity was fixed, the playtester still reported
+"bouncing off the barrier". The character's motion was correct by then — the
+camera's was not. It was being smoothed by lerping its WORLD position toward a
+target world position, and a straight line between two points on a right-angled
+path cuts across the inside of the bend, taking the camera through the barrier.
+
+The camera is now smoothed in PATH space — distance along the path and lateral
+offset are smoothed independently, then converted once. It is therefore always
+exactly on the path and physically cannot cut a corner. There is a regression
+check measuring the largest per-frame camera movement through corners.
+
+Related: the sky sphere was a mistake twice over. Its radius (450m) exceeded
+the camera far plane (320m) so it was clipped into a visible bubble with the
+clear colour showing through outside it, and a UV sphere bands along its seams
+at any usable segment count. It is now a background Layer — one screen-space
+quad that cannot be clipped, cannot band, and costs a single draw.
+
 **Fifth finding: a continuous centre line does not mean a continuous path.**
 The second playtest reported "bouncing around the corner". It was real, and it
 was geometric, not a camera artefact: the centre line of the path is continuous
@@ -128,7 +146,7 @@ adding polish.
 
 | # | Issue | Where | Planned |
 |---|---|---|---|
-| 1 | Sky gradient is subtle at eye level; the scene still lacks a strong sense of place | `world/` | Sprint 4 |
+| 1 | Backdrop is a clean gradient but the scene still lacks a sense of place — no landmarks, no depth layers | `world/` | Sprint 4 |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
@@ -180,6 +198,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 1 | Camera moved to path-space smoothing (fixes "bouncing off the barrier"); sky sphere replaced with a background layer (fixes the clipped bubble). 36 checks. |
 | 2026-07-31 | 1 | Added gradient sky + fog, and a pooled thin-instance particle system (pickup, landing, death, corner, speed streaks). 35 checks. |
 | 2026-07-31 | 1 | Fixed corner discontinuity (3.4m sideways teleport in the outer lane), widened the turn reaction window, added late-turn grace. 32 checks. |
 | 2026-07-31 | 1 | Fixed invisible track (mirror floor blowing out on real hardware), added lane dividers, softened the opening difficulty ramp and start speed after first human playtest. |

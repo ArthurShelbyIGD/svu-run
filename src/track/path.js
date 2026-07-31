@@ -37,7 +37,7 @@ const DIRS = [
  * continuous, which rounds the corner slightly. Gameplay is untouched: this is
  * purely the path->world conversion, and collision never leaves path space.
  */
-const CORNER_BLEND = 3.6;
+const CORNER_BLEND = 5.0;
 
 function smoothstep(t) {
   return t * t * (3 - 2 * t);
