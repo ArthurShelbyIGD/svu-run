@@ -39,6 +39,14 @@ export const TUNE = {
   // the exact frame you cross the corner is a death, which feels arbitrary
   // rather than difficult.
   turnGraceTime: 0.16,     // seconds past the junction that still register
+  // Corners slow the player down. Not a difficulty concession — a corner taken
+  // at full sprint gives no time to read the new corridor, and arriving into
+  // an unseen obstacle at speed is the least fair death in the game.
+  cornerSlowFactor: 0.66,  // fraction of normal speed through a corner
+  cornerSlowStart: 24,     // metres before the junction where slowing begins
+  cornerSlowEnd: 10,       // metres after the junction before speeding up
+  cornerSlowInRate: 0.14,  // how fast the slowdown bites (per 1/60s)
+  cornerSlowOutRate: 0.035,// how fast speed is regained — deliberately gentler
 
   // --- collision volumes ---
   playerRadius: 0.42,

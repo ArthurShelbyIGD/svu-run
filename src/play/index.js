@@ -29,6 +29,8 @@ export default class Play {
     this.z = 0;                    // distance travelled, metres
     this.vy = 0;
     this.speed = T.startSpeed;
+    this.baseSpeed = T.startSpeed;
+    this._cornerFactor = 1;
     this.stateTime = 0;
     this.groundedTime = 0;
     this.alive = true;
@@ -154,20 +156,42 @@ export default class Play {
 
     // speed ramp
     const ramp = Math.min(1, this.ctx.time / T.speedRampTime);
-    this.speed = Scalar.Lerp(T.startSpeed, T.maxSpeed, ramp * ramp * (3 - 2 * ramp));
-    this.z += this.speed * dt;
+    this.baseSpeed = Scalar.Lerp(T.startSpeed, T.maxSpeed, ramp * ramp * (3 - 2 * ramp));
 
     this._updateJunction();
+    this._updateCornerSpeed(dt, T);
+    this.speed = this.baseSpeed * this._cornerFactor;
+    this.z += this.speed * dt;
+
     this._consumeIntent(T);
     this._advanceLane(dt, T);
     this._advanceVertical(dt, T);
     this._checkJunctionCrossed();
   }
 
+  /**
+   * Ease speed down through a corner and back up afterwards.
+   *
+   * Asymmetric on purpose: the slowdown bites quickly so the corner feels
+   * anticipated rather than sprung, and speed is regained gently so the exit
+   * reads as accelerating out of a bend rather than snapping back.
+   */
+  _updateCornerSpeed(dt, T) {
+    const d = this.junction ? this.junction.s - this.z : Infinity;
+    const inCorner = d < T.cornerSlowStart && d > -T.cornerSlowEnd;
+    const want = inCorner ? T.cornerSlowFactor : 1;
+    const rate = want < this._cornerFactor ? T.cornerSlowInRate : T.cornerSlowOutRate;
+    const k = 1 - Math.pow(1 - rate, dt * 60);
+    this._cornerFactor += (want - this._cornerFactor) * k;
+  }
+
   /** Distance within which left/right means "turn" rather than "change lane". */
   get turnWindow() {
     const T = this.ctx.config.tune;
-    return T.turnWindowBase + (this.speed - T.startSpeed) * T.turnWindowPerSpeed;
+    // Scales with baseSpeed, not current speed. Using current speed would
+    // shrink the reaction window at exactly the moment the corner slowdown
+    // kicks in — the window would close as the player approached it.
+    return T.turnWindowBase + (this.baseSpeed - T.startSpeed) * T.turnWindowPerSpeed;
   }
 
   /** Metres past a corner during which a late turn still counts. */
@@ -347,6 +371,8 @@ export default class Play {
     this.laneT = 1;
     this.x = this.y = this.z = this.vy = 0;
     this.speed = T.startSpeed;
+    this.baseSpeed = T.startSpeed;
+    this._cornerFactor = 1;
     this.stateTime = 0;
     this.groundedTime = 0;
     this.alive = true;
