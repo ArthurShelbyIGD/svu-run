@@ -16,9 +16,9 @@ export const TUNE = {
   viewDistance: 180,       // metres of track kept alive ahead of the player
 
   // --- movement feel ---
-  startSpeed: 14,          // metres/sec at run start
+  startSpeed: 11.5,        // metres/sec at run start
   maxSpeed: 34,
-  speedRampTime: 180,      // seconds to reach maxSpeed
+  speedRampTime: 220,      // seconds to reach maxSpeed
   laneChangeTime: 0.16,    // seconds to slide between lanes
   jumpHeight: 2.3,         // metres
   jumpTime: 0.62,          // seconds airborne at base speed

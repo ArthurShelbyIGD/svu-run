@@ -38,12 +38,14 @@ const POSES = [
     name: 'hero',
     viewport: 'desktop',
     time: 6,
+    framing: [26, 45],
     note: 'default chase view, mid-run — the shot the whole game is judged on',
   },
   {
     name: 'phone',
     viewport: 'phone',
     time: 6,
+    framing: [26, 45],
     note: 'portrait, the way most people will actually see it',
   },
   {
@@ -86,12 +88,14 @@ const POSES = [
     name: 'obstacles',
     viewport: 'desktop',
     time: 30,
+    framing: [16, 30],
     note: 'gameplay read — can you parse the obstacles in time?',
   },
   {
     name: 'phone-obstacles',
     viewport: 'phone',
     time: 30,
+    framing: [16, 30],
     note: 'the same read, in portrait, where it actually matters',
   },
   {
@@ -170,6 +174,33 @@ try {
         play._camInit = false;
         S.loop.advance(0, 3);
       }, pose.approachJunction);
+    }
+
+    // Capture mode disables collision, so an unsteered player will happily
+    // come to rest inside a solid block — which produced a "hero" shot that was
+    // 90% the inside of an obstacle. Seek to a position framed relative to the
+    // nearest obstacle instead.
+    if (pose.framing) {
+      await page.evaluate(([minA, maxA]) => {
+        const S = window.SVU;
+        const play = S.ctx.get('play');
+        const track = S.ctx.get('track');
+        const gap = () => {
+          let best = Infinity;
+          for (const o of track.obstacles) {
+            const d = o.z - play.z;
+            if (d > 0 && d < best) best = d;
+          }
+          return best;
+        };
+        for (let i = 0; i < 20000; i++) {
+          const g = gap();
+          if (g >= minA && g <= maxA) break;
+          S.loop.advance(1 / 60, 0);
+        }
+        play._camInit = false;
+        S.loop.advance(0, 3);
+      }, [pose.framing[0], pose.framing[1]]);
     }
 
     if (pose.setup) {

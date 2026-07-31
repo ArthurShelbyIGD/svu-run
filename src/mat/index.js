@@ -22,6 +22,7 @@ export const PALETTE = {
   ruby:       { r: 0.760, g: 0.090, b: 0.180 },
   cream:      { r: 0.960, g: 0.940, b: 0.905 },
   shadowCool: { r: 0.520, g: 0.545, b: 0.610 },
+  trackDark:  { r: 0.255, g: 0.270, b: 0.320 },
 };
 
 export default class Materials {
@@ -157,6 +158,18 @@ export default class Materials {
     this.metal('rhodium',    PALETTE.rhodium,    0.09);
     this.metal('darkChrome', PALETTE.darkChrome, 0.11);
     this.metal('ruby',       PALETTE.ruby,       0.10);
+
+    // The track floor is NOT a mirror, and that is a deliberate correction.
+    //
+    // It shipped at roughness 0.09 — polished rhodium — which looked correct in
+    // the software-rendered test harness and rendered almost pure white on real
+    // hardware, because a mirror at a grazing angle reflects the bright horizon
+    // of the studio environment. Against a cream backdrop the track simply
+    // vanished and the character appeared to run through empty space.
+    //
+    // A satin finish keeps the jewellery language while giving the surface its
+    // own value instead of borrowing the sky's.
+    this.metal('trackFloor', PALETTE.trackDark, 0.42);
 
     // Signage gold: double-sided, because arrows are viewed from whichever
     // side the corner happens to face.

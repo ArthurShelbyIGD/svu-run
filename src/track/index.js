@@ -94,7 +94,7 @@ export default class Track {
     this.floorProto = MeshBuilder.CreateBox('floor', {
       width: trackWidth, height: 0.35, depth: T.tileLength,
     }, this.ctx.scene);
-    this.floorProto.material = mat.get('rhodium');
+    this.floorProto.material = mat.get('trackFloor');
     this.floorProto.isPickable = false;
     this.floorProto.receiveShadows = true;
 
@@ -104,11 +104,22 @@ export default class Track {
     this.railProto.material = mat.get('yellowGold');
     this.railProto.isPickable = false;
 
+    // Lane dividers. Not decoration: in a three-lane runner the player needs
+    // to see where the lanes are, and inlaid gold lines give the floor a
+    // readable structure and a sense of speed as they stream past.
+    this.laneLineProto = MeshBuilder.CreateBox('laneLine', {
+      width: 0.10, height: 0.06, depth: T.tileLength * 0.62,
+    }, this.ctx.scene);
+    this.laneLineProto.material = mat.get('yellowGold');
+    this.laneLineProto.isPickable = false;
+
     for (let i = 0; i < this.tileCount; i++) {
       const floor = i === 0 ? this.floorProto : this.floorProto.createInstance(`floor${i}`);
       const railL = i === 0 ? this.railProto : this.railProto.createInstance(`railL${i}`);
       const railR = this.railProto.createInstance(`railR${i}`);
-      const tile = { index: i, floor, railL, railR, z: 0 };
+      const lineL = i === 0 ? this.laneLineProto : this.laneLineProto.createInstance(`lineL${i}`);
+      const lineR = this.laneLineProto.createInstance(`lineR${i}`);
+      const tile = { index: i, floor, railL, railR, lineL, lineR, z: 0 };
       this.tiles.push(tile);
     }
     this.headIndex = this.tileCount - 1;
@@ -148,7 +159,7 @@ export default class Track {
     const padProto = MeshBuilder.CreateBox('cornerPad', {
       width: w, height: 0.35, depth: w,
     }, scene);
-    padProto.material = mat.get('rhodium');
+    padProto.material = mat.get('trackFloor');
     padProto.receiveShadows = true;
     padProto.isPickable = false;
     padProto.position.set(this._parkZ, this._parkZ, this._parkZ);
@@ -346,9 +357,16 @@ export default class Track {
     this._syncJunctions();
   }
 
-  /** Difficulty ramps with distance, then plateaus. */
+  /**
+   * Difficulty ramps with distance, then plateaus.
+   *
+   * The first 160m are deliberately flat at zero — long enough to learn that
+   * the track exists, that it moves, and what the controls do, before anything
+   * asks a question. The original ramp started biting immediately, which reads
+   * as "this game is unfair" rather than "I am new at this".
+   */
   difficultyAt(z) {
-    return Math.min(1, z / 1400);
+    return Math.min(1, Math.max(0, (z - 160) / 1500));
   }
 
   _generateChunk() {
@@ -585,6 +603,14 @@ export default class Track {
     tile.floor.position.set(this._w[0], this._w[1], this._w[2]);
     tile.floor.rotation.y = yaw;
 
+    const laneOff = T.laneWidth * 0.5;
+    this.path.toWorld(mid, -laneOff, 0.18, this._w);
+    tile.lineL.position.set(this._w[0], this._w[1], this._w[2]);
+    tile.lineL.rotation.y = yaw;
+    this.path.toWorld(mid, laneOff, 0.18, this._w);
+    tile.lineR.position.set(this._w[0], this._w[1], this._w[2]);
+    tile.lineR.rotation.y = yaw;
+
     const railOff = trackWidth / 2 + 0.15;
     this.path.toWorld(mid, -railOff, 0.275, this._w);
     tile.railL.position.set(this._w[0], this._w[1], this._w[2]);
@@ -622,6 +648,7 @@ export default class Track {
   dispose() {
     for (const t of this.tiles) {
       t.floor.dispose(); t.railL.dispose(); t.railR.dispose();
+      t.lineL.dispose(); t.lineR.dispose();
       if (t.colL) { t.colL.dispose(); t.colR.dispose(); }
     }
     for (const j of this._junctionPool) {

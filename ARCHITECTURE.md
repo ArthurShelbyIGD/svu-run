@@ -147,11 +147,23 @@ npm run shots     deterministic screenshots -> shots/
 npm run check     build + smoke, the gate before committing
 ```
 
-**Read this before trusting a number from the harness:** headless Chromium in
-this container renders through SwiftShader, in software. Visual output is
-faithful and safe to grade against. **Frame timings are not.** They are a
-relative signal between builds only. Real performance verdicts come from a
-real device.
+**Read this before trusting anything the harness produces.** Headless Chromium
+here renders through SwiftShader, in software.
+
+- **Frame timings are not real.** They are a relative signal between builds
+  only. Real performance verdicts come from a real device.
+- **Nor is visual output fully faithful** — a claim this document previously
+  made and which turned out to be wrong. Image-based lighting is where it
+  breaks: the track floor shipped as polished metal (roughness 0.09) and looked
+  like a correct dark surface in every captured screenshot, while on real
+  hardware it reflected the bright studio horizon and rendered almost pure
+  white, making the track invisible against the cream backdrop. The player
+  appeared to be running through empty space.
+
+  Treat captures as reliable for geometry, silhouette, layout, composition and
+  gross colour. Treat them as *suspect* for anything whose appearance is
+  dominated by reflection: mirror-finish metal, glass, water, strong IBL.
+  Those need checking on a real GPU before they are called done.
 
 Waits in the tooling are frame-based or game-time-based, never wall-clock,
 because software rendering is 10–20x slower than a GPU and wall-clock waits

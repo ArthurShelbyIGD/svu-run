@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "corner",
-      "file": "corner.png",
-      "viewport": "desktop",
+      "name": "phone",
+      "file": "phone.png",
+      "viewport": "phone",
       "preset": "high",
-      "note": "approaching a junction — does the corner read as a corner?",
+      "note": "portrait, the way most people will actually see it",
       "errors": []
     }
   ]

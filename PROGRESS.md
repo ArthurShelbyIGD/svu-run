@@ -70,6 +70,22 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Fourth finding, and the most important one so far: the capture harness lies
+about reflective materials.**
+The track floor shipped as polished rhodium (roughness 0.09). Every captured
+screenshot showed a plausible dark surface. On real hardware it reflected the
+bright studio horizon at a grazing angle and rendered almost pure white against
+a cream backdrop — the track was invisible and the player appeared to run
+through empty space. Nobody would have found this without opening the build on
+a real GPU.
+
+`ARCHITECTURE.md` section 7 previously claimed captures were visually faithful.
+That claim is now corrected: captures are reliable for geometry, silhouette,
+layout and gross colour, and *suspect* for anything dominated by reflection.
+The track floor is now a satin finish with its own value rather than borrowing
+the sky's, plus inlaid gold lane dividers — which also give the three lanes a
+readable structure and a strong sense of speed.
+
 **Third finding: three of the corner bugs were invisible to tests.**
 The turn logic passed every functional check while being unplayable, because
 the tests could only see state, not the screen. Screenshots caught: corners
@@ -92,7 +108,7 @@ adding polish.
 | # | Issue | Where | Planned |
 |---|---|---|---|
 | 1 | Backdrop is a flat blown-out cream; no sky or depth treatment | `main.js` clear colour | Sprint 4 |
-| 2 | Track floor reads dark and muddy — it mirrors a dark env | `mat/`, `track/` | Sprint 2 |
+| 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
@@ -143,4 +159,5 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 1 | Fixed invisible track (mirror floor blowing out on real hardware), added lane dividers, softened the opening difficulty ramp and start speed after first human playtest. |
 | 2026-07-31 | 1 | Sprint 1 complete: path-space model, 90 degree junction turns with signage, context-sensitive turn input. Smoke test 26 -> 31 checks. Three bugs found by screenshots that no test would have caught. |
