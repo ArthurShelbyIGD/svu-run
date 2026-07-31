@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "wide",
-      "file": "wide.png",
+      "name": "corner",
+      "file": "corner.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "wide establishing shot — reads the track and the world silhouette",
+      "note": "approaching a junction — does the corner read as a corner?",
       "errors": []
     }
   ]

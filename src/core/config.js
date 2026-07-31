@@ -27,6 +27,13 @@ export const TUNE = {
   coyoteTime: 0.09,        // grace period to still jump after leaving ground
   inputBuffer: 0.14,       // how early an input still counts
 
+  // --- junction turns ---
+  // Within this distance of a corner, left/right means TURN, not lane change.
+  // It scales with speed at runtime so the reaction time stays constant
+  // rather than shrinking as the run gets faster.
+  turnWindowBase: 11,      // metres at start speed
+  turnWindowPerSpeed: 0.55,// extra metres per m/s above start speed
+
   // --- collision volumes ---
   playerRadius: 0.42,
   playerHeight: 1.5,

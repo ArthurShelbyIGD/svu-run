@@ -121,7 +121,19 @@ export async function waitFrames(page, n, timeout = 60000) {
  */
 export async function fastForward(page, seconds, renderSteps = 8) {
   return page.evaluate(
-    ([s, r]) => window.SVU.loop.advance(s, r),
+    ([s, r]) => {
+      const S = window.SVU;
+      S.loop.advance(s, r);
+      // The camera is smoothed towards the player over time. Jumping the
+      // simulation 25 seconds forward instantly leaves it hundreds of metres
+      // behind, and every screenshot is then taken from the wrong place —
+      // which looked like "the corner geometry is tiny and unreadable" rather
+      // than like a camera bug. Snap it, then re-settle.
+      const play = S.ctx.tryGet('play');
+      if (play) play._camInit = false;
+      S.loop.advance(0, 3);
+      return S.ctx.time;
+    },
     [seconds, renderSteps],
   );
 }

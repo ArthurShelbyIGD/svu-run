@@ -151,6 +151,28 @@ export const TEMPLATES = [
 ];
 
 /**
+ * Chunks that END IN A TURN use these instead.
+ *
+ * A junction already demands a decision under time pressure; stacking an
+ * obstacle on top of it produces the kind of death players correctly read as
+ * unfair. So approach chunks stay clear, and carry stars as a reward for
+ * committing to the corner rather than braking mentally.
+ */
+export const TURN_TEMPLATES = [
+  { name: 'turn-clear', diff: 0, items: [], stars: [{ t: 0.15, lane: 1, n: 8, gap: 2.2 }] },
+  { name: 'turn-early-hurdle', diff: 0.4, items: [{ t: 0.20, lane: 1, kind: OB.LOW }],
+    stars: [{ t: 0.18, lane: 1, n: 5, gap: 2.0, arc: true }] },
+  { name: 'turn-early-block', diff: 0.7, items: [{ t: 0.18, lane: 0, kind: OB.FULL }],
+    stars: [{ t: 0.40, lane: 2, n: 5, gap: 2.2 }] },
+];
+
+/** Pick a turn-approach chunk appropriate to difficulty. */
+export function pickTurnTemplate(rng, difficulty) {
+  const usable = TURN_TEMPLATES.filter((t) => t.diff <= difficulty + 0.15);
+  return usable.length ? rng.pick(usable) : TURN_TEMPLATES[0];
+}
+
+/**
  * Prove every template is survivable.
  *
  * A lane is passable at a moment if it is empty, or holds an obstacle the
@@ -162,7 +184,7 @@ export const TEMPLATES = [
  * Throws with the offending template name. Called once at boot.
  */
 export function validateTemplates(templates = TEMPLATES, laneCount = 3) {
-  for (const tpl of templates) {
+  for (const tpl of templates.concat(TURN_TEMPLATES)) {
     // bucket items by simultaneous t
     const groups = [];
     for (const it of [...tpl.items].sort((a, b) => a.t - b.t)) {

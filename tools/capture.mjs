@@ -111,6 +111,28 @@ const POSES = [
     note: 'results screen',
   },
   {
+    name: 'corner',
+    viewport: 'desktop',
+    time: 20,
+    approachJunction: 20,
+    note: 'approaching a junction — does the corner read as a corner?',
+  },
+  {
+    name: 'corner-wide',
+    viewport: 'desktop',
+    time: 20,
+    approachJunction: 16,
+    camera: [9, 8.5, -11, 0, 1.2, 10],
+    note: 'corner geometry from outside — pad, wall and rail cutaway',
+  },
+  {
+    name: 'phone-corner',
+    viewport: 'phone',
+    time: 20,
+    approachJunction: 20,
+    note: 'the corner read in portrait, where reaction time is tightest',
+  },
+  {
     name: 'wide',
     viewport: 'desktop',
     time: 10,
@@ -133,6 +155,22 @@ try {
     });
 
     await fastForward(page, pose.time);
+
+    // Seek to a fixed distance before the next corner. Guessing a time landed
+    // the "corner" shots 60m short of an actual junction, which made the
+    // corner look unreadable when the real problem was that it was far away.
+    if (pose.approachJunction) {
+      await page.evaluate((want) => {
+        const S = window.SVU;
+        const play = S.ctx.get('play');
+        for (let i = 0; i < 20000; i++) {
+          if (play.junction && (play.junction.s - play.z) <= want) break;
+          S.loop.advance(1 / 60, 0);
+        }
+        play._camInit = false;
+        S.loop.advance(0, 3);
+      }, pose.approachJunction);
+    }
 
     if (pose.setup) {
       await page.evaluate(pose.setup);

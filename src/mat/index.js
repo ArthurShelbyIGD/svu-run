@@ -158,6 +158,11 @@ export default class Materials {
     this.metal('darkChrome', PALETTE.darkChrome, 0.11);
     this.metal('ruby',       PALETTE.ruby,       0.10);
 
+    // Signage gold: double-sided, because arrows are viewed from whichever
+    // side the corner happens to face.
+    this.metal('signGold', PALETTE.yellowGold, 0.24);
+    this.mutate('signGold', (m) => { m.backFaceCulling = false; });
+
     // enamel(name, colour, roughness)
     this.enamel('cream',  PALETTE.cream,      0.55);
     this.enamel('shadow', PALETTE.shadowCool, 0.62);

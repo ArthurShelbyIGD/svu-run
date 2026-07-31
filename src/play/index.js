@@ -36,6 +36,11 @@ export default class Play {
     // --- input ---
     this._buffered = INTENT.NONE;
     this._bufferAge = 0;
+    // junction state
+    this.junction = null;    // the corner currently being approached
+    this._turnOkAt = -1;     // path distance of the corner the player has earned
+    this.turnsMade = 0;
+    this._pTurn = { dir: 0 };
     this._touchId = null;
     this._touchStart = { x: 0, y: 0, t: 0 };
     this._handlers = [];
@@ -43,7 +48,9 @@ export default class Play {
     // --- camera (pre-allocated, no per-frame Vector3 churn) ---
     this._camPos = new Vector3(0, T.camHeight, -T.camDistance);
     this._camTarget = new Vector3(0, 1, 0);
-    this._tmp = new Vector3();
+    this._camInit = false;
+    this._wPos = [0, 0, 0];
+    this._wTgt = [0, 0, 0];
 
     // pooled event payloads
     this._pLane = { from: 0, to: 0 };
@@ -147,9 +154,58 @@ export default class Play {
     this.speed = Scalar.Lerp(T.startSpeed, T.maxSpeed, ramp * ramp * (3 - 2 * ramp));
     this.z += this.speed * dt;
 
+    this._updateJunction();
     this._consumeIntent(T);
     this._advanceLane(dt, T);
     this._advanceVertical(dt, T);
+    this._checkJunctionCrossed();
+  }
+
+  /** Distance within which left/right means "turn" rather than "change lane". */
+  get turnWindow() {
+    const T = this.ctx.config.tune;
+    return T.turnWindowBase + (this.speed - T.startSpeed) * T.turnWindowPerSpeed;
+  }
+
+  /** True when the player is close enough to a corner to be asked to turn. */
+  get inTurnZone() {
+    return !!this.junction && (this.junction.s - this.z) <= this.turnWindow;
+  }
+
+  _updateJunction() {
+    // Only ever look up a NEW corner when there is no current one.
+    //
+    // The obvious version of this — "refresh whenever the cached corner is
+    // behind us" — is silently broken: z advances at the top of the step, so
+    // on the exact step the player crosses a corner the cached junction is
+    // already behind them and gets replaced by the *next* one. The crossing is
+    // then never checked, and running straight through a wall costs nothing.
+    // _checkJunctionCrossed() is what clears this, once it has had its say.
+    if (this.junction) {
+      // Capture mode drives an unsteered player, so it would die at the first
+      // corner and no screenshot past 384m would ever exist. Autopilot the
+      // turns instead. Gameplay is unaffected: captureMode is only ever set by
+      // the screenshot harness.
+      if (this.ctx.config.captureMode && this.inTurnZone) {
+        this._turnOkAt = this.junction.s;
+      }
+      return;
+    }
+    const track = this.ctx.tryGet('track');
+    if (!track) return;
+    this.junction = track.nextJunction(this.z);
+  }
+
+  _checkJunctionCrossed() {
+    const j = this.junction;
+    if (!j || this.z < j.s) return;
+    if (this._turnOkAt !== j.s) {
+      // Ran straight into the backstop wall.
+      this.kill('wall');
+      return;
+    }
+    this.turnsMade++;
+    this.junction = null;
   }
 
   _consumeIntent(T) {
@@ -158,6 +214,23 @@ export default class Play {
 
     if (i === INTENT.LEFT || i === INTENT.RIGHT) {
       const dir = i === INTENT.LEFT ? -1 : 1;
+
+      // Context-sensitive: near a corner, sideways input means TURN. Lane
+      // changes are suppressed entirely in the turn zone — a player who
+      // meant to turn and got a lane change instead would rightly call that
+      // broken, and there is no way to tell the two intents apart.
+      if (this.inTurnZone) {
+        if (dir === this.junction.turn) {
+          this._turnOkAt = this.junction.s;
+          this._pTurn.dir = dir;
+          this.ctx.emit(EV.PLAYER_TURN, this._pTurn);
+        }
+        // A wrong-way input is ignored rather than fatal, so the player can
+        // correct. Failing to turn at all is what kills.
+        this._buffered = INTENT.NONE;
+        return;
+      }
+
       const next = this.laneTarget + dir;
       if (next >= 0 && next < T.laneCount) {
         this._pLane.from = this.laneTarget;
@@ -266,10 +339,13 @@ export default class Play {
     this.alive = true;
     this._buffered = INTENT.NONE;
     this._bufferAge = 0;
+    this.junction = null;
+    this._turnOkAt = -1;
+    this.turnsMade = 0;
     this.camLocked = false;
-    // Snap the camera rather than letting it fly in from the last run's pose.
-    this._camPos.set(0, T.camHeight, -T.camDistance);
-    this._camTarget.set(0, 1.20, T.camLookAhead);
+    this._camInit = false;
+    // _camInit=false makes the next renderUpdate snap rather than glide in
+    // from wherever the previous run ended.
   }
 
   // ---- camera ----------------------------------------------------------
@@ -285,20 +361,42 @@ export default class Play {
     const kp = 1 - Math.pow(1 - T.camLagPos, dtReal * 60);
     const kr = 1 - Math.pow(1 - T.camLagRot, dtReal * 60);
 
-    // The camera follows lateral movement only partially — full tracking makes
-    // lane changes feel weightless, no tracking makes them feel disconnected.
-    const wantX = this.x * 0.55;
-    const wantY = T.camHeight + this.y * 0.35;
-    const wantZ = this.z - T.camDistance;
+    // Both camera anchors are sampled in PATH space and converted to world,
+    // which is what makes corners work: the look-ahead point rounds the corner
+    // before the player does, so the camera swings into the new direction
+    // naturally instead of snapping when the heading changes.
+    const track = this.ctx.tryGet('track');
+    if (!track) return;
+    const path = track.path;
 
-    this._camPos.x += (wantX - this._camPos.x) * kp;
-    this._camPos.y += (wantY - this._camPos.y) * kp;
-    this._camPos.z = wantZ; // never lag forward motion, it reads as stutter
+    path.toWorld(
+      Math.max(0, this.z - T.camDistance),
+      this.x * 0.55,
+      T.camHeight + this.y * 0.35,
+      this._wPos,
+    );
+    path.toWorld(
+      this.z + T.camLookAhead,
+      this.x * 0.8,
+      1.20 + this.y * 0.55,
+      this._wTgt,
+    );
+
+    if (!this._camInit) {
+      // First frame of a run: snap, do not glide in from the last run's pose.
+      this._camPos.set(this._wPos[0], this._wPos[1], this._wPos[2]);
+      this._camTarget.set(this._wTgt[0], this._wTgt[1], this._wTgt[2]);
+      this._camInit = true;
+    } else {
+      this._camPos.x += (this._wPos[0] - this._camPos.x) * kp;
+      this._camPos.y += (this._wPos[1] - this._camPos.y) * kp;
+      this._camPos.z += (this._wPos[2] - this._camPos.z) * kp;
+      this._camTarget.x += (this._wTgt[0] - this._camTarget.x) * kr;
+      this._camTarget.y += (this._wTgt[1] - this._camTarget.y) * kr;
+      this._camTarget.z += (this._wTgt[2] - this._camTarget.z) * kr;
+    }
+
     cam.position.copyFrom(this._camPos);
-
-    this._camTarget.x += (this.x * 0.8 - this._camTarget.x) * kr;
-    this._camTarget.y += ((1.20 + this.y * 0.55) - this._camTarget.y) * kr;
-    this._camTarget.z = this.z + T.camLookAhead;
     cam.setTarget(this._camTarget);
 
     // Widen the lens with speed. Small effect, big contribution to feel.

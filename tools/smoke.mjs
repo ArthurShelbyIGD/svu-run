@@ -123,21 +123,29 @@ try {
     S.ctx.get('coll').enabled = false;
     const OB_FULL = 2;
     const groups = new Map();
+    const play = S.ctx.get('play');
     let scanned = 0;
-    for (let pass = 0; pass < 60; pass++) {
+    // Corners kill independently of collision (that check lives in play/, not
+    // coll/), so the scanner has to actually drive the turns or it stops dead
+    // at the first junction and silently scans 380m instead of several km.
+    for (let pass = 0; pass < 3600; pass++) {
       for (const o of track.obstacles) {
         const key = Math.round(o.z / 1.5);
         if (!groups.has(key)) groups.set(key, new Set());
         if (o.kind === OB_FULL) groups.get(key).add(o.lane);
         scanned++;
       }
-      S.loop.advance(3, 0);
+      if (play.inTurnZone && play.junction) {
+        play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+      }
+      S.loop.advance(1 / 20, 0);
+      if (!play.alive) break;
     }
     let worst = 0;
     for (const s of groups.values()) worst = Math.max(worst, s.size);
-    return { worst, scanned, groups: groups.size, z: S.ctx.get('play').z };
+    return { worst, scanned, groups: groups.size, z: play.z, alive: play.alive };
   });
-  check('no generated group blocks all lanes', solv.worst < 3,
+  check('no generated group blocks all lanes', solv.worst < 3 && solv.z > 2000,
     `worst group blocks ${solv.worst}/3 lanes over ${Math.round(solv.z)}m, ${solv.groups} groups`);
 
   // Star collection: park the player in a star's lane and run through it.
@@ -295,6 +303,47 @@ try {
     return { ok: !play.alive };
   });
   check('no tunnelling through blocks at max speed', tunnel.ok, tunnel.reason || '');
+
+  // ---- junction turns ----
+  const turnRes = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    const run = (mode) => {
+      S.ctx.restart();
+      S.ctx.get('coll').enabled = false;   // obstacles are tested elsewhere
+      for (let i = 0; i < 9000; i++) {
+        if (play.inTurnZone && play.junction) {
+          if (mode === 'correct') play.pushIntent(play.junction.turn < 0 ? 1 : 2);
+          if (mode === 'wrong')   play.pushIntent(play.junction.turn < 0 ? 2 : 1);
+        }
+        S.loop.advance(1 / 60, 0);
+        if (!play.alive) break;
+      }
+      const track = S.ctx.get('track');
+      const p = track.path;
+      const w = [0, 0, 0];
+      p.toWorld(play.z, play.x, play.y, w);
+      return {
+        z: +play.z.toFixed(0), turns: play.turnsMade, alive: play.alive,
+        finite: Number.isFinite(w[0]) && Number.isFinite(w[2]),
+        segs: p.segments.length,
+      };
+    };
+    return { correct: run('correct'), never: run('never'), wrong: run('wrong') };
+  });
+
+  check('turning correctly survives many corners',
+    turnRes.correct.alive && turnRes.correct.turns >= 4,
+    `${turnRes.correct.turns} turns, ${turnRes.correct.z}m`);
+  check('failing to turn ends the run',
+    !turnRes.never.alive && turnRes.never.turns === 0,
+    `died at ${turnRes.never.z}m`);
+  check('turning the wrong way ends the run',
+    !turnRes.wrong.alive,
+    `died at ${turnRes.wrong.z}m`);
+  check('world stays finite after many corners', turnRes.correct.finite);
+  check('path segments are pruned, not accumulated',
+    turnRes.correct.segs < 40, `${turnRes.correct.segs} segments after ${turnRes.correct.z}m`);
 
   await g.context.close();
 

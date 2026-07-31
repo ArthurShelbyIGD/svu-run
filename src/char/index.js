@@ -46,6 +46,7 @@ export default class Character {
     this.phase = 0;
     this._lean = 0;
     this._squash = 1;
+    this._w = [0, 0, 0];
   }
 
   init() {
@@ -173,8 +174,17 @@ export default class Character {
     const T = this.ctx.config.tune;
     const body = this.parts.body;
 
-    // Root follows the simulated player position exactly.
-    this.root.position.set(play.x, play.y, play.z);
+    // The simulation works in path space; the character has to be drawn in
+    // world space, and has to face along the path so corners look like turns
+    // rather than the world sliding sideways underneath a fixed pose.
+    const track = this.ctx.tryGet('track');
+    if (track) {
+      track.path.toWorld(play.z, play.x, play.y, this._w);
+      this.root.position.set(this._w[0], this._w[1], this._w[2]);
+      this.root.rotation.y = track.path.yawAt(play.z);
+    } else {
+      this.root.position.set(play.x, play.y, play.z);
+    }
 
     // Stride frequency scales with speed so the feet don't skate.
     const strideHz = 1.05 + (play.speed / T.maxSpeed) * 1.35;

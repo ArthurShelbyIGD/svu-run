@@ -9,11 +9,10 @@ spread across many token windows survivable.
 
 ## Current state
 
-**Sprint 1 — MOSTLY COMPLETE.** It is a game now. Obstacles, collision,
-collectibles, death and restart all work. Junction turns are the one item
-outstanding, and were always scheduled last.
+**Sprint 1 — COMPLETE.** It is a Temple Run-shaped game: obstacles, collision,
+collectibles, death, restart, and 90 degree junction turns.
 
-Last verified: build passes, 26/26 smoke checks pass, screenshot poses capture
+Last verified: build passes, 31/31 smoke checks pass, screenshot poses capture
 cleanly.
 
 ### What exists
@@ -34,6 +33,15 @@ cleanly.
 - `world/`: key + ambient light, shadow generator, player-following shadow
   frustum.
 - `ui/`: DOM HUD with score and star counter.
+- `track/path.js`: the path model. Path space (distance travelled, lateral
+  offset) is now separate from world space (x, y, z). All gameplay — collision,
+  generation, scoring — stayed in path space and needed no changes for corners;
+  only rendering converts. Headings are restricted to the four cardinal
+  directions so the conversion is exact and corners are always square.
+- Junctions: generated on chunk boundaries, signposted by a backstop wall, a
+  large arrow on that wall, and floor chevrons on the approach. Near a corner a
+  left/right input means TURN, not lane change. Wrong way or no turn ends the
+  run.
 - `track/chunks.js`: 14 hand-authored chunk templates spanning difficulty 0 to
   0.9, assembled by a difficulty-weighted grammar that never repeats a template
   twice running. `validateTemplates()` proves every template survivable at boot
@@ -62,6 +70,15 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Third finding: three of the corner bugs were invisible to tests.**
+The turn logic passed every functional check while being unplayable, because
+the tests could only see state, not the screen. Screenshots caught: corners
+with no visual indication of which way to go; floor arrows foreshortened to
+nothing by a low chase camera; and captures framed from 140m behind the player
+because fast-forwarding the simulation left the smoothed camera stranded. The
+lesson is not "write more tests" — it is that a functional test and a rendered
+frame catch disjoint classes of defect, and a runner needs both.
+
 **Second finding: the profile capture pose earns its place.** The first
 character blockout had a torso nearly as tall as the whole character, which was
 invisible from the default chase camera and obvious the moment a side-on shot
@@ -79,7 +96,8 @@ adding polish.
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
-| 6 | No 90° junction turns yet — still a straight corridor | `track/`, `play/` | Sprint 1 (remaining) |
+| 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
+| 11 | Turn frequency (42% of chunks) and turn window are untuned guesses | `track/`, `core/config.js` | needs a human playing |
 | 9 | No powerups (wing glide, ruby magnet, shield) | `play/`, `fx/` | Sprint 2 |
 | 10 | No pursuer behind the player — no tension from behind | `world/`, `ai` | Sprint 4 |
 | 7 | No audio at all | `audio/` | Sprint 5 |
@@ -89,19 +107,16 @@ adding polish.
 
 ## Next up
 
-**Finish Sprint 1:**
+**Sprint 2 — materials, lighting, powerups, first critic loop.**
 
-1. **90° junction turns** — the thing that makes it Temple Run rather than
-   Subway Surfers. Requires moving from "z is world space" to a path-space
-   model: the track becomes a sequence of segments each with a heading, and
-   world position is derived from distance-along-path plus lane offset. This
-   touches `track/`, `play/` and the camera, so it is the one genuinely
-   architectural item left in the sprint.
-2. **Camera tuning** with a human actually looking at it.
-3. **Difficulty pass** — the ramp is a first guess (`difficultyAt`), never
-   played to failure by a human.
+Before that, three things that need a human rather than a test:
 
-**Then Sprint 2:** material library and studio lighting proper, powerups, and
+1. **Camera tuning** — never looked at by a person while playing.
+2. **Difficulty ramp** — `difficultyAt` is a guess, never played to failure.
+3. **Turn frequency and turn window** — currently 42% of chunks and an
+   11m-plus-speed window. Both are guesses.
+
+**Sprint 2 proper:** material library and studio lighting proper, powerups, and
 the first critic loop against the reference art.
 
 Sprints 0-3 stay solo — these systems are tightly coupled and the
@@ -128,3 +143,4 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 1 | Sprint 1 complete: path-space model, 90 degree junction turns with signage, context-sensitive turn input. Smoke test 26 -> 31 checks. Three bugs found by screenshots that no test would have caught. |
