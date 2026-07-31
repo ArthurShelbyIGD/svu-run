@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "corner",
-      "file": "corner.png",
+      "name": "hero",
+      "file": "hero.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "approaching a junction — does the corner read as a corner?",
+      "note": "default chase view, mid-run — the shot the whole game is judged on",
       "errors": []
     }
   ]

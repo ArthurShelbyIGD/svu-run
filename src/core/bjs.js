@@ -37,6 +37,7 @@ export { Mesh } from '@babylonjs/core/Meshes/mesh';
 export { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 export { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 export { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData';
+export { CreateTorus } from '@babylonjs/core/Meshes/Builders/torusBuilder';
 
 export { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 export { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial';

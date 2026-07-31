@@ -14,13 +14,21 @@ import {
 
 /** Named palette. Keep this list short — a small palette is the art direction. */
 export const PALETTE = {
-  roseGold:   { r: 0.955, g: 0.735, b: 0.575 },
+  // Pushed warmer and more saturated than a literal rose gold. In a dark room
+  // a subtle warm metal reads as "slightly off-white silver" and the face
+  // stops separating from the hood, which is the difference between a
+  // character and a chrome ball with eyes.
+  roseGold:   { r: 0.985, g: 0.660, b: 0.455 },
   yellowGold: { r: 1.000, g: 0.790, b: 0.310 },
-  whiteGold:  { r: 0.945, g: 0.930, b: 0.905 },
+  whiteGold:  { r: 0.965, g: 0.955, b: 0.945 },
   rhodium:    { r: 0.905, g: 0.915, b: 0.930 },
-  darkChrome: { r: 0.340, g: 0.350, b: 0.375 },
+  darkChrome: { r: 0.300, g: 0.310, b: 0.335 },
+  wingChrome: { r: 0.470, g: 0.485, b: 0.530 },
   ruby:       { r: 0.760, g: 0.090, b: 0.180 },
   cream:      { r: 0.960, g: 0.940, b: 0.905 },
+  eyeDark:    { r: 0.055, g: 0.062, b: 0.085 },
+  eyeIris:    { r: 0.180, g: 0.290, b: 0.420 },
+  earInner:   { r: 0.930, g: 0.660, b: 0.560 },
   shadowCool: { r: 0.520, g: 0.545, b: 0.610 },
   trackDark:  { r: 0.255, g: 0.270, b: 0.320 },
 };
@@ -176,6 +184,25 @@ export default class Materials {
     this.metal('signGold', PALETTE.yellowGold, 0.24);
     this.mutate('signGold', (m) => { m.backFaceCulling = false; });
 
+    // --- character ---
+    // Eyes are the single biggest factor in whether the character is
+    // recognisable, so they get their own materials rather than reusing
+    // anything. Near-black and very glossy, with a separate emissive
+    // catchlight, because a chibi eye without a highlight reads as dead.
+    this.enamel('eyeDark', PALETTE.eyeDark, 0.06);
+    this.enamel('eyeIris', PALETTE.eyeIris, 0.10);
+    this.enamel('earInner', PALETTE.earInner, 0.42);
+    this.glow('catchlight', { r: 1, g: 1, b: 1 }, 1.35);
+    this.glow('rubyGlow', PALETTE.ruby, 0.55);
+
+    // The wing membrane is a single-sided sheet, so it must render from both
+    // faces or it disappears whenever the character turns.
+    // Lighter than the structural dark chrome. The membrane is a thin sheet
+    // catching light from one side; at darkChrome's value it rendered as a
+    // black cut-out with no form at all.
+    this.metal('wingChrome', PALETTE.wingChrome, 0.13);
+    this.mutate('wingChrome', (m) => { m.backFaceCulling = false; });
+
     // enamel(name, colour, roughness)
     this.enamel('cream',  PALETTE.cream,      0.55);
     this.enamel('shadow', PALETTE.shadowCool, 0.62);
@@ -203,6 +230,24 @@ export default class Materials {
     m.metallic = 0.0;
     m.roughness = roughness;
     m.environmentIntensity = 1.0;
+    m.freeze();
+    this.cache.set(name, m);
+    return m;
+  }
+
+  /**
+   * Self-lit material. Used for eye catchlights and gem cores — things that
+   * must stay bright regardless of where the character is standing, and which
+   * the bloom pass then blooms into a highlight.
+   */
+  glow(name, col, intensity = 1.0) {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const m = new PBRMaterial(`g_${name}`, this.ctx.scene);
+    m.albedoColor = new Color3(col.r * 0.2, col.g * 0.2, col.b * 0.2);
+    m.emissiveColor = new Color3(col.r * intensity, col.g * intensity, col.b * intensity);
+    m.metallic = 0.0;
+    m.roughness = 0.35;
+    m.environmentIntensity = 0.4;
     m.freeze();
     this.cache.set(name, m);
     return m;

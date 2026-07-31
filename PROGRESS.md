@@ -9,6 +9,11 @@ spread across many token windows survivable.
 
 ## Current state
 
+**Sprint 3 — CHARACTER REBUILT.** The runner now reads as the reference NFT:
+hooded onesie with a framed face opening, warm rose-gold face with oversized
+eyes and catchlights, bear ears with inner colour, a scalloped bat wing with
+finger ribs, and a segmented ruby antenna that whips as it runs.
+
 **Sprint 1 — COMPLETE.** It is a Temple Run-shaped game: obstacles, collision,
 collectibles, death, restart, and 90 degree junction turns.
 
@@ -26,9 +31,10 @@ cleanly.
 - `play/`: keyboard and touch input normalised to four intents, lane/jump/slide
   state machine with input buffering and coyote time, smoothed chase camera
   with speed-based FOV.
-- `char/`: proportion blockout of the character — oversized head, bear-eared
-  hood, mitten hands, boot feet, wing, ruby antenna. Procedural run/jump/slide
-  animation driven by a phase value.
+- `char/`: the character proper, built entirely from primitives plus one
+  hand-authored wing mesh. Squash-and-stretch, arm follow-through, head
+  counter-rotation against the lean, wing flutter that flares in the air, and a
+  four-segment antenna where each segment lags the one before it.
 - `track/`: pooled, recycling tile strip with rails and thin-instanced columns.
 - `world/`: key + ambient light, shadow generator, player-following shadow
   frustum.
@@ -153,7 +159,8 @@ adding polish.
 | 1 | Zones change the backdrop but the world still has no landmarks or parallax depth layers | `world/` | Sprint 4 |
 | 12 | Gilt zone has the lowest track/background contrast of the five — watch it on a phone in daylight | `world/zones.js` | needs a device |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
-| 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
+| 3 | Fringe under the hood rim still reads weakly; face/hood separation could go further | `char/` | polish |
+| 13 | No pavé surface treatment yet — the stretch goal from PLAN.md section 2 | `mat/` | optional |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
 | 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
@@ -203,6 +210,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 2 | Sprint 3: character rebuilt to resemble the NFT. Face/hood separation, eyes with catchlights, bat wing, antenna, better animation. |
 | 2026-07-31 | 2 | Jewel-box world shipped with five progressive zones. Art direction chosen by comparing three built mockups rather than describing them. |
 | 2026-07-31 | 1 | Camera moved to path-space smoothing (fixes "bouncing off the barrier"); sky sphere replaced with a background layer (fixes the clipped bubble). 36 checks. |
 | 2026-07-31 | 1 | Added gradient sky + fog, and a pooled thin-instance particle system (pickup, landing, death, corner, speed streaks). 35 checks. |
