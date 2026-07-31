@@ -11,6 +11,7 @@
 import {
   Engine, Scene, FreeCamera, Vector3, Color4, DefaultRenderingPipeline,
 } from './core/bjs.js';
+import * as BJS from './core/bjs.js';
 import { Ctx, EV } from './core/ctx.js';
 import { Config, guessPreset, QUALITY } from './core/config.js';
 import { Rng } from './core/rng.js';
@@ -159,6 +160,9 @@ export async function boot(opts = {}) {
 
   // Expose for the capture/perf harness and for console debugging.
   window.SVU = { ctx, engine, scene, loop, config, pipeline };
+  // Exposed for tools/world-mock.mjs, which patches the live scene to compare
+  // art directions. Costs nothing and never runs in a shipped path.
+  window.SVU.BJS = BJS;
   window.SVU.ready = true;
   return ctx;
 }
