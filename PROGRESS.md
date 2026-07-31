@@ -58,8 +58,12 @@ cleanly.
   particle in the game, zero runtime allocation, pool size driven by the
   quality preset. Emits on star pickup, landing, death and clean corners, plus
   speed streaks above 'low'.
-- `world/`: gradient sky dome and linear fog, so the track dissolves into the
-  distance instead of ending at the clip plane.
+- `world/`: jewel-box art direction — a vast dark interior with overhead gold
+  light shafts and a gem glow. Five zone palettes (Vault, Ruby, Sapphire,
+  Emerald, Gilt) crossfade with distance, so the world visibly evolves during a
+  run and progress has a face beyond the score counter. Textures are baked once
+  at init; fog, environment intensity and bloom all interpolate, so a zone
+  change is a slow reveal rather than a cut.
 - `audio/`: registered stub — module graph proven, no implementation.
 - `tools/`: `smoke.mjs` (26 checks), `capture.mjs` (10 deterministic poses),
   `harness.mjs` (shared browser plumbing).
@@ -146,7 +150,8 @@ adding polish.
 
 | # | Issue | Where | Planned |
 |---|---|---|---|
-| 1 | Backdrop is a clean gradient but the scene still lacks a sense of place — no landmarks, no depth layers | `world/` | Sprint 4 |
+| 1 | Zones change the backdrop but the world still has no landmarks or parallax depth layers | `world/` | Sprint 4 |
+| 12 | Gilt zone has the lowest track/background contrast of the five — watch it on a phone in daylight | `world/zones.js` | needs a device |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
 | 3 | Wing reads as a detached floating slab | `char/` | Sprint 3 |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
@@ -198,6 +203,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-07-31 | 2 | Jewel-box world shipped with five progressive zones. Art direction chosen by comparing three built mockups rather than describing them. |
 | 2026-07-31 | 1 | Camera moved to path-space smoothing (fixes "bouncing off the barrier"); sky sphere replaced with a background layer (fixes the clipped bubble). 36 checks. |
 | 2026-07-31 | 1 | Added gradient sky + fog, and a pooled thin-instance particle system (pickup, landing, death, corner, speed streaks). 35 checks. |
 | 2026-07-31 | 1 | Fixed corner discontinuity (3.4m sideways teleport in the outer lane), widened the turn reaction window, added late-turn grace. 32 checks. |

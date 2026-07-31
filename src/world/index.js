@@ -4,9 +4,10 @@
 // decorative (non-collidable) prop. The track surface itself belongs to track/.
 
 import {
-  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3,
+  DirectionalLight, HemisphericLight, ShadowGenerator, Vector3, Color3, Color4,
   DynamicTexture, Texture, Scene, Layer,
 } from '../core/bjs.js';
+import { ZONES, zoneAt, paintZone } from './zones.js';
 
 export default class World {
   constructor(ctx) {
@@ -25,14 +26,17 @@ export default class World {
     // The environment cubemap does most of the lighting work. These two lights
     // exist mainly to produce a directional shadow and a little extra shaping.
     this.key = new DirectionalLight('key', new Vector3(-0.45, -0.82, 0.36), scene);
-    this.key.intensity = 2.1;
-    this.key.diffuse = new Color3(1.0, 0.96, 0.90);
-    this.key.specular = new Color3(1.0, 0.98, 0.94);
+    // A dark interior wants a tighter, warmer key and much less fill: the
+    // environment cubemap is doing the heavy lifting, and a strong ambient
+    // would wash the room back out to the flat grey we just escaped.
+    this.key.intensity = 2.6;
+    this.key.diffuse = new Color3(1.0, 0.93, 0.83);
+    this.key.specular = new Color3(1.0, 0.97, 0.90);
 
     this.ambient = new HemisphericLight('amb', new Vector3(0, 1, 0), scene);
-    this.ambient.intensity = 0.35;
-    this.ambient.diffuse = new Color3(0.86, 0.89, 0.98);
-    this.ambient.groundColor = new Color3(0.58, 0.52, 0.46);
+    this.ambient.intensity = 0.16;
+    this.ambient.diffuse = new Color3(0.72, 0.78, 0.95);
+    this.ambient.groundColor = new Color3(0.30, 0.25, 0.20);
 
     if (q.shadows && q.shadowMapSize > 0) {
       this.shadowGen = new ShadowGenerator(q.shadowMapSize, this.key);
@@ -53,49 +57,79 @@ export default class World {
    * scene a horizon, it hides the end of the generated track, and it stops
    * distant geometry from reading as hard-edged clutter.
    */
+  /**
+   * Sky and atmosphere.
+   *
+   * A background Layer, not a sky sphere. The sphere version was wrong twice
+   * over: its radius exceeded the camera far plane so it was clipped into a
+   * visible bubble, and a UV sphere bands along its seams at any usable
+   * segment count. A background layer is one screen-space quad — it cannot be
+   * clipped, cannot band, and costs a single draw.
+   *
+   * Two layers, not one, so zones can crossfade into each other. The top layer
+   * carries the incoming zone and its alpha is the blend.
+   */
   _buildBackdrop() {
     const scene = this.ctx.scene;
+    const W = 512;
+    const H = 512;
 
-    // Vertical gradient, painted once into a tall thin texture.
-    const H = 256;
-    const tex = new DynamicTexture('skyGrad', { width: 4, height: H }, scene, false);
-    const c = tex.getContext();
-    const grad = c.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0.00, '#aeb6c6');   // cool above
-    grad.addColorStop(0.30, '#cdd0d4');
-    grad.addColorStop(0.55, '#eae4da');
-    grad.addColorStop(0.72, '#f7f1e6');   // bright band at the horizon
-    grad.addColorStop(0.86, '#ece1cd');
-    grad.addColorStop(1.00, '#d8c9ae');   // warm bounce below
-    c.fillStyle = grad;
-    c.fillRect(0, 0, 4, H);
-    tex.update(false);
-    tex.wrapU = Texture.CLAMP_ADDRESSMODE;
-    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-    this.skyTex = tex;
+    // Bake every zone once. Painting a 512x512 gradient is a few milliseconds;
+    // doing it per frame would not be.
+    this.zoneTextures = ZONES.map((zone, i) => {
+      const tex = new DynamicTexture(`zone${i}`, { width: W, height: H }, scene, true);
+      paintZone(tex.getContext(), zone, W, H);
+      tex.update(false);
+      tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+      return tex;
+    });
 
-    // A background Layer, not a sky sphere.
-    //
-    // The sphere version was a mistake in two ways at once. Its radius (450m)
-    // exceeded the camera's far plane (320m), so it was clipped into a visible
-    // bubble with the clear colour showing through outside it; and at a usable
-    // segment count a UV sphere shows banding along its seams. A background
-    // layer is a single screen-space quad: it cannot be clipped, cannot band,
-    // costs one textured fullscreen draw, and renders behind everything.
-    //
-    // It does not rotate with the camera, which for a chase-cam runner is
-    // correct rather than a compromise — it reads as atmospheric haze, and the
-    // alternative would visibly swing the sky sideways at every corner.
-    const bg = new Layer('sky', null, scene, true);
-    bg.texture = tex;
-    this.skyLayer = bg;
+    this.layerA = new Layer('zoneA', null, scene, true);
+    this.layerA.texture = this.zoneTextures[0];
+    this.layerB = new Layer('zoneB', null, scene, true);
+    this.layerB.texture = this.zoneTextures[1 % ZONES.length];
+    this.layerB.color = new Color4(1, 1, 1, 0);
 
-    // Fog colour matches the horizon band so the track dissolves into
-    // something that is actually there.
+    this._zoneIndex = -1;
+    this._fog = new Color3();
     scene.fogMode = Scene.FOGMODE_LINEAR;
-    scene.fogColor = new Color3(0.960, 0.937, 0.895);
-    scene.fogStart = 65;
-    scene.fogEnd = 215;
+    scene.fogColor = this._fog;
+    scene.fogStart = 55;
+    scene.fogEnd = 195;
+
+    this._applyZone(0);
+  }
+
+  /** Set everything a zone controls, blending into the next by `t`. */
+  _applyZone(distance) {
+    const { index, next, blend } = zoneAt(distance);
+    const a = ZONES[index];
+    const b = ZONES[next];
+    const scene = this.ctx.scene;
+
+    if (index !== this._zoneIndex) {
+      this._zoneIndex = index;
+      this.layerA.texture = this.zoneTextures[index];
+      this.layerB.texture = this.zoneTextures[next];
+      this.zoneName = a.name;
+    }
+    this.layerB.color.a = blend;
+
+    // Fog, environment intensity and bloom all interpolate, so a zone change
+    // is a slow reveal rather than a cut.
+    this._fog.r = a.fog[0] + (b.fog[0] - a.fog[0]) * blend;
+    this._fog.g = a.fog[1] + (b.fog[1] - a.fog[1]) * blend;
+    this._fog.b = a.fog[2] + (b.fog[2] - a.fog[2]) * blend;
+    scene.fogColor = this._fog;
+    scene.clearColor.set(this._fog.r, this._fog.g, this._fog.b, 1);
+
+    scene.environmentIntensity = a.env + (b.env - a.env) * blend;
+    const pipe = this.ctx.pipeline;
+    if (pipe && pipe.bloomEnabled) {
+      const q = this.ctx.config.q;
+      pipe.bloomWeight = (a.bloom + (b.bloom - a.bloom) * blend) * (q.bloomScale / 0.6);
+    }
   }
 
   /** Register a node (and its descendants) as a shadow caster. */
@@ -119,9 +153,10 @@ export default class World {
 
   /** The shadow-casting light follows the player so the map stays tight. */
   renderUpdate() {
-    if (!this.key) return;
     const play = this.ctx.tryGet('play');
     if (!play) return;
+    if (this.layerA) this._applyZone(play.z);
+    if (!this.key) return;
     this.key.position.set(play.x - 14, 24, play.z - 8);
     if (this.shadowGen) {
       this.key.shadowMinZ = 6;
@@ -130,8 +165,9 @@ export default class World {
   }
 
   dispose() {
-    if (this.skyLayer) this.skyLayer.dispose();
-    if (this.skyTex) this.skyTex.dispose();
+    if (this.layerA) this.layerA.dispose();
+    if (this.layerB) this.layerB.dispose();
+    if (this.zoneTextures) for (const t of this.zoneTextures) t.dispose();
     if (this.shadowGen) this.shadowGen.dispose();
     if (this.key) this.key.dispose();
     if (this.ambient) this.ambient.dispose();
