@@ -664,13 +664,21 @@ export default class Character {
       this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 });
       fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
 
-      // elbow cap + wrist cuff, in silver so the joint reads
+      // Elbow cap in silver, so the joint reads.
       const c = new Geo();
       c.at(0, 0.004, 0.004, Math.PI / 2);
       c.add(torus(P.armR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
-      c.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
-      c.add(torus(P.armR * 0.66, 0.026, this.sd + 6, 6, null, 0.85));
-      c.toMesh(`cuff${s}`, scene, mat.get('polRhodium'), elbow);
+      c.toMesh(`elbowCap${s}`, scene, mat.get('polRhodium'), elbow);
+
+      // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
+      // each pavé sleeve meets the silver hand, and from behind it is one of
+      // only three warm accents on the whole back of the piece — the others
+      // being the yoke edge and the hem wire. In silver the sleeve ran straight
+      // into the glove as one undifferentiated pale mass.
+      const gc = new Geo();
+      gc.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
+      gc.add(torus(P.armR * 0.66, 0.028, this.sd + 6, 6, null, 0.85));
+      gc.toMesh(`cuff${s}`, scene, mat.get('polGold'), elbow);
 
       // --- glove ---
       const wrist = new TransformNode(`wrist${s}`, scene);
@@ -778,13 +786,36 @@ export default class Character {
       b.add(ellipsoid({ rx: P.bootR, e1: 0.8, su: this.sd + 4, sv: this.sd }));
       b.at(0, -P.legLen - P.bootR * 0.82, 0.048 - P.bootR * 0.78, 0, 0, 0, 0.74, 0.46, 0.56);
       b.add(ellipsoid({ rx: P.bootR, e1: 0.6, e2: 0.6, su: this.sd + 4, sv: this.sd }));
-      // ankle cuff, where the pavé leg meets the silver boot
-      b.at(0, -P.legLen + 0.006, 0, Math.PI / 2);
-      b.add(torus(P.legR * 0.86, 0.028, this.sd + 6, 6, null, 0.85));
       // sole welt
       b.at(0, -P.legLen - P.bootR * 0.82, 0.055, Math.PI / 2, 0, 0, 1.0, 1.0, 1.42);
       b.add(torus(P.bootR * 0.80, 0.023, this.sd + 8, 6, null, 0.7));
       b.toMesh(`boot${s}`, scene, mat.get('polRhodium'), pivot);
+
+      // THE BOOT TOP IS A PAVÉ BAND, not a silver cuff. The reference boot is
+      // plain polished silver with one stone-set band around the opening, and
+      // from directly behind that band is the only thing separating the boot
+      // from the leg above it — in silver, leg and boot merged into a single
+      // pale sausage. Built as a torus SURFACE so the stones sit on the band the
+      // same way they sit on everything else, from one shared definition.
+      const bR = P.legR * 0.87, bt = 0.030, bY = -P.legLen + 0.004;
+      const bandSurf = (u, v, out) => {
+        const a = u * TWO_PI;
+        const c2 = (v - 0.5) * Math.PI * 1.06;      // outer arc of the tube only
+        const rad = bR + bt * Math.cos(c2);
+        out[0] = rad * Math.sin(a);
+        out[1] = bY + bt * Math.sin(c2) * 0.88;
+        out[2] = rad * Math.cos(a);
+      };
+      const bb = new Geo();
+      bb.at(0, 0, 0, 0, 0, 0, 0.97, 0.97, 0.97);
+      bb.add(surface(bandSurf, this.sd + 6, this.sd - 2, 3, 1));
+      bb.toMesh(`bootBandBed${s}`, scene, mat.get('darkChrome'), pivot);
+      const bs = new Geo();
+      bs.at(0, 0, 0);
+      this._stones(bs, bandSurf, {
+        v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80,
+      });
+      bs.toMesh(`bootBand${s}`, scene, mat.get('whiteGold'), pivot);
 
       this.parts.legs.push(pivot);
     }
