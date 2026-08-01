@@ -86,6 +86,66 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Seventh finding: the post pipeline was three separate measurement failures,
+and one of them belongs to somebody else.**
+
+The grade was rebuilt by sampling rendered pixels rather than by reasoning
+about them. Three things the numbers said that the code assumed otherwise:
+
+1. **ACES was not the villain.** The suspicion was that ACES was crushing
+   authored colour. Sampling the hero frame at 1600x900 says otherwise: no post
+   at all gives mean luminance 113.9 and mean saturation 0.175; ACES alone
+   gives 88.6 / 0.221. ACES slightly *raises* saturation here. What it does is
+   darken by 22%, because the scene's range barely reaches 1.0, so the curve's
+   toe does all the work and its shoulder does none. The fix was to raise
+   exposure until highlights reach the shoulder, not to remove the tonemapper.
+
+2. **`contrast` was a darkening operator.** Babylon's contrast is a smoothstep
+   pivoted at 0.5 in gamma space. The frame's mean was 0.32, so nearly every
+   pixel sat below the pivot and contrast 1.12 pushed the whole image *down*.
+
+3. **The bloom threshold is a LINEAR value, and the character was above it.**
+   At the shipped 0.72 the runner's own white pavé qualified as a highlight, so
+   every close-up came back as a glowing blob that had eaten its own surface
+   detail — 7.2% of the char-face frame was clipped white. Threshold 1.60 drops
+   the character out of the highlight pass while the emissive light columns,
+   which are far brighter, still bloom. Selective bloom can afford to be strong
+   in a way that indiscriminate bloom never can.
+
+**The one that is not post's to fix: the sky Layer is double-gamma'd.**
+`world/zones.js` authors the zone gradients as sRGB hex (`#3a2a24` and
+similar) into a `DynamicTexture`. A `Layer` blits those bytes straight into the
+HDR buffer, where they are treated as LINEAR, and then the image-processing
+pass applies `toGammaSpace` to everything. Measured: with all image processing
+off, the sky reads back at its authored value (68,53,47). With it on, that same
+texel renders around (140,120,112). A dark brown backdrop is arriving on screen
+as a mid tan.
+
+That is the milky wash across the top third of every frame, and it is why the
+"vast dark interior" art direction has never actually been on screen. The fix
+is in `world/`: author the gradient in linear (raise each stop to the power
+2.2 before drawing) or flag the texture so Babylon converts it. Post can grade
+around it but cannot undo it — a single-channel curve cannot separate the
+backdrop from everything else that legitimately lives in the same tonal band.
+
+**Vignette was silently aspect-dependent.** Babylon derives the vignette
+ellipse from `vignetteCameraFov` — which defaults to 0.5 radians, is unrelated
+to the actual camera, and is combined with the render aspect. The same
+`vignetteWeight` therefore framed a 16:9 desktop frame heavily and a 390x844
+portrait frame barely at all: measured corner brightness 0.5% against 5.5%.
+Portrait is how most people will play. `core/post.js` now pins
+`vignetteStretch` to 1 and solves `tan(fov/2) = K / sqrt(aspect)` on every
+resize, so one weight means one thing on every device.
+
+**Grain and chromatic aberration were both evaluated and both rejected**, on
+crops rather than on principle. Grain has a very narrow useful band: invisible
+at intensity 2.4, obvious sensor noise at 12. Chromatic aberration put visible
+magenta/green fringes on the light columns at 2.6 and was imperceptible below
+1.0. Each cost a full-screen pass and a shader compile for nothing. Cutting
+both also fixed the capture harness, which had started timing out under
+SwiftShader: shader compilation, not frame time, is what the 30s screenshot
+timeout was actually spending itself on.
+
 **Sixth finding: fixing the object does not fix the observer.**
 After the corner discontinuity was fixed, the playtester still reported
 "bouncing off the barrier". The character's motion was correct by then — the
@@ -156,12 +216,14 @@ adding polish.
 
 | # | Issue | Where | Planned |
 |---|---|---|---|
+| 14 | **Sky Layer is double-gamma'd** — zone gradients authored in sRGB are blitted as linear then gamma-encoded again, so the dark vault backdrop renders as a mid tan wash. See seventh finding. Largest single remaining defect in the final image | `world/zones.js` | next |
 | 1 | Zones change the backdrop but the world still has no landmarks or parallax depth layers | `world/` | Sprint 4 |
 | 12 | Gilt zone has the lowest track/background contrast of the five — watch it on a phone in daylight | `world/zones.js` | needs a device |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
 | 3 | Fringe under the hood rim still reads weakly; face/hood separation could go further | `char/` | polish |
 | 13 | No pavé surface treatment yet — the stretch goal from PLAN.md section 2 | `mat/` | optional |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
+| 15 | AO is on but subtle — the scene is mostly convex objects far apart, so there is little for SSAO to occlude. It will pay off much more once `world/` has clutter and `track/` has surface relief | `world/`, `track/` | with detail work |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
 | 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
 | 11 | Turn frequency (42% of chunks) is still an untuned guess | `track/` | needs a human playing |
@@ -210,6 +272,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-08-01 | 1 | Post pipeline rebuilt in `core/post.js`: SSAO2 (high + medium), measured exposure/contrast, split-tone colour curves, bloom threshold 0.72 -> 1.60, aspect-stable vignette, dithering. Grain, chromatic aberration and depth of field evaluated and rejected. Found and documented the sky-layer double-gamma defect for `world/`. 36 checks pass, all 15 poses capture. |
 | 2026-07-31 | 2 | Sprint 3: character rebuilt to resemble the NFT. Face/hood separation, eyes with catchlights, bat wing, antenna, better animation. |
 | 2026-07-31 | 2 | Jewel-box world shipped with five progressive zones. Art direction chosen by comparing three built mockups rather than describing them. |
 | 2026-07-31 | 1 | Camera moved to path-space smoothing (fixes "bouncing off the barrier"); sky sphere replaced with a background layer (fixes the clipped bubble). 36 checks. |
