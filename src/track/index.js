@@ -7,10 +7,13 @@
 // Everything is pooled. No mesh is created or destroyed during play; the smoke
 // test asserts total mesh count stays flat over a long run.
 
-import { MeshBuilder, VertexData, Mesh, Vector3, Matrix } from '../core/bjs.js';
 import { EV } from '../core/ctx.js';
 import { OB, TEMPLATES, validateTemplates, pickTemplate, pickTurnTemplate } from './chunks.js';
 import { Path, DIRS } from './path.js';
+import {
+  buildTile, buildColumn, buildLow, buildHigh, buildFull, buildStar,
+  buildCornerPad, buildJunctionWall, buildWallArrow, buildChevron,
+} from './parts.js';
 
 export { OB };
 
@@ -85,42 +88,36 @@ export default class Track {
 
   // ---- construction ----------------------------------------------------
 
+  /**
+   * The floor.
+   *
+   * A tile is ONE merged multi-material mesh, not a stack of boxes. Building
+   * it that way is what makes a properly constructed floor affordable: the
+   * inlay, the transverse courses, the medallion, the kerb and the rail all
+   * live inside a single instance, so a detailed tile costs the same number of
+   * scene meshes as the old flat slab did and only as many draw calls as it
+   * has distinct materials.
+   *
+   * Two variants exist. `full` carries the border course; `bare` stops at the
+   * paving, and is what gets enabled next to a junction, where a kerb would
+   * run straight through the corner.
+   */
   _buildFloor() {
     const T = this.ctx.config.tune;
     const mat = this.ctx.get('mat');
-    const trackWidth = T.laneWidth * T.laneCount;
+    const q = this.ctx.config.q;
     this.tileCount = Math.ceil(T.viewDistance / T.tileLength) + 4;
 
-    this.floorProto = MeshBuilder.CreateBox('floor', {
-      width: trackWidth, height: 0.35, depth: T.tileLength,
-    }, this.ctx.scene);
-    this.floorProto.material = mat.get('trackFloor');
-    this.floorProto.isPickable = false;
-    this.floorProto.receiveShadows = true;
-
-    this.railProto = MeshBuilder.CreateBox('rail', {
-      width: 0.30, height: 0.55, depth: T.tileLength,
-    }, this.ctx.scene);
-    this.railProto.material = mat.get('yellowGold');
-    this.railProto.isPickable = false;
-
-    // Lane dividers. Not decoration: in a three-lane runner the player needs
-    // to see where the lanes are, and inlaid gold lines give the floor a
-    // readable structure and a sense of speed as they stream past.
-    this.laneLineProto = MeshBuilder.CreateBox('laneLine', {
-      width: 0.10, height: 0.06, depth: T.tileLength * 0.62,
-    }, this.ctx.scene);
-    this.laneLineProto.material = mat.get('yellowGold');
-    this.laneLineProto.isPickable = false;
+    this.tileProto = buildTile(this.ctx.scene, mat, q, T, true);
+    this.tileBareProto = buildTile(this.ctx.scene, mat, q, T, false);
+    this.tileProto.position.set(this._parkZ, this._parkZ, this._parkZ);
+    this.tileBareProto.position.set(this._parkZ, this._parkZ, this._parkZ);
 
     for (let i = 0; i < this.tileCount; i++) {
-      const floor = i === 0 ? this.floorProto : this.floorProto.createInstance(`floor${i}`);
-      const railL = i === 0 ? this.railProto : this.railProto.createInstance(`railL${i}`);
-      const railR = this.railProto.createInstance(`railR${i}`);
-      const lineL = i === 0 ? this.laneLineProto : this.laneLineProto.createInstance(`lineL${i}`);
-      const lineR = this.laneLineProto.createInstance(`lineR${i}`);
-      const tile = { index: i, floor, railL, railR, lineL, lineR, z: 0 };
-      this.tiles.push(tile);
+      const full = i === 0 ? this.tileProto : this.tileProto.createInstance(`tile${i}`);
+      const bare = i === 0 ? this.tileBareProto : this.tileBareProto.createInstance(`tileB${i}`);
+      bare.setEnabled(false);
+      this.tiles.push({ index: i, full, bare, z: 0 });
     }
     this.headIndex = this.tileCount - 1;
   }
@@ -133,12 +130,7 @@ export default class Track {
     // works on a straight track: once the path can turn, decorative geometry
     // has to follow the path like everything else, so columns are now owned by
     // the tile that carries them.
-    this.columnProto = MeshBuilder.CreateCylinder('column', {
-      diameterTop: 0.55, diameterBottom: 0.72, height: 5.2,
-      tessellation: q.name === 'low' ? 8 : 16,
-    }, this.ctx.scene);
-    this.columnProto.material = mat.get('roseGold');
-    this.columnProto.isPickable = false;
+    this.columnProto = buildColumn(this.ctx.scene, mat, q);
     this.columnProto.position.set(this._parkZ, this._parkZ, this._parkZ);
 
     for (let i = 0; i < this.tiles.length; i++) {
@@ -155,28 +147,21 @@ export default class Track {
     const scene = this.ctx.scene;
     const w = T.laneWidth * T.laneCount;
 
+    const q = this.ctx.config.q;
+
     // Corner pad: fills the square the two straight runs leave uncovered.
     // Deliberately oversized. A pad exactly the width of the corridor abuts
     // the two straight runs with zero overlap, and any rounding at all leaves
     // a hairline of background showing through at the corner. 1.6m of overlap
     // costs nothing and guarantees the corner is paved.
-    const padProto = MeshBuilder.CreateBox('cornerPad', {
-      width: w + 1.6, height: 0.34, depth: w + 1.6,
-    }, scene);
-    padProto.material = mat.get('trackFloor');
-    padProto.receiveShadows = true;
-    padProto.isPickable = false;
+    const padProto = buildCornerPad(scene, mat, q, w);
     padProto.position.set(this._parkZ, this._parkZ, this._parkZ);
     this.padProto = padProto;
 
     // Backstop wall: what you hit if you fail to turn. It is decoration —
     // the death itself is decided in path space by play/ — but without it the
     // player has no way to see that the corridor ends.
-    const wallProto = MeshBuilder.CreateBox('junctionWall', {
-      width: w + 2.2, height: 4.2, depth: 0.6,
-    }, scene);
-    wallProto.material = mat.get('darkChrome');
-    wallProto.isPickable = false;
+    const wallProto = buildJunctionWall(scene, mat, q, w);
     wallProto.position.set(this._parkZ, this._parkZ, this._parkZ);
     this.wallProto = wallProto;
 
@@ -186,15 +171,14 @@ export default class Track {
     // the player's viewpoint the side corridor is edge-on and invisible, so a
     // corner read as "a wall appeared, you died" with no way to know which way
     // to go. These arrows are the fix, and they are gameplay, not decoration.
-    this.chevronProto = this._makeArrowMesh('chevron');
-    this.chevronProto.material = mat.get('signGold');
-    this.chevronProto.isPickable = false;
+    this.chevronProto = buildChevron(scene, mat, q);
     this.chevronProto.position.set(this._parkZ, this._parkZ, this._parkZ);
 
-    this.wallArrowProto = this._makeWallArrowMesh('wallArrow');
-    this.wallArrowProto.material = mat.get('signGold');
-    this.wallArrowProto.isPickable = false;
-    this.wallArrowProto.position.set(this._parkZ, this._parkZ, this._parkZ);
+    // One proto per turn direction. See buildWallArrow for why.
+    this.arrowProtoR = buildWallArrow(scene, mat, q, 1);
+    this.arrowProtoL = buildWallArrow(scene, mat, q, -1);
+    this.arrowProtoR.position.set(this._parkZ, this._parkZ, this._parkZ);
+    this.arrowProtoL.position.set(this._parkZ, this._parkZ, this._parkZ);
 
     for (let i = 0; i < JUNCTION_POOL; i++) {
       const chevrons = [];
@@ -208,17 +192,17 @@ export default class Track {
       // The wall arrow is the primary signal. Floor chevrons are foreshortened
       // to almost nothing by a low chase camera; the wall is seen head-on, so
       // that is where the readable instruction has to live.
-      const arrow = i === 0
-        ? this.wallArrowProto
-        : this.wallArrowProto.createInstance(`arrow${i}`);
-      arrow.scaling.setAll(2.0);
-      arrow.position.set(this._parkZ, this._parkZ, this._parkZ);
+      const arrowR = i === 0 ? this.arrowProtoR : this.arrowProtoR.createInstance(`arrowR${i}`);
+      const arrowL = i === 0 ? this.arrowProtoL : this.arrowProtoL.createInstance(`arrowL${i}`);
+      arrowR.position.set(this._parkZ, this._parkZ, this._parkZ);
+      arrowL.position.set(this._parkZ, this._parkZ, this._parkZ);
 
       this._junctionPool.push({
         pad: i === 0 ? padProto : padProto.createInstance(`pad${i}`),
         wall: i === 0 ? wallProto : wallProto.createInstance(`wall${i}`),
         chevrons,
-        arrow,
+        arrowR,
+        arrowL,
         active: false,
       });
     }
@@ -228,65 +212,22 @@ export default class Track {
     }
   }
 
-  /**
-   * Upright chevron standing in the XY plane, pointing along local +X.
-   *
-   * Authored standing up rather than laid flat and pitched into place: a
-   * pitch rotation composed with a yaw was landing the arrow pointing at the
-   * floor, and reasoning about Euler order to fix that is a worse use of time
-   * than writing the five vertices in the orientation actually wanted.
-   */
-  _makeWallArrowMesh(name) {
-    const m = new Mesh(name, this.ctx.scene);
-    const vd = new VertexData();
-    vd.positions = [
-      0.85, 0, 0,
-      -0.40, 0.62, 0,
-      -0.40, -0.62, 0,
-      -0.12, 0.30, 0,
-      -0.12, -0.30, 0,
-    ];
-    vd.indices = [0, 1, 3, 0, 3, 4, 0, 4, 2];
-    vd.normals = [0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1];
-    vd.applyToMesh(m);
-    return m;
-  }
-
-  /** A flat triangle lying in XZ, pointing along local +X. */
-  _makeArrowMesh(name) {
-    const m = new Mesh(name, this.ctx.scene);
-    const vd = new VertexData();
-    vd.positions = [
-      0.85, 0, 0,
-      -0.40, 0, 0.62,
-      -0.40, 0, -0.62,
-      -0.12, 0, 0.30,
-      -0.12, 0, -0.30,
-    ];
-    // A solid triangle with a notch cut out of the tail reads as a chevron
-    // rather than a road sign, which suits the jewellery language better.
-    vd.indices = [0, 1, 3, 0, 3, 4, 0, 4, 2];
-    vd.normals = [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0];
-    vd.applyToMesh(m);
-    return m;
-  }
-
   _buildObstaclePools() {
     const mat = this.ctx.get('mat');
     const scene = this.ctx.scene;
-    const matFor = {
-      [OB.LOW]: mat.get('yellowGold'),
-      [OB.HIGH]: mat.get('darkChrome'),
-      [OB.FULL]: mat.get('roseGold'),
+    const q = this.ctx.config.q;
+    // Each obstacle is a designed object merged into one multi-material mesh,
+    // authored in metres above the running surface. The pool therefore places
+    // it at path height 0, not at the collision box centre.
+    const buildFor = {
+      [OB.LOW]: buildLow,
+      [OB.HIGH]: buildHigh,
+      [OB.FULL]: buildFull,
     };
 
     for (const kind of [OB.LOW, OB.HIGH, OB.FULL]) {
       const s = OB_SIZE[kind];
-      const proto = MeshBuilder.CreateBox(`ob${kind}`, {
-        width: s.hx * 2, height: s.hy * 2, depth: s.hz * 2,
-      }, scene);
-      proto.material = matFor[kind];
-      proto.isPickable = false;
+      const proto = buildFor[kind](scene, mat, q, s);
       proto.position.set(this._parkZ, this._parkZ, this._parkZ);
 
       const list = [];
@@ -305,17 +246,11 @@ export default class Track {
   _buildStarPool() {
     const mat = this.ctx.get('mat');
     const q = this.ctx.config.q;
-    // A flattened octahedron reads as a star silhouette far more cheaply than
-    // an actual star polygon, and reads correctly from every angle.
-    // size 0.30 was the first guess and rendered as a half-metre gemstone that
-    // blocked the view of the track. Collectibles must read as collectible
-    // without competing with the obstacles behind them.
-    const proto = MeshBuilder.CreatePolyhedron('star', {
-      type: 1, size: 0.155,
-    }, this.ctx.scene);
-    proto.material = mat.get('yellowGold');
-    proto.isPickable = false;
-    proto.scaling.set(1, 1.25, 0.42);
+    // A real faceted five-point star, matching the gold stars in the
+    // reference. It used to be a squashed octahedron, which reads as a chip of
+    // gemstone rather than a star. Kept small on purpose: at 0.30 the first
+    // build rendered a half-metre ornament that hid the obstacles behind it.
+    const proto = buildStar(this.ctx.scene, mat, q);
     proto.position.set(this._parkZ, this._parkZ, this._parkZ);
     this.starProto = proto;
 
@@ -339,7 +274,8 @@ export default class Track {
       j.pad.position.set(this._parkZ, this._parkZ, this._parkZ);
       j.wall.position.set(this._parkZ, this._parkZ, this._parkZ);
       for (const c of j.chevrons) c.position.set(this._parkZ, this._parkZ, this._parkZ);
-      j.arrow.position.set(this._parkZ, this._parkZ, this._parkZ);
+      j.arrowR.setEnabled(false);
+      j.arrowL.setEnabled(false);
     }
     this.obstacles.length = 0;
     this.stars.length = 0;
@@ -450,7 +386,7 @@ export default class Track {
       if (jn.s < here - 20 || jn.s > here + T.viewDistance) continue;
       const p = this._junctionPool[slot++];
       p.active = true;
-      p.pad.position.set(jn.wx, -0.175, jn.wz);
+      p.pad.position.set(jn.wx, 0, jn.wz);
       const d = DIRS[jn.dir];
       // wall sits just beyond the corner, square across the old direction
       p.wall.position.set(jn.wx + d[0] * (w * 0.5 + 0.3), 2.1, jn.wz + d[1] * (w * 0.5 + 0.3));
@@ -462,16 +398,24 @@ export default class Track {
       const az = jn.turn > 0 ? -d[0] : d[0];
       const yaw = Math.atan2(-az, ax);
 
-      // The wall arrow only needs yaw — the mesh is already upright.
-      p.arrow.rotation.y = yaw;
+      // The wall arrow shares the WALL's yaw, not the turn's, so its face
+      // always squares up to the player. The turn direction is baked into
+      // which of the two protos gets enabled. Yawing one proto by 180 degrees
+      // to point it the other way also swung its front face away from the
+      // camera, which is why left-hand corners used to show a black arrow.
+      const arrow = jn.turn > 0 ? p.arrowR : p.arrowL;
+      const arrowOff = jn.turn > 0 ? p.arrowL : p.arrowR;
+      arrowOff.setEnabled(false);
+      arrow.setEnabled(true);
+      arrow.rotation.y = p.wall.rotation.y;
       // Stand the arrow clearly IN FRONT of the wall. It was at +0.02 while
       // the wall spans +0.0 to +0.6 in the same axis, so the arrow was buried
       // inside the wall's own volume and never drew — the corner had no
       // direction signage at all despite the code being there.
-      p.arrow.position.set(
-        jn.wx + d[0] * (w * 0.5 - 0.45),
+      arrow.position.set(
+        jn.wx + d[0] * (w * 0.5 - 0.22),
         2.05,
-        jn.wz + d[1] * (w * 0.5 - 0.45),
+        jn.wz + d[1] * (w * 0.5 - 0.22),
       );
 
       for (let c = 0; c < p.chevrons.length; c++) {
@@ -486,7 +430,8 @@ export default class Track {
         p.pad.position.set(this._parkZ, this._parkZ, this._parkZ);
         p.wall.position.set(this._parkZ, this._parkZ, this._parkZ);
         for (const c of p.chevrons) c.position.set(this._parkZ, this._parkZ, this._parkZ);
-        p.arrow.position.set(this._parkZ, this._parkZ, this._parkZ);
+        p.arrowR.setEnabled(false);
+        p.arrowL.setEnabled(false);
       }
     }
   }
@@ -501,12 +446,13 @@ export default class Track {
     for (let i = 0; i < pool.length; i++) {
       const e = pool[i];
       if (e.active) continue;
-      const s = OB_SIZE[kind];
       e.active = true;
       e.lane = lane;
       e.x = this._laneX(lane);
       e.z = z;
-      this.path.toWorldExact(z, e.x, s.cy, this._w);
+      // Obstacle meshes are authored standing on the floor, so they are placed
+      // at surface height rather than at the collision box centre.
+      this.path.toWorldExact(z, e.x, 0, this._w);
       e.mesh.position.set(this._w[0], this._w[1], this._w[2]);
       e.mesh.rotation.y = this.path.yawExactAt(z);
       this.obstacles.push(e);
@@ -588,11 +534,15 @@ export default class Track {
 
   renderUpdate(dtReal) {
     // Stars spin. One shared rotation value applied to active stars only.
-    this._spin = (this._spin || 0) + dtReal * 2.1;
+    // A faceted star spun about Y alone goes edge-on twice a turn and briefly
+    // disappears; a fixed tilt keeps a face towards the camera throughout and
+    // makes each facet catch the light in turn.
+    this._spin = (this._spin || 0) + dtReal * 1.9;
     for (let i = 0; i < this.stars.length; i++) {
-      this.stars[i].mesh.rotation.y = this._spin;
+      const r = this.stars[i].mesh.rotation;
+      r.y = this._spin;
+      r.x = -0.34;
     }
-
   }
 
   _placeTile(tile, index) {
@@ -610,45 +560,33 @@ export default class Track {
     // tiles through the blend pulls them towards the inside of the bend and
     // tears visible holes in the track at every corner.
     const yaw = this.path.yawExactAt(mid);
-    this.path.toWorldExact(mid, 0, -0.175, this._w);
-    tile.floor.position.set(this._w[0], this._w[1], this._w[2]);
-    tile.floor.rotation.y = yaw;
+    this.path.toWorldExact(mid, 0, 0, this._w);
 
-    const laneOff = T.laneWidth * 0.5;
-    this.path.toWorldExact(mid, -laneOff, 0.18, this._w);
-    tile.lineL.position.set(this._w[0], this._w[1], this._w[2]);
-    tile.lineL.rotation.y = yaw;
-    this.path.toWorldExact(mid, laneOff, 0.18, this._w);
-    tile.lineR.position.set(this._w[0], this._w[1], this._w[2]);
-    tile.lineR.rotation.y = yaw;
-
-    const railOff = trackWidth / 2 + 0.15;
-    this.path.toWorldExact(mid, -railOff, 0.275, this._w);
-    tile.railL.position.set(this._w[0], this._w[1], this._w[2]);
-    tile.railL.rotation.y = yaw;
-    this.path.toWorldExact(mid, railOff, 0.275, this._w);
-    tile.railR.position.set(this._w[0], this._w[1], this._w[2]);
-    tile.railR.rotation.y = yaw;
+    // The border course would cut straight through a corner, so tiles either
+    // side of a junction swap to the variant without it. The backstop wall and
+    // the corner pad read as the corner instead.
+    const nearJunction = this._isNearJunction(s0, T.tileLength);
+    tile.full.setEnabled(!nearJunction);
+    tile.bare.setEnabled(nearJunction);
+    const live = nearJunction ? tile.bare : tile.full;
+    live.position.set(this._w[0], this._w[1], this._w[2]);
+    live.rotation.y = yaw;
 
     // A column from either corridor can land squarely inside the corner
     // square, where it blocks the player's view of the exit entirely. The
     // corner is the one place in the game where seeing ahead matters most, so
     // columns are suppressed around junctions.
-    const nearJunction = this._isNearJunction(s0, T.tileLength);
     if (tile.colL) {
       tile.colL.setEnabled(!nearJunction);
       tile.colR.setEnabled(!nearJunction);
-      const colOff = trackWidth / 2 + 1.35;
-      this.path.toWorldExact(mid, -colOff, 2.6, this._w);
+      const colOff = trackWidth / 2 + 1.55;
+      this.path.toWorldExact(mid, -colOff, 0, this._w);
       tile.colL.position.set(this._w[0], this._w[1], this._w[2]);
-      this.path.toWorldExact(mid, colOff, 2.6, this._w);
+      this.path.toWorldExact(mid, colOff, 0, this._w);
       tile.colR.position.set(this._w[0], this._w[1], this._w[2]);
+      tile.colL.rotation.y = yaw;
+      tile.colR.rotation.y = yaw;
     }
-
-    // Rails would visibly cut through a corner, so the tiles either side of a
-    // junction go without them. The backstop wall reads as the corner.
-    tile.railL.setEnabled(!nearJunction);
-    tile.railR.setEnabled(!nearJunction);
   }
 
   _isNearJunction(s0, len) {
@@ -664,16 +602,15 @@ export default class Track {
 
   dispose() {
     for (const t of this.tiles) {
-      t.floor.dispose(); t.railL.dispose(); t.railR.dispose();
-      t.lineL.dispose(); t.lineR.dispose();
+      t.full.dispose(); t.bare.dispose();
       if (t.colL) { t.colL.dispose(); t.colR.dispose(); }
     }
     for (const j of this._junctionPool) {
       j.pad.dispose(); j.wall.dispose();
       for (const c of j.chevrons) c.dispose();
-      j.arrow.dispose();
+      j.arrowR.dispose(); j.arrowL.dispose();
     }
-    if (this.wallArrowProto) this.wallArrowProto.dispose();
+    if (this.chevronProto) this.chevronProto.dispose();
     this.tiles.length = 0;
     for (const kind of [OB.LOW, OB.HIGH, OB.FULL]) {
       for (const e of this.pools[kind]) e.mesh.dispose();
