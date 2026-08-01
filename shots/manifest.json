@@ -8,6 +8,118 @@
       "preset": "high",
       "note": "default chase view, mid-run — the shot the whole game is judged on",
       "errors": []
+    },
+    {
+      "name": "phone",
+      "file": "phone.png",
+      "viewport": "phone",
+      "preset": "high",
+      "note": "portrait, the way most people will actually see it",
+      "errors": []
+    },
+    {
+      "name": "char-face",
+      "file": "char-face.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "face close-up — compare directly with docs/reference.jpeg",
+      "errors": []
+    },
+    {
+      "name": "char-front",
+      "file": "char-front.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "front three-quarter — the silhouette check",
+      "errors": []
+    },
+    {
+      "name": "char-side",
+      "file": "char-side.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "profile — proportion and wing read",
+      "errors": []
+    },
+    {
+      "name": "char-rear",
+      "file": "char-rear.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
+      "errors": []
+    },
+    {
+      "name": "jump",
+      "file": "jump.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "mid-air pose",
+      "errors": []
+    },
+    {
+      "name": "slide",
+      "file": "slide.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "slide pose",
+      "errors": []
+    },
+    {
+      "name": "obstacles",
+      "file": "obstacles.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "gameplay read — can you parse the obstacles in time?",
+      "errors": []
+    },
+    {
+      "name": "phone-obstacles",
+      "file": "phone-obstacles.png",
+      "viewport": "phone",
+      "preset": "high",
+      "note": "the same read, in portrait, where it actually matters",
+      "errors": []
+    },
+    {
+      "name": "gameover",
+      "file": "gameover.png",
+      "viewport": "phone",
+      "preset": "high",
+      "note": "results screen",
+      "errors": []
+    },
+    {
+      "name": "corner",
+      "file": "corner.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "approaching a junction — does the corner read as a corner?",
+      "errors": []
+    },
+    {
+      "name": "corner-wide",
+      "file": "corner-wide.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "corner geometry from outside — pad, wall and rail cutaway",
+      "errors": []
+    },
+    {
+      "name": "phone-corner",
+      "file": "phone-corner.png",
+      "viewport": "phone",
+      "preset": "high",
+      "note": "the corner read in portrait, where reaction time is tightest",
+      "errors": []
+    },
+    {
+      "name": "wide",
+      "file": "wide.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "wide establishing shot — reads the track and the world silhouette",
+      "errors": []
     }
   ]
 }

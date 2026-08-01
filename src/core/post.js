@@ -2,8 +2,7 @@
 //
 // Everything between "the scene has been rasterised" and "the player sees it"
 // lives here: ambient occlusion, tonemapping, colour grading, bloom, and the
-// small display-space effects (sharpen, grain, chromatic aberration) that
-// separate a shipped game from a prototype.
+// the one display-space effect (sharpen) that survived being measured.
 //
 // WHY THIS IS ITS OWN FILE
 // The pipeline used to be twenty lines at the bottom of main.js: bloom on,
@@ -20,9 +19,7 @@
 //     imageProcessing  exposure -> vignette -> tonemap -> gamma -> contrast
 //                      -> colour curves -> dither
 //     sharpen        display space
-//     grain          display space
-//     chromatic ab.  display space
-//     fxaa           last, so it also softens grain/CA fringes
+//     fxaa           last, so it also softens any sharpening halo
 //
 // The image-processing shader (imageProcessingFunctions.fx) applies VIGNETTE
 // BEFORE the tonemapper, so vignette weight and exposure interact: raising
@@ -74,8 +71,6 @@ const LOOKS = {
     dither: true,
     sharpen: true,
     sharpenEdge: 0.40,
-    grain: 2.4,
-    chromatic: 0.9,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.15, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
@@ -90,8 +85,6 @@ const LOOKS = {
     dither: true,
     sharpen: true,
     sharpenEdge: 0.34,
-    grain: 0,
-    chromatic: 0,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.05, samples: 6, expensiveBlur: false, maxZ: 45 },
   },
   low: {
@@ -114,8 +107,6 @@ const LOOKS = {
     dither: true,
     sharpen: false,
     sharpenEdge: 0,
-    grain: 0,
-    chromatic: 0,
     ssao: null,
   },
 };
@@ -263,9 +254,9 @@ export class Post {
     this.curves = curves;
 
     // --- display-space effects --------------------------------------------
-    // All three are deliberately near the threshold of visibility. Each is a
-    // texture-detail cue rather than an effect the player should notice; the
-    // failure mode for every one of them is being obvious.
+    // Deliberately near the threshold of visibility: a texture-detail cue
+    // rather than an effect the player should notice. The failure mode is
+    // being obvious.
     if (look.sharpen) {
       pipeline.sharpenEnabled = true;
       // colorAmount 1 = keep the original colour and only add the edge term.
@@ -274,21 +265,22 @@ export class Post {
       pipeline.sharpen.colorAmount = 1.0;
       pipeline.sharpen.edgeAmount = look.sharpenEdge;
     }
-    if (look.grain > 0) {
-      pipeline.grainEnabled = true;
-      pipeline.grain.intensity = look.grain;
-      // Static, not animated. Animated grain forces a uniform update and a
-      // fresh hash every frame for a shimmer nobody asked for, and it also
-      // stops the capture harness ever seeing a stable frame.
-      pipeline.grain.animated = false;
-    }
-    if (look.chromatic > 0) {
-      pipeline.chromaticAberrationEnabled = true;
-      // Aberration scales with the render width, so it must be expressed
-      // relative to it or a phone gets four times the fringing a desktop does.
-      pipeline.chromaticAberration.aberrationAmount = look.chromatic;
-      pipeline.chromaticAberration.radialIntensity = 0.85;
-    }
+
+    // FILM GRAIN: evaluated and REJECTED.
+    // Babylon's grain has a very narrow useful band. At intensity 2.4 it is
+    // invisible at 1:1 (compared crops, no perceptible difference); at 12 it is
+    // obvious and reads as phone-camera sensor noise on a jewellery render, not
+    // as film. It costs a full-screen pass and a shader either way. Dithering,
+    // which is free because it lives inside the image-processing shader that
+    // was already running, does the one job grain was actually wanted for:
+    // killing banding in the sky gradient.
+    //
+    // CHROMATIC ABERRATION: evaluated and REJECTED.
+    // Same shape of argument. At 2.6 it put visible magenta/green fringes on
+    // the light columns, which on a piece whose whole subject is polished metal
+    // looks like a rendering fault rather than a lens. At the level where it
+    // stops looking like a fault (< 1.0) it cannot be seen at all, least of all
+    // on a phone. A full-screen pass for nothing.
 
     // DEPTH OF FIELD: deliberately NOT enabled.
     // It was evaluated and rejected. A runner asks the player to read obstacle
@@ -352,8 +344,6 @@ export class Post {
       this.pipeline.bloomThreshold = look.bloomThreshold;
       this.pipeline.bloomKernel = look.bloomKernel;
       this.pipeline.sharpenEnabled = !!look.sharpen;
-      this.pipeline.grainEnabled = look.grain > 0;
-      this.pipeline.chromaticAberrationEnabled = look.chromatic > 0;
     }
     // AO is torn down rather than weakened: a struggling device wants the
     // whole pass gone, not a cheaper version of it.
@@ -388,14 +378,6 @@ export class Post {
     if (o.ssaoStrength !== undefined && this.ssao) this.ssao.totalStrength = o.ssaoStrength;
     if (o.ssaoRadius !== undefined && this.ssao) this.ssao.radius = o.ssaoRadius;
     if (o.ssaoMaxZ !== undefined && this.ssao) this.ssao.maxZ = o.ssaoMaxZ;
-    if (o.grain !== undefined) {
-      this.pipeline.grainEnabled = o.grain > 0;
-      if (o.grain > 0) this.pipeline.grain.intensity = o.grain;
-    }
-    if (o.chromatic !== undefined) {
-      this.pipeline.chromaticAberrationEnabled = o.chromatic > 0;
-      if (o.chromatic > 0) this.pipeline.chromaticAberration.aberrationAmount = o.chromatic;
-    }
     for (const k in GRADE) if (o[k] !== undefined) this.curves[k] = o[k];
   }
 
