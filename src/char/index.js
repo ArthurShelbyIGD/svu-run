@@ -830,25 +830,30 @@ export default class Character {
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
-      // Hem half width lands at ~0.51 m: measured against the head, not in the
-      // abstract. In the reference the skirt is barely wider than the hood is
-      // with its ears (494 px against 460 px). At 0.66 it was 1.4x the head and
-      // the character read as a wine glass.
-      rx0: 0.260, rx1: 0.575,
-      rz0: 0.215, rz1: 0.415,
+      // Two reference proportions fight each other here and the resolution is
+      // worth recording. Against the HEAD, the reference skirt is 1.07x the
+      // width of the hood-with-ears. Against ITSELF, it is 1.37x as wide as the
+      // visible skirt is long. This model cannot satisfy both, because its head
+      // is deliberately far larger than the reference's (3.7 head-radii tall
+      // against 4.7), which squeezes the torso the skirt has to live in. Sized
+      // for the head alone it came out 2.5x as wide as it was long and read as a
+      // TUTU. These numbers split the difference and lean on flarePow to buy the
+      // rest: 0.98 m across the hem, against a visible 0.56 m drop.
+      rx0: 0.250, rx1: 0.520,
+      rz0: 0.210, rz1: 0.385,
       // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
       // the skirt and swing clear of it, which is what the reference shows.
-      spread0: 2.00,
-      spread1: 2.50,
+      spread0: 2.10,
+      spread1: 2.72,
       // >1 so the skirt leaves the yoke almost vertical and opens into a bell
       // low down, which is the profile in the reference.
-      flarePow: 1.30,
+      flarePow: 1.58,
       // Deep. The first pass at 0.052 rendered as a smooth white lampshade:
       // the flutes existed (the hem scallops proved it) but did not swing the
       // normals far enough to band a mirror surface.
-      fluteAmp: 0.075,
+      fluteAmp: 0.085,
       hemCut: 0.120,
-      trimR: 0.011,
+      trimR: 0.010,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
       // swings once through a corner and settles rather than flapping.
@@ -856,28 +861,28 @@ export default class Character {
       damp: 0.872,
     });
 
-    // MATERIAL: `wingChrome`, and this was decided by looking, not by reasoning.
+    // MATERIAL: `polRhodium` — the same polished white gold as the boots, the
+    // gloves and the cuffs, which is exactly what the reference shows.
     //
-    // `clothCape` is a fabric normal map with a sheen lobe at 0.42 albedo — it
-    // rendered as grey cloth, which is what it is for. So the brief's fallback,
-    // `polRhodium`, went in next. At 0.905 albedo and roughness 0.085 a sheet
-    // this size is a mirror pointed at a bright studio horizon: it rendered as a
-    // FEATURELESS WHITE LAMPSHADE. The fluting was there — the hem scallops
-    // proved it — and none of it survived, because every pleat reflected the
-    // same blown-out sky. `rhodium`, the hammered 0.905 variant, did the same
-    // thing with a texture on it. Both are in the shots history.
+    // The route here is worth writing down, because the obvious conclusion was
+    // wrong twice. `clothCape` is a fabric normal map with a sheen lobe at 0.42
+    // albedo and rendered as exactly what it is: grey cloth. `polRhodium` went
+    // in next and rendered as a FEATURELESS WHITE LAMPSHADE, so the cape moved
+    // to `wingChrome` (polished chrome at 0.32 albedo), which banded beautifully
+    // but sat several stops darker than the reference and vanished into a dark
+    // track in the chase view.
     //
-    // `wingChrome` is polished chrome at 0.32 albedo, and it is the only metal
-    // in the library whose value range matches the reference: each pleat lands
-    // somewhere between near-black and blown white depending on which way it
-    // faces, which IS what the reference skirt does. Note for the lead: the
-    // reference is brighter overall than this renders. If mat/ can add a
-    // polished sheet silver around 0.50-0.55 albedo, this should move to it —
-    // the geometry will not need to change. Nothing between 0.32 and 0.905
-    // exists today.
+    // Both of those were misdiagnoses. The white lampshade was not the material
+    // being too bright, it was the FLUTING BEING UNRESOLVED: at two and at four
+    // columns per flute the pleats were too coarse and too shallow to swing the
+    // normals, so every part of the sheet reflected the same blown-out sky. At
+    // six columns and 0.085 depth the same material bands into bright pleats and
+    // dark creases and reads as the reference's polished silver. The lesson is
+    // the project's own: a mirror is readable exactly as far as its geometry
+    // makes it readable, and no material tuning substitutes for that.
     this.cape.init(
       this.ctx.scene,
-      mat.get('wingChrome'),     // outside: polished silver
+      mat.get('polRhodium'),     // outside: polished silver
       mat.get('polGold'),        // the hem wire
       capeRoot, 3, 2,
       mat.get('darkChrome'),     // inside: the dark cavity
@@ -912,7 +917,7 @@ export default class Character {
       const ax = 0.205 + 0.150 * v;
       const az = 0.180 + 0.125 * v;
       out[0] = ax * Math.sin(th);
-      out[1] = 0.085 - 0.235 * v * dip;
+      out[1] = 0.085 - 0.195 * v * dip;
       out[2] = -az * Math.cos(th);
     };
 

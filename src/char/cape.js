@@ -135,7 +135,7 @@ export class Cape {
    * bright/dark banding comes from.
    */
   _lobe(u) {
-    return Math.pow(Math.abs(Math.sin(Math.PI * this.flutes * u)), 0.55);
+    return Math.pow(Math.abs(Math.sin(Math.PI * this.flutes * u)), 0.48);
   }
 
   /**
