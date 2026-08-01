@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "hero",
-      "file": "hero.png",
-      "viewport": "desktop",
+      "name": "phone",
+      "file": "phone.png",
+      "viewport": "phone",
       "preset": "high",
-      "note": "default chase view, mid-run — the shot the whole game is judged on",
+      "note": "portrait, the way most people will actually see it",
       "errors": []
     }
   ]

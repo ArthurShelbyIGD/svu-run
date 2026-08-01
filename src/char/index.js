@@ -384,7 +384,7 @@ export default class Character {
     // which puts the gold exactly on the hood opening. The previous piping was
     // a ring at a guessed radius and it floated off the fabric in places and
     // sank into it in others.
-    const pad = 0.026;
+    const pad = 0.012;
     const Rh = R * 1.012;
     const Rf = fr + pad;
     const zc = (Rh * Rh + fcz * fcz - Rf * Rf) / (2 * fcz);
@@ -469,13 +469,16 @@ export default class Character {
       sclera.at(q[0], q[1], q[2], 0, s * -AZ, s * 0.12, 0.94, 1.22, 0.66);
       sclera.add(ellipsoid({ rx: P.eyeR, su: this.sd + 4, sv: this.sd }));
 
-      onFace(s * AZ, EL - 0.05, 0.985, q);
-      iris.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1.02, 0.40);
-      iris.add(ellipsoid({ rx: P.eyeR * 0.70, su: this.sd + 2, sv: this.sd }));
+      // The iris FILLS the eye. A chibi eye is mostly iris with a sliver of
+      // sclera at the corners; at 0.70 of the eye radius it read as a white
+      // almond with a faint blue smudge in it.
+      onFace(s * AZ, EL - 0.035, 0.990, q);
+      iris.at(q[0], q[1], q[2], 0, s * -AZ, s * 0.12, 0.92, 1.04, 0.42);
+      iris.add(ellipsoid({ rx: P.eyeR * 0.92, su: this.sd + 2, sv: this.sd }));
 
-      onFace(s * AZ, EL - 0.06, 1.030, q);
-      dark.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.34);
-      dark.add(ellipsoid({ rx: P.eyeR * 0.34, su: this.sd, sv: this.sd }));
+      onFace(s * AZ, EL - 0.045, 1.028, q);
+      dark.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1.05, 0.36);
+      dark.add(ellipsoid({ rx: P.eyeR * 0.52, su: this.sd, sv: this.sd }));
 
       // brow: a thin dark arc above the eye. Chibi faces live or die on brows.
       onFace(s * AZ, EL + 0.30, 1.015, q);
