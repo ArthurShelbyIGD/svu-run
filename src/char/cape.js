@@ -153,11 +153,26 @@ export class Cape {
     const az = this.rz0 + (this.rz1 - this.rz0) * f;
     // fluting is present at the yoke and deepens as the skirt widens
     const amp = this.fluteAmp * (0.32 + 0.68 * v) * lobe;
-    // the scallop is an edge treatment, so it only bites in the bottom third
-    const hem = this.hemCut * this.len * (1 - lobe) * Math.max(0, (v - 0.62) / 0.38);
-    out[0] = (ax + amp) * Math.sin(th);
-    out[1] = -this.len * v + hem;
-    out[2] = -(az + amp) * Math.cos(th);
+    // The scallop is an edge treatment, so it only bites in the bottom third.
+    //
+    // A RAISED COSINE, not (1 - lobe). Driving the hem off the lobe function
+    // put a cusp with an infinite slope on every crease line and the hem came
+    // out as a hard SAWTOOTH — a paper crown, not a scalloped edge. This is the
+    // same period and phase (1 on a crease, 0 on a lobe crown) but smooth, and
+    // it needs four columns per flute to sample without faceting.
+    const scal = 0.5 + 0.5 * Math.cos(Math.PI * 2 * this.flutes * u);
+    const hem = this.hemCut * this.len * scal * Math.max(0, (v - 0.62) / 0.38);
+    // Corner sweep. The skirt is an ARC of a cone, so its two open ends meet the
+    // hem at a hard right angle, and those two corners rendered as horizontal
+    // SPIKES jutting out either side at hem height. Pulling the last flute's
+    // length up and its radius in rounds the silhouette into the cape corner the
+    // reference has instead.
+    const e = Math.abs(u - 0.5) * 2;
+    const edge = e * e * e * e;
+    const k = 1 - 0.075 * edge;
+    out[0] = (ax * k + amp) * Math.sin(th);
+    out[1] = -this.len * v * (1 - 0.13 * edge) + hem;
+    out[2] = -(az * k + amp) * Math.cos(th);
   }
 
   init(scene, matCape, matTrim, parent, uRep, vRep, matUnder) {

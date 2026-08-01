@@ -798,8 +798,14 @@ export default class Character {
     // ODD flute counts only — see the note on _lobe() in cape.js. A crease on
     // the centre-back meridian would put a dark seam down the middle of the one
     // view the player looks at all game.
-    const flutes = low ? 7 : (high ? 13 : 11);
-    const perFlute = low ? 2 : 3;
+    // SIX columns per flute, on every preset. This number was found by looking
+    // at the hem, not by counting vertices: at 2, 3 and 4 columns the scalloped
+    // edge sampled as a hard sawtooth and the gold hem wire read as a paper
+    // crown. Six puts two vertices in the bottom of each scallop, which is what
+    // finally rounds it. It is affordable because the simulation is now O(rows)
+    // — about a dozen scalars — and the per-vertex cost is one rotation.
+    const flutes = low ? 9 : (high ? 13 : 11);
+    const perFlute = 6;
     const rows = low ? 9 : (high ? 14 : 12);
 
     // The yoke line. Everything below is measured off docs/reference-rear.png,
@@ -824,16 +830,25 @@ export default class Character {
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
-      rx0: 0.260, rx1: 0.560,
-      rz0: 0.215, rz1: 0.410,
+      // Hem half width lands at ~0.51 m: measured against the head, not in the
+      // abstract. In the reference the skirt is barely wider than the hood is
+      // with its ears (494 px against 460 px). At 0.66 it was 1.4x the head and
+      // the character read as a wine glass.
+      rx0: 0.260, rx1: 0.575,
+      rz0: 0.215, rz1: 0.415,
       // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
       // the skirt and swing clear of it, which is what the reference shows.
       spread0: 2.00,
       spread1: 2.50,
-      flarePow: 1.25,
-      fluteAmp: 0.052,
-      hemCut: 0.17,
-      trimR: 0.0135,
+      // >1 so the skirt leaves the yoke almost vertical and opens into a bell
+      // low down, which is the profile in the reference.
+      flarePow: 1.30,
+      // Deep. The first pass at 0.052 rendered as a smooth white lampshade:
+      // the flutes existed (the hem scallops proved it) but did not swing the
+      // normals far enough to band a mirror surface.
+      fluteAmp: 0.075,
+      hemCut: 0.120,
+      trimR: 0.011,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
       // swings once through a corner and settles rather than flapping.
@@ -841,19 +856,28 @@ export default class Character {
       damp: 0.872,
     });
 
-    // POLISHED SILVER — `polRhodium`, the same material as the boots and the
-    // gloves, which is exactly what the reference shows.
+    // MATERIAL: `wingChrome`, and this was decided by looking, not by reasoning.
     //
-    // `clothCape` was the wrong answer twice over: it is a fabric normal map
-    // with a sheen lobe, and it is 0.42 albedo, so it rendered as grey cloth.
-    // The reason a mirror finish is safe HERE and was not on the track floor
-    // (see ARCHITECTURE §7) is the fluting: a smooth mirror sheet reflects one
-    // thing and blows out, but ten convex pleats each reflect a different part
-    // of the room, so the skirt reads as alternating bright and dark bands at
-    // any camera angle. The fluting is the material's readability, not decor.
+    // `clothCape` is a fabric normal map with a sheen lobe at 0.42 albedo — it
+    // rendered as grey cloth, which is what it is for. So the brief's fallback,
+    // `polRhodium`, went in next. At 0.905 albedo and roughness 0.085 a sheet
+    // this size is a mirror pointed at a bright studio horizon: it rendered as a
+    // FEATURELESS WHITE LAMPSHADE. The fluting was there — the hem scallops
+    // proved it — and none of it survived, because every pleat reflected the
+    // same blown-out sky. `rhodium`, the hammered 0.905 variant, did the same
+    // thing with a texture on it. Both are in the shots history.
+    //
+    // `wingChrome` is polished chrome at 0.32 albedo, and it is the only metal
+    // in the library whose value range matches the reference: each pleat lands
+    // somewhere between near-black and blown white depending on which way it
+    // faces, which IS what the reference skirt does. Note for the lead: the
+    // reference is brighter overall than this renders. If mat/ can add a
+    // polished sheet silver around 0.50-0.55 albedo, this should move to it —
+    // the geometry will not need to change. Nothing between 0.32 and 0.905
+    // exists today.
     this.cape.init(
       this.ctx.scene,
-      mat.get('polRhodium'),     // outside: polished silver
+      mat.get('wingChrome'),     // outside: polished silver
       mat.get('polGold'),        // the hem wire
       capeRoot, 3, 2,
       mat.get('darkChrome'),     // inside: the dark cavity
@@ -875,15 +899,20 @@ export default class Character {
     const scene = this.ctx.scene;
     const SPREAD = 2.62;          // wider than the skirt collar — it covers the
                                   // shoulders, and from behind it is a bib
+    // THE YOKE MUST SIT PROUD OF THE SKIRT. The first version's lower edge was
+    // at radius 0.285 where the skirt is already 0.32 wide, so the whole thing
+    // rendered INSIDE the skirt and was invisible from every angle. It now runs
+    // from above the skirt's pinned row and stays outboard of it all the way
+    // down, which is also what a real yoke does: the cape hangs UNDER it.
     const yokeSurf = (u, v, out) => {
       const th = (u - 0.5) * SPREAD;
       // drops lower at the centre back and at the shoulder points, like the
       // scalloped bib in the reference
-      const dip = 0.68 + 0.32 * Math.cos(th * 2.1);
-      const ax = 0.150 + 0.135 * v;
-      const az = 0.135 + 0.105 * v;
+      const dip = 0.70 + 0.30 * Math.cos(th * 2.1);
+      const ax = 0.205 + 0.150 * v;
+      const az = 0.180 + 0.125 * v;
       out[0] = ax * Math.sin(th);
-      out[1] = 0.052 - 0.185 * v * dip;
+      out[1] = 0.085 - 0.235 * v * dip;
       out[2] = -az * Math.cos(th);
     };
 
@@ -1004,8 +1033,12 @@ export default class Character {
         this.parts.arms[1].rotation.x = sw * 0.62;
         // splayed further than a real runner. From the side and from behind
         // the arms sat inside the torso silhouette and simply did not exist.
-        this.parts.arms[0].rotation.z = -0.30 + swAlt * 0.10;
-        this.parts.arms[1].rotation.z = 0.30 - swAlt * 0.10;
+        // Splayed to 0.42 rad. At 0.30 the hands hung inside the skirt's
+        // silhouette and emerged BELOW its hem, which read as the character
+        // having no arms and two spare mittens. The reference hangs them at
+        // nearly 45 degrees, clear of the skirt on both sides.
+        this.parts.arms[0].rotation.z = -0.42 + swAlt * 0.10;
+        this.parts.arms[1].rotation.z = 0.42 - swAlt * 0.10;
         // The elbow is the whole point of the two-segment arm: a runner's arm
         // is held bent, and a straight one reads as a stick.
         bendA = -0.95 - swAlt * 0.35;
