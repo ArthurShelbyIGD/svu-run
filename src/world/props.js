@@ -9,10 +9,10 @@
 // finials and fallen masonry.
 //
 // HOW IT STAYS CHEAP.
-// All of that is FOUR prototype meshes — one per material — each holding a
-// complete 24m bay of architecture, drawn as thin instances. A bay is ~5k
-// triangles and the whole visible world is about a dozen bays, so the entire
-// colonnade is 4-6 draw calls regardless of how far you can see.
+// All of that is a handful of prototype meshes — one per material per family
+// (bay run, column, accent, floor) — drawn as thin instances. The entire
+// visible world is about a dozen draw calls regardless of how far you can
+// see, and around 50k triangles on the low preset.
 //
 // HOW IT FOLLOWS CORNERS.
 // Every instance is placed with track.path.toWorldExact / yawExactAt, the same
@@ -501,6 +501,13 @@ export default class Props {
     const stoneBuf = this.accentBufs[0];
     const goldBuf = this.accentBufs[1];
     if (this._nearJunction(s, 16, track)) {
+      stoneBuf.fill(0, o, o + 16);
+      goldBuf.fill(0, o, o + 16);
+      return;
+    }
+    // propDensity is a quality contract, not a suggestion: on the low preset
+    // a little under half of the wayside dressing simply does not spawn.
+    if (this._rng.next() > this.ctx.config.q.propDensity) {
       stoneBuf.fill(0, o, o + 16);
       goldBuf.fill(0, o, o + 16);
       return;

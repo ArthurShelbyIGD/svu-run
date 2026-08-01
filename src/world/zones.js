@@ -204,6 +204,34 @@ export function paintZone(c, zone, w, h) {
     c.fillRect(0, y, w, h * 0.006);
   }
 
+  // ---- 2b. triforium: a blind gallery above the windows ------------------
+  // The band between vault and clerestory is the top of the screen wherever
+  // the corridor is not vaulted, and as a flat wash it was the last part of
+  // the panorama still reading as paint. Small dark niches give it scale: you
+  // can tell how far away a wall is when you can see its courses.
+  const triT = Y_VAULT + (Y_CLERE_T - Y_VAULT) * 0.26;
+  const triB = Y_CLERE_T - (Y_CLERE_T - Y_VAULT) * 0.10;
+  const triStep = w / (BAYS * 3);
+  c.fillStyle = stone + '0.45)';
+  c.fillRect(0, triT - h * 0.006, w, h * 0.006);
+  for (let i = 0; i < BAYS * 3; i++) {
+    const cx = (i + 0.5) * triStep;
+    const nw = triStep * 0.28;
+    const sp = triT + nw;
+    c.fillStyle = 'rgba(0,0,0,0.52)';
+    c.beginPath();
+    c.moveTo(cx - nw, triB);
+    c.lineTo(cx - nw, sp);
+    c.arc(cx, sp, nw, Math.PI, 0);
+    c.lineTo(cx + nw, triB);
+    c.closePath();
+    c.fill();
+    c.fillStyle = 'rgba(255,236,205,0.06)';
+    c.fillRect(cx - nw - triStep * 0.11, triT, triStep * 0.09, triB - triT);
+  }
+  c.fillStyle = stone + '0.40)';
+  c.fillRect(0, triB, w, h * 0.008);
+
   // ---- 3. clerestory: the light source ----------------------------------
   // Dark piers, bright openings. This band carries almost all the contrast in
   // the image; without it the interior has no reason to be lit at all.
@@ -219,14 +247,14 @@ export function paintZone(c, zone, w, h) {
 
     // halo first, so the window sits inside its own glare
     const halo = c.createRadialGradient(cx, (top + bot) * 0.5, 1, cx, (top + bot) * 0.5, bayW * 0.62);
-    halo.addColorStop(0, zone.shaft + (zone.shaftAlpha * 0.85) + ')');
+    halo.addColorStop(0, zone.shaft + (zone.shaftAlpha * 0.62) + ')');
     halo.addColorStop(1, zone.shaft + '0)');
     c.fillStyle = halo;
     c.fillRect(cx - bayW, top - h * 0.06, bayW * 2, (bot - top) + h * 0.12);
 
     // the opening: a round-headed light with a bright sill
     const wg = c.createLinearGradient(0, top, 0, bot);
-    wg.addColorStop(0, 'rgba(255,255,255,0.92)');
+    wg.addColorStop(0, 'rgba(255,252,244,0.80)');
     wg.addColorStop(0.45, zone.shaft + '0.85)');
     wg.addColorStop(1, warm + '0.55)');
     c.fillStyle = wg;
