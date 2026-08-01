@@ -827,14 +827,15 @@ export default class Character {
     // ODD flute counts only — see the note on _lobe() in cape.js. A crease on
     // the centre-back meridian would put a dark seam down the middle of the one
     // view the player looks at all game.
-    // SIX columns per flute, on every preset. This number was found by looking
-    // at the hem, not by counting vertices: at 2, 3 and 4 columns the scalloped
-    // edge sampled as a hard sawtooth and the gold hem wire read as a paper
-    // crown. Six puts two vertices in the bottom of each scallop, which is what
-    // finally rounds it. It is affordable because the simulation is now O(rows)
-    // — about a dozen scalars — and the per-vertex cost is one rotation.
-    const flutes = low ? 9 : (high ? 13 : 11);
-    const perFlute = low ? 5 : 6;
+    // NINE FLUTES AND THREE HEM WAVES, on every preset — that ratio is the
+    // shape, so it must not drift between presets; only the sampling does.
+    // Measured off docs/reference-rear.png at the hem, where both are countable
+    // at once: about nine ribs across the visible back, and three hem waves.
+    // The build this replaces tied one hem wave to every rib, which is why the
+    // hem came out as a paper crown. See _rest() in cape.js.
+    const flutes = 9;
+    const scallops = 3;
+    const perFlute = low ? 5 : (high ? 8 : 6);
     const rows = low ? 7 : (high ? 14 : 12);
 
     // The yoke line. Everything below is measured off docs/reference-rear.png,
@@ -854,7 +855,7 @@ export default class Character {
     this.parts.capeRoot = capeRoot;
 
     this.cape = new Cape({
-      flutes, perFlute, rows,
+      flutes, scallops, perFlute, rows,
       len: 0.650,
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
@@ -868,20 +869,35 @@ export default class Character {
       // for the head alone it came out 2.5x as wide as it was long and read as a
       // TUTU. These numbers split the difference and lean on flarePow to buy the
       // rest: 0.98 m across the hem, against a visible 0.56 m drop.
-      rx0: 0.250, rx1: 0.520,
-      rz0: 0.210, rz1: 0.385,
+      rx0: 0.250, rx1: 0.575,
+      rz0: 0.210, rz1: 0.425,
       // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
       // the skirt and swing clear of it, which is what the reference shows.
       spread0: 2.10,
-      spread1: 2.72,
+      spread1: 2.66,
       // >1 so the skirt leaves the yoke almost vertical and opens into a bell
-      // low down, which is the profile in the reference.
-      flarePow: 1.58,
+      // low down, which is the profile in the reference. It was 1.58, which
+      // held the skirt in a near-cylinder for two thirds of its drop and only
+      // opened it in the last quarter — a funnel, not a bell. Tracing the
+      // reference's outline, its half-width is already 60% of final at
+      // mid-skirt, which is an exponent near 1.3.
+      flarePow: 1.32,
       // Deep. The first pass at 0.052 rendered as a smooth white lampshade:
       // the flutes existed (the hem scallops proved it) but did not swing the
       // normals far enough to band a mirror surface.
-      fluteAmp: 0.085,
-      hemCut: 0.120,
+      //
+      // But it went too far the other way. What bands a mirror is the SLOPE of
+      // the rib, which is depth over width, and at 0.085 across a 0.13 m rib
+      // the sides were near vertical: the ribs stopped being pleats in a sheet
+      // and became separate hanging tubes with gaps between them. The reference
+      // rib stands proud by about a fifth of its own width. At nine flutes each
+      // rib is 0.17 m around, so 0.062 is a little over a third — still much
+      // bolder than the reference, because this is seen at 20 metres in a dark
+      // hall rather than lit on a plinth, and legibility wins.
+      fluteAmp: 0.062,
+      // Hem wave, as a fraction of skirt length. The reference's is 0.125 of
+      // the drop peak-to-trough; a touch more here for the same reason.
+      hemCut: 0.145,
       trimR: 0.010,
       trimSu: low ? 4 : 5,
       rippleAmp: 0.022,

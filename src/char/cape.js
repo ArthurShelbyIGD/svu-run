@@ -55,6 +55,8 @@ export class Cape {
    *   flutes    vertical pleats across the cape. ODD, so a lobe crown — not a
    *             crease — lands on the centre-back meridian, which is dead
    *             centre of frame for the entire game.
+   *   scallops  hem waves across the cape. Several flutes long — see _rest().
+   *             Must divide `flutes` and be odd, for the same reason.
    *   perFlute  columns per flute. 2 gives a triangular pleat, 3+ a rounded one.
    *   rows      rows down the skirt; also the length of the dynamics chain.
    */
@@ -63,6 +65,7 @@ export class Cape {
     const cols = flutes * opts.perFlute + 1;
     const rows = opts.rows;
     this.flutes = flutes;
+    this.scallops = opts.scallops;
     this.cols = cols;
     this.rows = rows;
 
@@ -130,13 +133,22 @@ export class Cape {
   /**
    * The flute profile. 0 on a crease line, 1 on a lobe crown.
    *
-   * The exponent is what makes it read as metal fluting rather than a sine
-   * wave: it widens the crowns and narrows the valleys, so each pleat is a
-   * broad convex face meeting its neighbour at a hard line — which is where the
-   * bright/dark banding comes from.
+   * We want two things that pull against each other: a BROAD convex crown (so
+   * each pleat is a face, not a wire) and a crease with a definite corner (so
+   * the pleats band the reflection). `|sin|^0.48` gave both — and a third thing
+   * nobody asked for. Its slope at a zero is INFINITE, so every crease line was
+   * a cusp: the plan-view outline of the hem spiked inward at each one, and the
+   * gold wire swept along that outline came out as a zigzag paper crown. That
+   * is what "the scallops read as a sawtooth" was, all along; it was never the
+   * scallop function, which is a smooth cosine.
+   *
+   * `t(2 - t)` with `t = |sin|` keeps the corner (slope 2 at the crease, finite)
+   * and flattens the top into the broad face the reference shows. Compare the
+   * two at the crease: infinite slope against 2.
    */
   _lobe(u) {
-    return Math.pow(Math.abs(Math.sin(Math.PI * this.flutes * u)), 0.48);
+    const t = Math.abs(Math.sin(Math.PI * this.flutes * u));
+    return t * (2 - t);
   }
 
   /**
@@ -154,15 +166,27 @@ export class Cape {
     const az = this.rz0 + (this.rz1 - this.rz0) * f;
     // fluting is present at the yoke and deepens as the skirt widens
     const amp = this.fluteAmp * (0.32 + 0.68 * v) * lobe;
-    // The scallop is an edge treatment, so it only bites in the bottom third.
+    // THE SCALLOP IS ITS OWN WAVE, SEVERAL FLUTES LONG. This is the correction
+    // that finally kills the sawtooth, and it came from measuring the reference
+    // hem rather than reasoning about it: the reference shows roughly nine ribs
+    // across the visible back but only THREE hem waves. The scallop is a large
+    // petal edge; the fluting is fine surface detail riding over it. Tying one
+    // to the other — a hem wave per rib — is what made a hem that rose and fell
+    // 10 cm every 8 cm of arc, i.e. a zigzag by construction, no matter how
+    // smooth the functions generating it were.
     //
-    // A RAISED COSINE, not (1 - lobe). Driving the hem off the lobe function
-    // put a cusp with an infinite slope on every crease line and the hem came
-    // out as a hard SAWTOOTH — a paper crown, not a scalloped edge. This is the
-    // same period and phase (1 on a crease, 0 on a lobe crown) but smooth, and
-    // it needs four columns per flute to sample without faceting.
-    const scal = 0.5 + 0.5 * Math.cos(Math.PI * 2 * this.flutes * u);
-    const hem = this.hemCut * this.len * scal * Math.max(0, (v - 0.62) / 0.38);
+    // `scallops` divides `flutes`, so a hem peak always lands on a crease and a
+    // hem trough on a lobe crown, and both are odd, so the centre-back meridian
+    // gets a lobe crown at the bottom of a trough — the widest, calmest read
+    // for the one view that is on screen all game.
+    const scal = 0.5 + 0.5 * Math.cos(Math.PI * 2 * this.scallops * u);
+    // ...and it is eased in with a smoothstep rather than a linear ramp. A
+    // linear ramp puts a horizontal crease right across the skirt at v = 0.62
+    // where the second derivative jumps; on a mirror surface that crease shows
+    // as a band. Smoothstep leaves the scallop swelling out of the flute.
+    let g = (v - 0.58) / 0.42;
+    if (g < 0) g = 0; else g = g * g * (3 - 2 * g);
+    const hem = this.hemCut * this.len * scal * g;
     // Corner sweep. The skirt is an ARC of a cone, so its two open ends meet the
     // hem at a hard right angle, and those two corners rendered as horizontal
     // SPIKES jutting out either side at hem height. Pulling the last flute's
