@@ -97,34 +97,173 @@ import { EV } from './ctx.js';
  * pixels above luminance 250 from 0.215% to 1.063% while the frame mean moved
  * 93.4 -> 93.6. That is the definition of the effect wanted here — sparkle
  * without exposure drift.
+ *
+ * ---------------------------------------------------------------------------
+ * THIRD MEASUREMENT PASS — THE MERGE. Every one of the numbers above was
+ * measured against a build in which mat/, world/ and the environment cubemap
+ * were dimmer than they now are. All three then landed at once, each of them
+ * brighter, and the grade on top of them stopped being a grade and became a
+ * clipping machine.
+ *
+ * Sampled at FULL RESOLUTION (this matters: the first probe of this pass
+ * sampled a 400px downscale, which box-averages 4x4 blocks and reported 1.29%
+ * clipped where the real frame had 4.77% — averaging is the one thing you must
+ * not do when measuring clipping). Hero pose, 1600x900, q=high, seed 1:
+ *
+ *   shipped merge   mean 73.6  p95 234  p99 255   1.26% of pixels at luma 255
+ *                                                 4.77% with a channel at 254+
+ *                                                 44.6% below luma 32
+ *
+ * A p99 of 255 means the top 1% of the frame is not "bright", it is GONE. The
+ * clip map (every pixel with a channel >= 254 painted magenta) says where:
+ * the character's entire pavé body was one solid magenta blob, the gold star
+ * pickups were solid, the marble column faces were solid speckle, and the
+ * polished floor's reflections were solid. Not a highlight anywhere — a
+ * stencil.
+ *
+ * WHAT WAS ACTUALLY CLIPPING, in order of contribution. Each measured by
+ * changing one thing on the live frame and re-sampling:
+ *
+ *   highlightsExposure 40 -> 0     1.26% -> 0.68% at 255,  4.77% -> 2.38% chan
+ *   contrast    1.22 -> 1.00       1.26% -> 1.03%
+ *   sharpenEdge 1.00 -> 0.75       0.53% -> 0.22%,         2.00% -> 1.18% chan
+ *   bloom weight -> 0              1.26% -> 1.27%  (bloom was NOT the culprit)
+ *   exposure    1.80 -> 1.30       1.26% -> 0.84%, and the mean fell 73.6 ->
+ *                                  55.2 with 55% of the frame below luma 32
+ *
+ * That last line is the important one and it is why this pass is not simply
+ * "turn the exposure down". Exposure is a global operator: pulling it far
+ * enough to unclip the pavé takes the black floor with it and buys a frame
+ * that is dark AND still clipped. The clipping was being manufactured AFTER
+ * the tonemapper, by operators that have no roll-off at all:
+ *
+ * 1. Read imageProcessingFunctions.fx in order. The tonemapper runs, then
+ *    `toGammaSpace`, then `saturate` — and only THEN contrast and colour
+ *    curves. Everything those two add on top of a value that is already at
+ *    0.95 has nowhere to go but 1.0.
+ * 2. Babylon's `contrast` is a smoothstep, x*x*(3-2x). Its derivative is ZERO
+ *    at both ends. At 1.22 it takes the 0.88..1.0 band — precisely the band a
+ *    filmic shoulder exists to keep separated — and squeezes it flat. It is a
+ *    highlight ERASER wearing a contrast label.
+ * 3. `highlightsExposure` 40 is a flat 1.08x multiply on every pixel above
+ *    ~0.83 luma with no curve on it whatsoever. Anything above 0.926 clips by
+ *    construction. On a jewellery render that is the entire subject.
+ * 4. Sharpen adds its edge term after all of that, so it manufactures clipped
+ *    pixels out of bright ones that had just survived.
+ *
+ * THE FIX IS SHAPED LIKE A TONE CURVE, not like a dimmer. Pull the top down
+ * (exposure 1.80 -> 1.62, highlights gain to zero, contrast to 1.10, sharpen
+ * to 0.85) and push the MIDDLE back up to pay for it (midtonesExposure 0 ->
+ * 24). The colour-curve bands make that separation exact: at luma >= 0.83 the
+ * shader uses the highlights curve alone, so lifting midtones cannot re-clip
+ * anything. Measured on the hero pose:
+ *
+ * `after` here is the SHIPPED state, including the vignette ease documented
+ * further down; every pair is two separate page loads, one variant each.
+ *
+ *   pose                mean  p95  p99   luma255  chan-clip   <32   hi sigma
+ *   hero      before    73.6  234  255    1.26%     4.77%    44.6%    16.6
+ *             after     69.5  209  248    0.44%     1.80%    44.5%    17.1
+ *   char-rear before    75.8  238  255    1.58%     5.15%    43.5%    17.9
+ *             after     71.1  211  252    0.56%     2.18%    43.9%    18.1
+ *   phone     before    88.5  242  255    1.69%     7.14%    35.6%    15.7
+ *             after     83.2  219  253    0.71%     2.93%    35.3%    15.3
+ *   phone/low before    95.2  252  255    1.57%    11.75%    31.7%    15.9
+ *             after     88.6  219  236    0.00%     0.36%    28.1%    11.2
+ *
+ * Clipping down 2.4x to 30x depending on the pose, the dark end within a point
+ * of where it started on every frame (the mood is intact — this is not a
+ * lifted-blacks fix), the mean down 5-7%, and the spread of luminance WITHIN
+ * the bright band holding or rising: there is shape in the highlights where
+ * there was a plateau. The worst frame in the set was the one most people will
+ * actually see — the phone at 'low' had one pixel in eight with a clipped
+ * channel, and now has one in three hundred.
+ *
+ * BLOOM. Re-checked rather than assumed, because the threshold is a linear
+ * value against a scene that got brighter underneath it. 1.90 -> 2.40 pulls
+ * the marble, the rails and the character's own pavé back out of the
+ * highlight pass while the emitters and the apse still bloom; looked at side
+ * by side, the corridor keeps its glow and the character loses the halo that
+ * was smearing its stones together.
+ *
+ * VIGNETTE, re-tuned because exposure moved. The vignette multiplies BEFORE
+ * the tonemapper, so it does not dim pixels, it pushes them into the toe — and
+ * lowering exposure by 10% makes the same weight bite harder. Measured on the
+ * hero pose, weight 4.6 with the vignette switched off entirely: mean 65.7 ->
+ * 87.6, and the frame below luma 32 goes 46.9% -> 34.9%. One number, a quarter
+ * of the frame's light. (Note the corners of this scene are naturally BRIGHTER
+ * than its centre — colonnade either side, black floor down the middle — so
+ * corner/centre without a vignette is 1.21, not 1.0.)
+ *
+ * Taking the weight from 4.6 to 4.0 gives back exactly what the exposure cut
+ * took and buys back none of the clipping, because the vignette works on the
+ * periphery and the clipping is on the subject:
+ *
+ *   weight 4.6   mean 65.9   <32 46.9%   corner/centre 0.47   chan-clip 1.70%
+ *   weight 4.0   mean 70.1   <32 43.8%   corner/centre 0.53   chan-clip 1.74%
+ *
+ * 43.8% is below where the shipped merge sat (44.6%), so the frame is no
+ * darker than before this pass while clipping 3x less. medium and low move by
+ * the same proportion.
+ *
+ * The honest part of that: bloom was NOT what was blowing the frame out. Two
+ * clean measurements, each a separate page load so the pose is identical —
+ * threshold 2.40 against 1.90 — came back with the same clipping to two
+ * decimal places (0.39% at luma 255, 1.66% vs 1.65% channel clip) and a 2%
+ * difference in frame mean. At the pre-regrade exposure the threshold looked
+ * like the obvious suspect; measured, it is a crispness control, not a
+ * headroom one. The regrade is what bought the headroom.
+ *
+ * MEASURING A/B IN ONE PAGE IS A TRAP, and it is worth writing down because
+ * every future pass will be tempted by it. Posing the capture pauses the game
+ * LOOP, but scene.render() still advances Babylon's own animation clock off
+ * wall time, and under software rendering one render is most of a second — so
+ * the spinning gold star, which is the largest bright object in the frame,
+ * moves between variants. Rendering the SAME settings twice in a row measured
+ * mean 66.7 then 63.2. Clipping percentages are robust to that (0.42 / 0.43)
+ * because they are dominated by static geometry; means are not. Every
+ * before/after pair above comes from two separate page loads, one variant each.
+ *
+ * HANDOFF TO THE LEAD — `npm run shots` cannot complete in this container, and
+ * it is not the grade's doing. tools/capture.mjs takes its screenshot with
+ * Playwright's default 30s action timeout; a 1600x900 frame at q=high costs
+ * about 11 seconds to actually present through SwiftShader, and the measured
+ * screenshot call sits at 29-31s — a coin flip against its own timeout. It
+ * fails identically on the unmodified merge. Dropping the pipeline's MSAA from
+ * 4 samples to 1 was tried and moved the screenshot from 29.4s to 31.2s, i.e.
+ * nothing: the cost is the compositor waiting its turn behind a render loop
+ * that never yields, not the sample count, so `samples` stays at 4. The fix is
+ * one argument in tools/ — `timeout: 0` on the page.screenshot call — which is
+ * lead-owned. Every frame in this pass was captured through a local probe that
+ * passes that flag.
  */
 const LOOKS = {
   high: {
-    exposure: 1.80,
-    contrast: 1.22,
-    vignetteWeight: 4.6,
+    exposure: 1.62,
+    contrast: 1.10,
+    vignetteWeight: 4.0,
     vignetteK: 0.34,
-    bloomThreshold: 1.90,
+    bloomThreshold: 2.40,
     bloomKernel: 40,
     bloomScale: 0.5,
     samples: 4,
     dither: true,
     sharpen: true,
-    sharpenEdge: 1.00,
+    sharpenEdge: 0.85,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.9, samples: 10, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
-    exposure: 1.80,
-    contrast: 1.22,
-    vignetteWeight: 4.4,
+    exposure: 1.62,
+    contrast: 1.10,
+    vignetteWeight: 3.9,
     vignetteK: 0.34,
-    bloomThreshold: 1.85,
+    bloomThreshold: 2.35,
     bloomKernel: 32,
     bloomScale: 0.5,
     samples: 1,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.90,
+    sharpenEdge: 0.80,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.7, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   low: {
@@ -132,28 +271,41 @@ const LOOKS = {
     // that is the expensive pass here, a depth-aware sample kernel plus a
     // bilateral blur.
     //
-    // Sharpen is now ON at 'low', reversing the previous decision. The reason
-    // is a cost comparison rather than a taste one: Babylon's sharpen is a
-    // single full-screen quad with five texture taps, while FXAA — which
-    // 'low' already runs — is roughly a dozen. Sharpen is therefore about 40%
-    // of a pass 'low' has already bought, and it is the single control that
-    // makes the pavé read as set stones rather than as a smooth white ball.
-    // Trading it away was trading away the art direction to save very little.
+    // Sharpen is OFF at 'low' again, and this time the reason is a measurement
+    // rather than an argument. The note that turned it on said Babylon's
+    // sharpen is "a single full-screen quad with five texture taps, while FXAA
+    // is roughly a dozen — about 40% of a pass 'low' has already bought". That
+    // reasoning counts ALU and ignores bandwidth, and bandwidth is what a
+    // full-screen pass actually costs. Timed on the phone viewport at 'low' by
+    // rendering through requestAnimationFrame (which forces a real present —
+    // measuring scene.render() alone just queues work and reports 4ms for a
+    // frame that takes 450ms to appear):
+    //
+    //   all post on            447 ms/frame
+    //   sharpen off            341 ms/frame     <- one pass, 24% of the frame
+    //   sharpen + fxaa off     297 ms/frame     <- fxaa is 44ms, sharpen 106ms
+    //
+    // Sharpen is 2.4x the cost of FXAA here, not 0.4x. A quarter of the frame
+    // budget for a local-contrast effect is not a trade 'low' can make;
+    // ARCHITECTURE is explicit that performance beats diamonds. It also happens
+    // to be the largest remaining source of clipped pixels after the regrade
+    // (0.53% -> 0.22% of the frame at luma 255 on the hero pose), so 'low'
+    // loses the sparkle and gets a cleaner image for it.
     //
     // 'low' is where the phones are, and a phone is often held in daylight, so
     // it still runs a little brighter and less contrasty than the desktop
     // grade to survive screen glare.
-    exposure: 1.92,
-    contrast: 1.16,
-    vignetteWeight: 3.4,
+    exposure: 1.74,
+    contrast: 1.08,
+    vignetteWeight: 3.2,
     vignetteK: 0.34,
-    bloomThreshold: 1.80,
+    bloomThreshold: 2.30,
     bloomKernel: 24,
     bloomScale: 0.4,
     samples: 1,
     dither: true,
-    sharpen: true,
-    sharpenEdge: 0.70,
+    sharpen: false,
+    sharpenEdge: 0.62,
     ssao: null,
   },
 };
@@ -195,7 +347,7 @@ const GRADE = {
 
   // Midtones carry the saturation, and lean a touch warm so skin/gold in the
   // middle of the range does not sit in the same neutral band as the track.
-  midtonesHue: 34, midtonesDensity: 24, midtonesSaturation: 14, midtonesExposure: 0,
+  midtonesHue: 34, midtonesDensity: 24, midtonesSaturation: 14, midtonesExposure: 24,
 
   // Warm lifted highlights — the "gold light" of the reference. Saturation is
   // pulled back slightly so specular hits still bleach towards white, which is
@@ -208,7 +360,7 @@ const GRADE = {
   // frame to paper and erased the pavé. 40 is where the corridor emitters and
   // the gold rails reach the top of the range and the character does not.
   // Pixel-scale sparkle comes from `sharpenEdge` instead, which is local.
-  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 40,
+  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 0,
 };
 
 export class Post {
@@ -475,6 +627,7 @@ export class Post {
    */
   apply(o) {
     const ip = this.pipeline.imageProcessing;
+    if (o.toneMappingType !== undefined) ip.toneMappingType = o.toneMappingType;
     if (o.exposure !== undefined) ip.exposure = o.exposure;
     if (o.contrast !== undefined) ip.contrast = o.contrast;
     if (o.vignetteWeight !== undefined) ip.vignetteWeight = o.vignetteWeight;
@@ -484,6 +637,7 @@ export class Post {
     if (o.bloomKernel !== undefined) this.pipeline.bloomKernel = o.bloomKernel;
     if (o.bloomWeight !== undefined) this.pipeline.bloomWeight = o.bloomWeight;
     if (o.curvesEnabled !== undefined) ip.colorCurvesEnabled = o.curvesEnabled;
+    if (o.sharpenEnabled !== undefined) this.pipeline.sharpenEnabled = o.sharpenEnabled;
     if (o.sharpenEdge !== undefined && this.pipeline.sharpen) this.pipeline.sharpen.edgeAmount = o.sharpenEdge;
     if (o.ssaoStrength !== undefined && this.ssao) this.ssao.totalStrength = o.ssaoStrength;
     if (o.ssaoRadius !== undefined && this.ssao) this.ssao.radius = o.ssaoRadius;
