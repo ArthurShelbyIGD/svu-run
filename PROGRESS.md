@@ -9,6 +9,13 @@ spread across many token windows survivable.
 
 ## Current state
 
+**Sprint 4 (char) — PAVE IS GEOMETRY NOW.** The single biggest change to how the
+game looks. See "Seventh finding" below. The runner is a diamond-set piece
+rather than a grey ball: ~1,230 individually cut stones on `high` (779 on
+`low`), laid at one constant physical pitch over the hood, ears, torso, arms,
+legs and the ruby, sitting proud of a dark setting bed. The cape is a silver
+bat wing with tapered gold ribs and a dark cavity underneath.
+
 **Sprint 3 — CHARACTER REBUILT.** The runner now reads as the reference NFT:
 hooded onesie with a framed face opening, warm rose-gold face with oversized
 eyes and catchlights, bear ears with inner colour, a scalloped bat wing with
