@@ -187,7 +187,7 @@ export class Cape {
       const rad = new Float32Array(this.rows);
       for (let r = 0; r < this.rows; r++) {
         idx[r] = r * this.cols + c;
-        rad[r] = 0.048 * (1 - 0.62 * (r / (this.rows - 1)));
+        rad[r] = 0.023 * (1 - 0.48 * (r / (this.rows - 1)));
       }
       strands.push({ idx, rad });
     }
@@ -195,7 +195,7 @@ export class Cape {
       const idx = new Int32Array(this.cols);
       const rad = new Float32Array(this.cols);
       const base = (this.rows - 1) * this.cols;
-      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.022; }
+      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.013; }
       strands.push({ idx, rad });
     }
     this.strands = strands;
@@ -228,8 +228,8 @@ export class Cape {
     // and then keep going. The constants are tuned by LOOKING: at the start
     // speed the cape should trail at roughly 40 degrees off vertical, and at
     // top speed it should be streaming almost horizontally behind.
-    const w = speed * 1.75;
-    this.wind = w / (1 + w * 0.010);
+    const w = speed * 2.05;
+    this.wind = w / (1 + w * 0.0095);
 
     const dt2 = dt * dt;
     const gx = -ax;
@@ -253,10 +253,10 @@ export class Cape {
       // to zero and produces a twist — the two halves fight, the sheet ripples,
       // and nothing drifts.
       const ph = tt * 5.2 + this.turb[i];
-      const flutter = Math.sin(ph) * this.wind * 0.55 * this.side[i];
+      const flutter = Math.sin(ph) * this.wind * 0.34 * this.side[i];
       // and a travelling wave running down the length, which is what the eye
       // actually recognises as cloth in the wind
-      const wave = Math.sin(tt * 6.4 - this.down[i] * 7.5) * this.wind * 0.22;
+      const wave = Math.sin(tt * 5.6 - this.down[i] * 6.0) * this.wind * 0.16;
       const gust = 0.86 + 0.14 * Math.sin(ph * 0.7);
 
       const vx = (this.px[i] - this.ox[i]) * DAMP;
@@ -264,7 +264,7 @@ export class Cape {
       const vz = (this.pz[i] - this.oz[i]) * DAMP;
       this.ox[i] = this.px[i]; this.oy[i] = this.py[i]; this.oz[i] = this.pz[i];
       this.px[i] += vx + (gx + flutter) * dt2;
-      this.py[i] += vy + (gy + this.wind * 0.42 + wave) * dt2;
+      this.py[i] += vy + (gy + this.wind * 0.30 + wave) * dt2;
       this.pz[i] += vz + (gz - this.wind * gust) * dt2;
     }
 

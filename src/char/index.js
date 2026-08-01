@@ -36,8 +36,8 @@ const P = {
   faceR: 0.352,
   faceZ: 0.140,          // how far the face protrudes through the hood
   hoodRimR: 0.400,
-  earR: 0.150,
-  earSpread: 0.298,
+  earR: 0.170,
+  earSpread: 0.312,
   earY: 0.80,            // fraction of headR above centre
   bodyW: 0.300, bodyH: 0.222, bodyD: 0.250,
   bodyY: 0.615,
@@ -86,7 +86,11 @@ export default class Character {
 
     // Tessellation budget. `low` must hold 60fps on a mid-range phone, so it
     // gets roughly half the vertices — the same shapes, coarser.
-    this.su = low ? 16 : (high ? 28 : 22);
+    // su is a MULTIPLE OF THE GORE COUNT (8), deliberately. At 28 samples for
+    // 8 gores the surface is sampled 3.5 times per fold, which beats against
+    // the fold frequency and averages the whole thing back into a smooth ball —
+    // the folds were in the mesh and invisible on screen.
+    this.su = low ? 16 : (high ? 32 : 24);
     this.sv = low ? 10 : (high ? 18 : 14);
     this.sd = low ? 7 : (high ? 12 : 9);     // detail parts: cuffs, fingers
 
@@ -231,14 +235,31 @@ export default class Character {
       // left the centre of the head a smooth mirror — the one place it must
       // not be. Even count, ridge on the seam.
       const gore = Math.cos(u * TWO_PI * 8);
-      const folds = 0.052 * Math.sign(gore) * Math.pow(Math.abs(gore), 0.5) * (0.34 + 0.66 * gather);
+      const folds = 0.070 * Math.sign(gore) * Math.pow(Math.abs(gore), 0.55) * (0.40 + 0.60 * gather);
       // A raised ridge along the BACK meridian, u = 0.5 — dead centre of frame
       // for the whole game, and what turns a ball into a garment.
       const d = Math.abs(u - 0.5);
-      const seam = 0.048 * Math.exp(-(d * d) / 0.0018);
+      const seam = 0.060 * Math.exp(-(d * d) / 0.0022);
       return 1 + folds + seam + 0.055 * gather * gather;
     };
     this._hoodWarp = hoodWarp;
+    // A point ON the hood surface, warp and all. Seams computed from this ride
+    // the fabric; seams computed from a plain sphere float off it.
+    const hoodPt = (u, v, out) => {
+      const th = (0.5 - v) * Math.PI;
+      const ct = Math.sign(Math.cos(th)) * Math.pow(Math.abs(Math.cos(th)), 0.93);
+      const st = Math.sign(Math.sin(th)) * Math.pow(Math.abs(Math.sin(th)), 0.93);
+      const ph = u * TWO_PI;
+      const k = hoodWarp(u, v) * out;
+      const sx = Math.sign(Math.sin(ph)) * Math.pow(Math.abs(Math.sin(ph)), 0.95);
+      const cz = Math.sign(Math.cos(ph)) * Math.pow(Math.abs(Math.cos(ph)), 0.95);
+      return [
+        P.headR * ct * sx * k,
+        P.headR * 0.995 * st + 0.035 * Math.cos(v * Math.PI) - 0.02,
+        P.headR * 1.025 * ct * cz * k - 0.022,
+      ];
+    };
+    this._hoodPt = hoodPt;
 
     const g = new Geo();
     g.at(0, 0, -0.022);
@@ -394,6 +415,25 @@ export default class Character {
     }
     p.at(0, 0, 0);
     p.add(pipe(seamPts, (t) => 0.016 + 0.010 * Math.sin(Math.PI * t), 7));
+
+    // PANEL SEAMS. Four gold lines running from the crown down the gore ridges.
+    //
+    // The gores themselves are in the mesh and measurably deep, and at gameplay
+    // distance they still read as nothing: a 3cm corrugation on a 42cm sphere
+    // loses to the pavé normal map and a bright key light. Soft form does not
+    // survive this material. Hard geometry does, and a raised gold line survives
+    // anything — it is also exactly how the reference piece is built, where
+    // every panel meets at a setting rather than a shading gradient.
+    const panelN = Math.max(10, Math.round(sv * 0.8));
+    for (const pu of [0.125, 0.375, 0.625, 0.875]) {
+      const pts = [];
+      for (let i = 0; i <= panelN; i++) {
+        const v = 0.055 + (0.665 * i) / panelN;
+        pts.push(this._hoodPt(pu, v, 1.022));
+      }
+      p.at(0, 0, 0);
+      p.add(pipe(pts, (t) => 0.013 + 0.007 * Math.sin(Math.PI * t), 6));
+    }
     // Drawstring casing: a gold ring around the hood, low down.
     //
     // It is here for a reason the reference does not show. A large smooth
@@ -403,20 +443,13 @@ export default class Character {
     // of the head and it was an artefact. Vertical gores broke it up one way;
     // this breaks it the other, and puts more gold in the rear silhouette.
     const ringPts = [];
-    const rn = Math.max(20, su);
-    const rv = 0.70;
-    // y on the shell at latitude rv:  ry*sin((0.5-v)pi) + yWarp(v)
-    const ringY = P.headR * 0.995 * Math.cos(rv * Math.PI) + 0.035 * Math.cos(rv * Math.PI) - 0.02;
-    for (let i = 0; i <= rn; i++) {
-      const u = i / rn;
-      const R = P.headR * Math.sin(rv * Math.PI) * this._hoodWarp(u, rv) * 1.015;
-      const ph = u * TWO_PI;
-      ringPts.push([R * Math.sin(ph), ringY, R * Math.cos(ph) - 0.022]);
-    }
+    const rn = Math.max(24, su);
+    const rv = 0.695;
+    for (let i = 0; i <= rn; i++) ringPts.push(this._hoodPt(i / rn, rv, 1.030));
     p.at(0, 0, 0);
     p.add(pipe(ringPts, () => 0.017, 6));
     // toggle at the nape
-    p.at(0, ringY - 0.012, -P.headR * 1.02, 0.35);
+    p.at(0, this._hoodPt(0.5, rv, 1.0)[1] - 0.012, -P.headR * 1.06, 0.35);
     p.add(gem(0.040, 6, 0.9));
     p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
 
@@ -635,15 +668,15 @@ export default class Character {
     this.parts.capeRoot = capeRoot;
 
     this.cape = new Cape(cols, rows, {
-      iters: low ? 2 : 3,
-      len: 0.88,
+      iters: low ? 2 : 4,
+      len: 1.16,
       halfW0: 0.17,
-      halfW1: 0.72,
+      halfW1: 1.02,
       scallops,
       colsPerRib,
       hemCut: 0.30,
-      shoulderR: 0.185,
-      shoulderSpread: 2.05,
+      shoulderR: 0.205,
+      shoulderSpread: 2.30,
     });
     // The ribs are PAVÉ, not polished metal, and that was a decision made by
     // looking. Polished rhodium in this world is a mirror: in a dark zone it
