@@ -1,0 +1,13 @@
+{
+  "preset": "high",
+  "poses": [
+    {
+      "name": "phone",
+      "file": "phone.png",
+      "viewport": "phone",
+      "preset": "high",
+      "note": "portrait, the way most people will actually see it",
+      "errors": []
+    }
+  ]
+}

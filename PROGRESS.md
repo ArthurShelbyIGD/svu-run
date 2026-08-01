@@ -70,9 +70,63 @@ cleanly.
   run and progress has a face beyond the score counter. Textures are baked once
   at init; fog, environment intensity and bloom all interpolate, so a zone
   change is a slow reveal rather than a cut.
+- `world/sky.js`: the backdrop is an EQUIRECTANGULAR PANORAMA on a dome with
+  `infiniteDistance`, not a screen-space Layer. The dome follows the camera's
+  position but not its rotation, so it can never be clipped by the far plane
+  and turning a corner swings the whole room around the player. Two domes
+  crossfade zones. The panorama is painted in `zones.js` as a real interior:
+  ribbed vault, blind triforium, glowing clerestory, entablature, great arcade,
+  hall floor with gem pools, plus raked light shafts and haze.
+- `world/props.js` + `world/geo.js`: procedural architecture flanking the
+  track. Fluted column shafts with entasis, moulded plinths and bases, carved
+  capitals with volutes, a transverse vault every 24m, a profiled cornice with
+  a dentil course and a parapet, a low ruined outer aisle, distant pylons,
+  hanging faceted lanterns, a 62m paved hall floor with gold inlay, and wayside
+  plinths carrying star finials among fallen masonry. All of it is a handful of
+  merged prototypes drawn as thin instances — about a dozen draw calls and
+  ~50k triangles on the low preset — placed with `path.toWorldExact` and
+  recycled behind the player like everything else.
 - `audio/`: registered stub — module graph proven, no implementation.
 - `tools/`: `smoke.mjs` (26 checks), `capture.mjs` (10 deterministic poses),
   `harness.mjs` (shared browser plumbing).
+
+### Findings from the world sprint
+
+**Seventh finding: three of the sky's defects were arithmetic, and all three
+were invisible until a frame was rendered.**
+
+1. Babylon's standard shader ADDS `emissiveColor` to the emissive texture and
+   then multiplies by the diffuse texture. A panorama in the emissive slot with
+   a white tint therefore renders as solid white. The image goes in the diffuse
+   slot and the tint in `emissiveColor`.
+2. On a sphere, v = 0.5 is the horizon. The first panorama put its bright
+   horizon band at v = 0.78 — fifty degrees underground. Every scrap of value
+   structure was painted where the floor covers it.
+3. The chase camera pitches DOWN about fourteen degrees, so the only sky ever
+   on screen runs from the horizon to roughly thirteen degrees above it. A
+   clerestory painted higher than that is a clerestory nobody will ever see.
+
+**Eighth finding: Babylon is left-handed, and hand-written index buffers are
+where that bites.** The fluted column shaft was wound by the right-handed
+cross-product rule, so every face was culled. The shaft is sized to swallow the
+track's plain cylinder, so the symptom was not "a hole" — it was a bare pink
+tube standing inside one column in three, which looks like a material bug and
+is not one.
+
+**Ninth finding: two modules agreeing about geometry is not the same as two
+modules agreeing about when to hide it.** `track/` suppresses its columns
+within 16m of a junction; `world/` suppressed a whole 24m bay within 13m of
+one. The windows do not match, so twenty metres before every corner the track's
+cylinder stood alone with no fluted shaft around it. Columns are now placed one
+at a time against the same rule.
+
+**Tenth finding: area without incident is what reads as "Minecraft".** The
+cornice started as one 1.15 x 24m box. In the wide shot its underside was a
+single unbroken white plane across a third of the frame. Splitting it into a
+bed mould, corona, fillet, cyma and dentil course costs about 36 triangles and
+completely changes what the surface is read as. The same applied to the hall
+floor, which needed inlay and cross-bands before it stopped looking like a car
+park.
 
 ### Key finding from Sprint 0
 
@@ -348,4 +402,5 @@ Fan-out starts at Sprint 4.
 | 2026-07-31 | 1 | Added gradient sky + fog, and a pooled thin-instance particle system (pickup, landing, death, corner, speed streaks). 35 checks. |
 | 2026-07-31 | 1 | Fixed corner discontinuity (3.4m sideways teleport in the outer lane), widened the turn reaction window, added late-turn grace. 32 checks. |
 | 2026-07-31 | 1 | Fixed invisible track (mirror floor blowing out on real hardware), added lane dividers, softened the opening difficulty ramp and start speed after first human playtest. |
+| 2026-08-01 | 1 | World sprint: panorama sky dome with real parallax, and a full procedural colonnade — fluted columns, vaults, cornices, lanterns, statues, hall floor. Five bugs found by looking at frames, none by tests. 36 checks. |
 | 2026-07-31 | 1 | Sprint 1 complete: path-space model, 90 degree junction turns with signage, context-sensitive turn input. Smoke test 26 -> 31 checks. Three bugs found by screenshots that no test would have caught. |
