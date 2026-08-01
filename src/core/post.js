@@ -182,6 +182,26 @@ import { EV } from './ctx.js';
  * by side, the corridor keeps its glow and the character loses the halo that
  * was smearing its stones together.
  *
+ * VIGNETTE, re-tuned because exposure moved. The vignette multiplies BEFORE
+ * the tonemapper, so it does not dim pixels, it pushes them into the toe — and
+ * lowering exposure by 10% makes the same weight bite harder. Measured on the
+ * hero pose, weight 4.6 with the vignette switched off entirely: mean 65.7 ->
+ * 87.6, and the frame below luma 32 goes 46.9% -> 34.9%. One number, a quarter
+ * of the frame's light. (Note the corners of this scene are naturally BRIGHTER
+ * than its centre — colonnade either side, black floor down the middle — so
+ * corner/centre without a vignette is 1.21, not 1.0.)
+ *
+ * Taking the weight from 4.6 to 4.0 gives back exactly what the exposure cut
+ * took and buys back none of the clipping, because the vignette works on the
+ * periphery and the clipping is on the subject:
+ *
+ *   weight 4.6   mean 65.9   <32 46.9%   corner/centre 0.47   chan-clip 1.70%
+ *   weight 4.0   mean 70.1   <32 43.8%   corner/centre 0.53   chan-clip 1.74%
+ *
+ * 43.8% is below where the shipped merge sat (44.6%), so the frame is no
+ * darker than before this pass while clipping 3x less. medium and low move by
+ * the same proportion.
+ *
  * The honest part of that: bloom was NOT what was blowing the frame out. Two
  * clean measurements, each a separate page load so the pose is identical —
  * threshold 2.40 against 1.90 — came back with the same clipping to two
@@ -217,7 +237,7 @@ const LOOKS = {
   high: {
     exposure: 1.62,
     contrast: 1.10,
-    vignetteWeight: 4.6,
+    vignetteWeight: 4.0,
     vignetteK: 0.34,
     bloomThreshold: 2.40,
     bloomKernel: 40,
@@ -231,7 +251,7 @@ const LOOKS = {
   medium: {
     exposure: 1.62,
     contrast: 1.10,
-    vignetteWeight: 4.4,
+    vignetteWeight: 3.9,
     vignetteK: 0.34,
     bloomThreshold: 2.35,
     bloomKernel: 32,
@@ -273,7 +293,7 @@ const LOOKS = {
     // grade to survive screen glare.
     exposure: 1.74,
     contrast: 1.08,
-    vignetteWeight: 3.4,
+    vignetteWeight: 3.2,
     vignetteK: 0.34,
     bloomThreshold: 2.30,
     bloomKernel: 24,
