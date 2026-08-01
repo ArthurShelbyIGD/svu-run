@@ -366,18 +366,27 @@ export default class Props {
     //
     // Sides are deliberately not mirrored. A hall that is symmetric about the
     // lane reads as a texture; one that is not reads as a place.
-    const SIL = [];
+    const SIL = [];    // mid band
+    const SILF = [];   // far band — its own bucket, and its own value
+
     // MID BAND, x = 19.5 — the aisle beyond the aisle.
     {
       const X = 19.5;
-      // low: a screen wall with piers, seen between the near columns
+      // Low piece. The height is set by what is IN FRONT of it, not by taste:
+      // the outer aisle's roof is a continuous 4.5m cap at x = 12.4, so from
+      // an eye at 2.8m anything at 19.5m that does not reach 2.8 + 19.5 *
+      // (4.5 - 2.8) / 12.4 = 5.5m is behind a wall. At 6.6m it clears by a
+      // metre and reads as a second storey seen over the first — which is
+      // the entire point of a mid ground.
       for (const sx of [-1, 1]) {
-        box(scene, SIL, 1.50, 4.30, BAY_LEN, sx * X, 2.15, 0);
+        box(scene, SIL, 1.60, 6.60, BAY_LEN, sx * X, 3.30, 0);
         for (const pz of COL_Z) {
-          box(scene, SIL, 2.00, 5.60, 1.70, sx * X, 2.80, pz + sx * 2.0);
+          box(scene, SIL, 2.10, 8.40, 1.80, sx * X, 4.20, pz + sx * 2.0);
         }
       }
-      // tall: must clear 2.8 + 0.55 * 19.5 = 13.5m to be seen over the cornice
+      // Tall piece: must clear 2.8 + 0.55 * 19.5 = 13.5m to break the cornice
+      // skyline at all. Under 20m so it is still inside the frame ceiling from
+      // about seventy metres, where it is a third hazed.
       const tall = [
         [-1, [[-8.0, 2.8, 16.8], [6.0, 3.4, 19.2]]],
         [1, [[-2.0, 3.2, 18.0], [10.0, 2.6, 15.6]]],
@@ -388,25 +397,30 @@ export default class Props {
         }
       }
     }
+
     // FAR BAND, x = 33 — the far side of the hall.
     {
       const X = 33.0;
-      // low: taller than the mid band's 4.3m wall, or it never clears it
+      // Same argument again, one storey up: clear the mid band's 6.6m wall at
+      // 19.5m, which needs 2.8 + 33 * (6.6 - 2.8) / 19.5 = 9.2m. At 11.5m the
+      // three roof lines stack — aisle, mid, far — each one higher on screen
+      // and one step further into the haze. Three horizontals a fixed distance
+      // apart is the oldest depth cue there is and it costs two boxes.
       for (const sx of [-1, 1]) {
-        box(scene, SIL, 2.20, 7.60, BAY_LEN, sx * X, 3.80, 0);
+        box(scene, SILF, 2.40, 11.50, BAY_LEN, sx * X, 5.75, 0);
       }
-      // tall: must clear 2.8 + 0.55 * 33 = 21m. Kept under 31 so the tops are
-      // still inside the frame from about ninety metres out, which is where
-      // the haze has them at two thirds and they read as weather.
+      // Tall piece: clears 2.8 + 0.55 * 33 = 21m. Capped at 30 so the tops are
+      // still inside the frame from about a hundred metres out, which is where
+      // the haze has them at three quarters and they read as weather.
       const tall = [
         [-1, [[-11.0, 5.0, 26.5], [5.0, 6.2, 30.0]]],
         [1, [[-4.0, 5.8, 28.5], [9.0, 4.6, 24.0]]],
       ];
       for (const [sx, ts] of tall) {
         for (const [tz, tw, th] of ts) {
-          box(scene, SIL, tw, th, tw * 0.9, sx * X, th * 0.5, tz);
+          box(scene, SILF, tw, th, tw * 0.9, sx * X, th * 0.5, tz);
           // an attic step, so the skyline is not a row of flat-topped boxes
-          box(scene, SIL, tw * 0.62, 2.60, tw * 0.56, sx * X, th + 1.3, tz);
+          box(scene, SILF, tw * 0.62, 2.60, tw * 0.56, sx * X, th + 1.3, tz);
         }
       }
     }
@@ -429,19 +443,20 @@ export default class Props {
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
-    // The silhouette fill. `emissiveColor` rather than `diffuseColor` because
-    // with lighting disabled the standard shader multiplies diffuse by nothing
-    // and adds emissive — see the same note in sky.js. The colour is retinted
-    // per zone from the fog colour in setHaze(), so a distant mass is always a
-    // little darker than the air in front of it and never a hole cut out of a
-    // ruby room in the shape of a sapphire one.
-    this.silMat = new StandardMaterial('worldSil', scene);
-    this.silMat.disableLighting = true;
-    this.silMat.diffuseColor = new Color3(0, 0, 0);
-    this.silMat.specularColor = new Color3(0, 0, 0);
-    this.silMat.emissiveColor = new Color3(0.06, 0.055, 0.075);
+    // TWO materials, not one, and this is the whole reason the bands separate.
+    // Both silhouette rows sit at roughly the same DISTANCE from the camera —
+    // they differ by 13m laterally against 60-140m of depth — so fog alone
+    // gives them almost identical values and the stack reads as one flat
+    // terrace. Assigning the far band a value nearer the haze by hand puts the
+    // aerial perspective back in. One extra draw call for the cue the whole
+    // layer exists to deliver.
+    this.silMat = this._silMaterial(scene, 'worldSil');
+    this.silFarMat = this._silMaterial(scene, 'worldSilFar');
     this.baySil = mergeBucket(scene, 'baySil', SIL, this.silMat);
-    if (this.baySil) this.baySil.receiveShadows = false;
+    this.baySilFar = mergeBucket(scene, 'baySilFar', SILF, this.silFarMat);
+    for (const m of [this.baySil, this.baySilFar]) {
+      if (m) m.receiveShadows = false;
+    }
 
     // --- contact darkening where the walls meet the floor ---
     // Two bands per side, running the whole bay. This is what turns a set of
@@ -457,7 +472,7 @@ export default class Props {
     if (this.bayAO) this.bayAO.receiveShadows = false;
 
     for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem,
-      this.baySil, this.bayAO]) {
+      this.baySil, this.baySilFar, this.bayAO]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
 
@@ -485,6 +500,25 @@ export default class Props {
    * track uses, so the fluted shaft is present wherever the cylinder it hides
    * is present. Three extra draw calls; the defect goes away completely.
    */
+  /**
+   * One flat, unlit, fogged fill for a silhouette band.
+   *
+   * `emissiveColor` rather than `diffuseColor`: with lighting disabled the
+   * standard shader multiplies diffuse by nothing and adds emissive — the same
+   * trap documented in sky.js. The colour itself is retinted per zone in
+   * setHaze(), so a distant mass is always a fixed step darker than the air in
+   * front of it and never a hole cut out of a ruby room in the shape of a
+   * sapphire one.
+   */
+  _silMaterial(scene, name) {
+    const m = new StandardMaterial(name, scene);
+    m.disableLighting = true;
+    m.diffuseColor = new Color3(0, 0, 0);
+    m.specularColor = new Color3(0, 0, 0);
+    m.emissiveColor = new Color3(0.06, 0.055, 0.075);
+    return m;
+  }
+
   _buildColumn(scene, mat, q) {
     const low = q.name === 'low';
     const tess = low ? 8 : 16;
@@ -829,10 +863,16 @@ export default class Props {
    * would otherwise be indistinguishable from the void behind it.
    */
   setHaze(r, g, b) {
-    if (!this.silMat) return;
-    this.silMat.emissiveColor.set(
-      r * 0.42 + 0.010, g * 0.42 + 0.009, b * 0.42 + 0.013,
-    );
+    if (this.silMat) {
+      this.silMat.emissiveColor.set(
+        r * 0.40 + 0.010, g * 0.40 + 0.009, b * 0.40 + 0.013,
+      );
+    }
+    if (this.silFarMat) {
+      this.silFarMat.emissiveColor.set(
+        r * 0.76 + 0.012, g * 0.76 + 0.011, b * 0.76 + 0.016,
+      );
+    }
   }
 
   /** Zone tint for the emissive bits. Called from renderUpdate. */
@@ -867,6 +907,7 @@ export default class Props {
     this.meshes.length = 0;
     if (this.gemMat) this.gemMat.dispose();
     if (this.silMat) this.silMat.dispose();
+    if (this.silFarMat) this.silFarMat.dispose();
     if (this.shaftMat) this.shaftMat.dispose();
     if (this.shaftTex) this.shaftTex.dispose();
     if (this.aoMats) for (const m of this.aoMats) m.dispose();
