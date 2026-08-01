@@ -13,7 +13,7 @@ import {
 } from './core/bjs.js';
 import * as BJS from './core/bjs.js';
 import { Ctx, EV } from './core/ctx.js';
-import { Config, guessPreset, QUALITY } from './core/config.js';
+import { Config, guessPreset, QUALITY, setViewAspect } from './core/config.js';
 import { Rng } from './core/rng.js';
 import { Loop } from './core/loop.js';
 import { Post } from './core/post.js';
@@ -76,8 +76,16 @@ export async function boot(opts = {}) {
 
   engine.setHardwareScalingLevel(1 / config.q.scale);
 
+  // The lens is aspect-compensated (see FOV_COVER in core/config.js), so the
+  // config needs to know the shape of the frame before anything reads a fov.
+  setViewAspect(engine.getRenderWidth() / engine.getRenderHeight());
+
   // --- camera ---
   const cam = new FreeCamera('cam', new Vector3(0, config.tune.camHeight, -config.tune.camDistance), scene);
+  // Left at 0.35 deliberately. Pushing the near plane out would buy depth
+  // precision, but the camera passes within a metre of the corner backstop wall
+  // on a tight junction and a clipped hole in a wall is a far worse defect than
+  // any precision it would win.
   cam.minZ = 0.35;
   cam.maxZ = 320;
   cam.fov = config.tune.camFovBase;
@@ -130,7 +138,12 @@ export async function boot(opts = {}) {
 
   const onResize = () => {
     engine.resize();
-    ctx.emit(EV.RESIZE, { width: engine.getRenderWidth(), height: engine.getRenderHeight() });
+    const w = engine.getRenderWidth();
+    const h = engine.getRenderHeight();
+    // Before the event, so any listener that reads config.tune.camFovBase in
+    // response to a resize gets the new lens rather than the old one.
+    setViewAspect(w / h);
+    ctx.emit(EV.RESIZE, { width: w, height: h });
   };
   window.addEventListener('resize', onResize);
   document.addEventListener('visibilitychange', () => {
