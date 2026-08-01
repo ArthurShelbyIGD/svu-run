@@ -192,11 +192,18 @@ export class Cape {
     // SPIKES jutting out either side at hem height. Pulling the last flute's
     // length up and its radius in rounds the silhouette into the cape corner the
     // reference has instead.
+    // The pull has to be stronger than it looks on paper. Now that the skirt is
+    // wider, the far corner in a rear three-quarter view is nearly edge-on, so
+    // the open end reads as a flat tongue sticking out sideways — the one part
+    // of the silhouette the reference cannot help with, because its skirt is a
+    // closed cone with no open end at all. Tucking the corner in by 14% of
+    // radius and up by 16% of length turns that tongue into the curled corner
+    // the reference does have at the sides of its hem.
     const e = Math.abs(u - 0.5) * 2;
     const edge = e * e * e * e;
-    const k = 1 - 0.055 * edge;
+    const k = 1 - 0.14 * edge;
     out[0] = (ax * k + amp) * Math.sin(th);
-    out[1] = -this.len * v * (1 - 0.09 * edge) + hem;
+    out[1] = -this.len * v * (1 - 0.16 * edge) + hem;
     out[2] = -(az * k + amp) * Math.cos(th);
   }
 
