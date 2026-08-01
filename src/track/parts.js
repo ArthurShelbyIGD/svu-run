@@ -407,9 +407,12 @@ export function buildFull(scene, mat, q, s) {
  */
 export function buildStar(scene, mat, q) {
   const a = new Assembly(scene);
-  a.w(mat.get('goldLeaf')).star(0, 0, 0, 0.245, 0.108, 5, 0.075, 'z', Math.PI / 2);
+  // Outer radius 0.245 put a HALF-METRE star on the track — wider than the
+  // character and tall enough to hide the obstacle behind it. A collectible
+  // must be legible without competing with the thing that kills you.
+  a.w(mat.get('goldLeaf')).star(0, 0, 0, 0.115, 0.050, 5, 0.036, 'z', Math.PI / 2);
   if (q.name !== 'low') {
-    a.w(mat.get('yellowGold')).star(0, 0, 0, 0.115, 0.052, 5, 0.088, 'z', Math.PI / 2);
+    a.w(mat.get('yellowGold')).star(0, 0, 0, 0.055, 0.024, 5, 0.042, 'z', Math.PI / 2);
   }
   return a.build('star');
 }

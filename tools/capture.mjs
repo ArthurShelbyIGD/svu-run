@@ -244,7 +244,11 @@ try {
     }));
 
     const file = join(OUT, `${pose.name}.png`);
-    await page.screenshot({ path: file, type: 'png' });
+    // 180s, not the 30s default. A 1600x900 screenshot forces a full render, and
+    // the scene got heavy enough that software rendering exceeds the default
+    // timeout — which surfaced as "capture is broken" rather than "capture is
+    // slow", and left every reviewed frame silently stale.
+    await page.screenshot({ path: file, type: 'png', timeout: 180000 });
     manifest.push({ name: pose.name, file: `${pose.name}.png`, viewport: pose.viewport, preset: PRESET, note: pose.note, errors });
     console.log(`  ${pose.name.padEnd(12)} ${pose.viewport.padEnd(8)} ${pose.note}`);
     if (errors.length) console.log(`    ! ${errors.slice(0, 2).join(' | ')}`);

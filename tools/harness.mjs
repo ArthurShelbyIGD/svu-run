@@ -109,7 +109,7 @@ export async function waitFrames(page, n, timeout = 60000) {
   await page.waitForFunction(
     (target) => window.SVU.loop.frameCount >= target,
     start + n,
-    { timeout, polling: 50 },
+    { timeout: Math.max(timeout, 180000), polling: 50 },
   );
 }
 
@@ -144,7 +144,7 @@ export async function waitGameTime(page, seconds, timeout = 60000) {
   await page.waitForFunction(
     (target) => window.SVU.ctx.time >= target,
     start + seconds,
-    { timeout, polling: 50 },
+    { timeout: Math.max(timeout, 180000), polling: 50 },
   );
 }
 
