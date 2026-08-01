@@ -97,34 +97,109 @@ import { EV } from './ctx.js';
  * pixels above luminance 250 from 0.215% to 1.063% while the frame mean moved
  * 93.4 -> 93.6. That is the definition of the effect wanted here — sparkle
  * without exposure drift.
+ *
+ * ---------------------------------------------------------------------------
+ * THIRD MEASUREMENT PASS — THE MERGE. Every one of the numbers above was
+ * measured against a build in which mat/, world/ and the environment cubemap
+ * were dimmer than they now are. All three then landed at once, each of them
+ * brighter, and the grade on top of them stopped being a grade and became a
+ * clipping machine.
+ *
+ * Sampled at FULL RESOLUTION (this matters: the first probe of this pass
+ * sampled a 400px downscale, which box-averages 4x4 blocks and reported 1.29%
+ * clipped where the real frame had 4.77% — averaging is the one thing you must
+ * not do when measuring clipping). Hero pose, 1600x900, q=high, seed 1:
+ *
+ *   shipped merge   mean 73.6  p95 234  p99 255   1.26% of pixels at luma 255
+ *                                                 4.77% with a channel at 254+
+ *                                                 44.6% below luma 32
+ *
+ * A p99 of 255 means the top 1% of the frame is not "bright", it is GONE. The
+ * clip map (every pixel with a channel >= 254 painted magenta) says where:
+ * the character's entire pavé body was one solid magenta blob, the gold star
+ * pickups were solid, the marble column faces were solid speckle, and the
+ * polished floor's reflections were solid. Not a highlight anywhere — a
+ * stencil.
+ *
+ * WHAT WAS ACTUALLY CLIPPING, in order of contribution. Each measured by
+ * changing one thing on the live frame and re-sampling:
+ *
+ *   highlightsExposure 40 -> 0     1.26% -> 0.68% at 255,  4.77% -> 2.38% chan
+ *   contrast    1.22 -> 1.00       1.26% -> 1.03%
+ *   sharpenEdge 1.00 -> 0.75       0.53% -> 0.22%,         2.00% -> 1.18% chan
+ *   bloom weight -> 0              1.26% -> 1.27%  (bloom was NOT the culprit)
+ *   exposure    1.80 -> 1.30       1.26% -> 0.84%, and the mean fell 73.6 ->
+ *                                  55.2 with 55% of the frame below luma 32
+ *
+ * That last line is the important one and it is why this pass is not simply
+ * "turn the exposure down". Exposure is a global operator: pulling it far
+ * enough to unclip the pavé takes the black floor with it and buys a frame
+ * that is dark AND still clipped. The clipping was being manufactured AFTER
+ * the tonemapper, by operators that have no roll-off at all:
+ *
+ * 1. Read imageProcessingFunctions.fx in order. The tonemapper runs, then
+ *    `toGammaSpace`, then `saturate` — and only THEN contrast and colour
+ *    curves. Everything those two add on top of a value that is already at
+ *    0.95 has nowhere to go but 1.0.
+ * 2. Babylon's `contrast` is a smoothstep, x*x*(3-2x). Its derivative is ZERO
+ *    at both ends. At 1.22 it takes the 0.88..1.0 band — precisely the band a
+ *    filmic shoulder exists to keep separated — and squeezes it flat. It is a
+ *    highlight ERASER wearing a contrast label.
+ * 3. `highlightsExposure` 40 is a flat 1.08x multiply on every pixel above
+ *    ~0.83 luma with no curve on it whatsoever. Anything above 0.926 clips by
+ *    construction. On a jewellery render that is the entire subject.
+ * 4. Sharpen adds its edge term after all of that, so it manufactures clipped
+ *    pixels out of bright ones that had just survived.
+ *
+ * THE FIX IS SHAPED LIKE A TONE CURVE, not like a dimmer. Pull the top down
+ * (exposure 1.80 -> 1.62, highlights gain to zero, contrast to 1.10, sharpen
+ * to 0.85) and push the MIDDLE back up to pay for it (midtonesExposure 0 ->
+ * 24). The colour-curve bands make that separation exact: at luma >= 0.83 the
+ * shader uses the highlights curve alone, so lifting midtones cannot re-clip
+ * anything. Measured on the hero pose:
+ *
+ *              mean  p95  p99   luma255   chan-clip   <32    hi-band sigma
+ *   before     73.6  234  255    1.26%      4.77%    44.6%       16.6
+ *   after      68.6  209  251    0.28%      1.24%    45.4%       18.0
+ *
+ * Clipping down 4.5x, the dark end unchanged (45% either way — the mood is
+ * intact), the mean down only 7%, and the spread of luminance WITHIN the
+ * bright band up: there is shape in the highlights where there was a plateau.
+ *
+ * BLOOM. Re-checked rather than assumed, because the threshold is a linear
+ * value against a scene that got brighter underneath it. 1.90 -> 2.40 pulls
+ * the marble, the rails and the character's own pavé back out of the
+ * highlight pass while the emitters and the apse still bloom; looked at side
+ * by side, the corridor keeps its glow and the character loses the halo that
+ * was smearing its stones together.
  */
 const LOOKS = {
   high: {
-    exposure: 1.80,
-    contrast: 1.22,
+    exposure: 1.62,
+    contrast: 1.10,
     vignetteWeight: 4.6,
     vignetteK: 0.34,
-    bloomThreshold: 1.90,
+    bloomThreshold: 2.40,
     bloomKernel: 40,
     bloomScale: 0.5,
     samples: 4,
     dither: true,
     sharpen: true,
-    sharpenEdge: 1.00,
+    sharpenEdge: 0.85,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.9, samples: 10, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
-    exposure: 1.80,
-    contrast: 1.22,
+    exposure: 1.62,
+    contrast: 1.10,
     vignetteWeight: 4.4,
     vignetteK: 0.34,
-    bloomThreshold: 1.85,
+    bloomThreshold: 2.35,
     bloomKernel: 32,
     bloomScale: 0.5,
     samples: 1,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.90,
+    sharpenEdge: 0.80,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.7, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   low: {
@@ -143,17 +218,17 @@ const LOOKS = {
     // 'low' is where the phones are, and a phone is often held in daylight, so
     // it still runs a little brighter and less contrasty than the desktop
     // grade to survive screen glare.
-    exposure: 1.92,
-    contrast: 1.16,
+    exposure: 1.74,
+    contrast: 1.08,
     vignetteWeight: 3.4,
     vignetteK: 0.34,
-    bloomThreshold: 1.80,
+    bloomThreshold: 2.30,
     bloomKernel: 24,
     bloomScale: 0.4,
     samples: 1,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.70,
+    sharpenEdge: 0.62,
     ssao: null,
   },
 };
@@ -195,7 +270,7 @@ const GRADE = {
 
   // Midtones carry the saturation, and lean a touch warm so skin/gold in the
   // middle of the range does not sit in the same neutral band as the track.
-  midtonesHue: 34, midtonesDensity: 24, midtonesSaturation: 14, midtonesExposure: 0,
+  midtonesHue: 34, midtonesDensity: 24, midtonesSaturation: 14, midtonesExposure: 24,
 
   // Warm lifted highlights — the "gold light" of the reference. Saturation is
   // pulled back slightly so specular hits still bleach towards white, which is
@@ -208,7 +283,7 @@ const GRADE = {
   // frame to paper and erased the pavé. 40 is where the corridor emitters and
   // the gold rails reach the top of the range and the character does not.
   // Pixel-scale sparkle comes from `sharpenEdge` instead, which is local.
-  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 40,
+  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 0,
 };
 
 export class Post {
@@ -475,6 +550,7 @@ export class Post {
    */
   apply(o) {
     const ip = this.pipeline.imageProcessing;
+    if (o.toneMappingType !== undefined) ip.toneMappingType = o.toneMappingType;
     if (o.exposure !== undefined) ip.exposure = o.exposure;
     if (o.contrast !== undefined) ip.contrast = o.contrast;
     if (o.vignetteWeight !== undefined) ip.vignetteWeight = o.vignetteWeight;
