@@ -158,13 +158,22 @@ import { EV } from './ctx.js';
  * shader uses the highlights curve alone, so lifting midtones cannot re-clip
  * anything. Measured on the hero pose:
  *
- *              mean  p95  p99   luma255   chan-clip   <32    hi-band sigma
- *   before     73.6  234  255    1.26%      4.77%    44.6%       16.6
- *   after      68.6  209  251    0.28%      1.24%    45.4%       18.0
+ *   pose                mean  p95  p99   luma255  chan-clip   <32   hi sigma
+ *   hero      before    73.6  234  255    1.26%     4.77%    44.6%    16.6
+ *             after     65.9  205  247    0.42%     1.70%    46.9%    17.8
+ *   char-rear before    75.8  238  255    1.58%     5.15%    43.5%    17.9
+ *             after     68.2  208  251    0.54%     2.07%    45.1%    17.9
+ *   phone     before    88.5  242  255    1.69%     7.14%    35.6%    15.7
+ *             after     79.0  216  253    0.66%     2.76%    38.9%    15.8
+ *   phone/low before    95.2  252  255    1.57%    11.75%    31.7%    15.9
+ *             after     88.1  217  237    0.00%     0.58%    28.7%    11.5
  *
- * Clipping down 4.5x, the dark end unchanged (45% either way — the mood is
- * intact), the mean down only 7%, and the spread of luminance WITHIN the
- * bright band up: there is shape in the highlights where there was a plateau.
+ * Clipping down 3-20x depending on the pose, the dark end within three points
+ * of where it was (the mood is intact — this is not a lifted-blacks fix), the
+ * mean down 7-9%, and the spread of luminance WITHIN the bright band holding
+ * or rising: there is shape in the highlights where there was a plateau. The
+ * worst frame in the set was the one most people will actually see — the phone
+ * at 'low' had one pixel in eight with a clipped channel.
  *
  * BLOOM. Re-checked rather than assumed, because the threshold is a linear
  * value against a scene that got brighter underneath it. 1.90 -> 2.40 pulls
@@ -172,6 +181,37 @@ import { EV } from './ctx.js';
  * highlight pass while the emitters and the apse still bloom; looked at side
  * by side, the corridor keeps its glow and the character loses the halo that
  * was smearing its stones together.
+ *
+ * The honest part of that: bloom was NOT what was blowing the frame out. Two
+ * clean measurements, each a separate page load so the pose is identical —
+ * threshold 2.40 against 1.90 — came back with the same clipping to two
+ * decimal places (0.39% at luma 255, 1.66% vs 1.65% channel clip) and a 2%
+ * difference in frame mean. At the pre-regrade exposure the threshold looked
+ * like the obvious suspect; measured, it is a crispness control, not a
+ * headroom one. The regrade is what bought the headroom.
+ *
+ * MEASURING A/B IN ONE PAGE IS A TRAP, and it is worth writing down because
+ * every future pass will be tempted by it. Posing the capture pauses the game
+ * LOOP, but scene.render() still advances Babylon's own animation clock off
+ * wall time, and under software rendering one render is most of a second — so
+ * the spinning gold star, which is the largest bright object in the frame,
+ * moves between variants. Rendering the SAME settings twice in a row measured
+ * mean 66.7 then 63.2. Clipping percentages are robust to that (0.42 / 0.43)
+ * because they are dominated by static geometry; means are not. Every
+ * before/after pair above comes from two separate page loads, one variant each.
+ *
+ * HANDOFF TO THE LEAD — `npm run shots` cannot complete in this container, and
+ * it is not the grade's doing. tools/capture.mjs takes its screenshot with
+ * Playwright's default 30s action timeout; a 1600x900 frame at q=high costs
+ * about 11 seconds to actually present through SwiftShader, and the measured
+ * screenshot call sits at 29-31s — a coin flip against its own timeout. It
+ * fails identically on the unmodified merge. Dropping the pipeline's MSAA from
+ * 4 samples to 1 was tried and moved the screenshot from 29.4s to 31.2s, i.e.
+ * nothing: the cost is the compositor waiting its turn behind a render loop
+ * that never yields, not the sample count, so `samples` stays at 4. The fix is
+ * one argument in tools/ — `timeout: 0` on the page.screenshot call — which is
+ * lead-owned. Every frame in this pass was captured through a local probe that
+ * passes that flag.
  */
 const LOOKS = {
   high: {
@@ -573,6 +613,7 @@ export class Post {
     if (o.bloomKernel !== undefined) this.pipeline.bloomKernel = o.bloomKernel;
     if (o.bloomWeight !== undefined) this.pipeline.bloomWeight = o.bloomWeight;
     if (o.curvesEnabled !== undefined) ip.colorCurvesEnabled = o.curvesEnabled;
+    if (o.sharpenEnabled !== undefined) this.pipeline.sharpenEnabled = o.sharpenEnabled;
     if (o.sharpenEdge !== undefined && this.pipeline.sharpen) this.pipeline.sharpen.edgeAmount = o.sharpenEdge;
     if (o.ssaoStrength !== undefined && this.ssao) this.ssao.totalStrength = o.ssaoStrength;
     if (o.ssaoRadius !== undefined && this.ssao) this.ssao.radius = o.ssaoRadius;
