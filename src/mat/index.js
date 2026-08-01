@@ -11,12 +11,12 @@
 import {
   PBRMaterial, RawCubeTexture, RawTexture, Color3, Constants, Engine, Texture,
 } from '../core/bjs.js';
-import { generatePaveMaps, generateBrushedMaps } from './pave.js';
+import { generatePaveMaps, generateBrushedMaps, generatePolishMaps } from './pave.js';
 import { generateStoneMaps } from './stone.js';
 import { generateGoldMaps } from './gold.js';
 import { generateClothMaps } from './cloth.js';
 import { generateTrackMaps } from './track.js';
-import { toHalf } from './tex.js';
+import { buildStudioEnvFaces } from './env.js';
 
 /** Named palette. Keep this list short — a small palette is the art direction. */
 export const PALETTE = {
@@ -69,201 +69,29 @@ export default class Materials {
   }
 
   /**
-   * Procedurally generate the studio lighting environment as a cube texture.
+   * The studio lighting environment, as a cube texture.
    *
-   * This is the single most important function in the file. Every metal in the
-   * game is a mirror; a mirror has no appearance of its own, only the
-   * appearance of what it reflects. Material parameters are close to
-   * irrelevant next to the structure and dynamic range of this cubemap.
+   * The room's structure and dynamic range live in env.js — read the header
+   * there before changing any material parameter, because material parameters
+   * are close to irrelevant next to what a mirror is reflecting.
    *
-   * STRUCTURE. Four kinds of source, each doing a different job:
-   *   softboxes   key / fill / rim. Broad shape and overall modelling.
-   *   strip lights  eight tall narrow panels around the equator. These are
-   *                 what draw the long vertical streaks down a curved polished
-   *                 surface, and they are the single most recognisable signal
-   *                 of "photographed jewellery". A dome with no vertical
-   *                 structure gives a curved metal one soft blob and nothing
-   *                 else, which is what made the first blockout read as
-   *                 plastic.
-   *   ring light    a hard bright annulus overhead. Puts a defined circular
-   *                 catchlight on every dome — eyes, orb, boots.
-   *   light tent    a scattered field of small sources over the full sphere,
-   *                 so every pavé facet catches SOMETHING. See pave.js.
-   *
-   * DYNAMIC RANGE. Stored as RGBA16F where the GPU supports filtering it.
-   * In 8 bits every source clips at 1.0, so a 20x key light and a 1.2x bounce
-   * reflect as exactly the same white — the surface loses all sense of which
-   * light is which, and bloom has nothing to key off. Half float costs 2 bytes
-   * per channel (3 MB at the high preset, 200 KB at low) and is the difference
-   * between highlights that glare and highlights that sit flat.
+   * This function only decides how it is STORED. RGBA16F where the GPU can
+   * filter it: the key light in that room is 260x the ambient shell, and in 8
+   * bits that ratio does not exist — a 260x key and a 1.2x bounce both store as
+   * 255 and reflect identically, which is how a room full of lights ends up
+   * rendering as uniform haze.
    */
   _buildStudioEnv(size) {
-    const faces = [];
-    const px = size * size * 4;
     const caps = this.ctx.scene.getEngine().getCaps();
     // Linear filtering of half-float textures is core in WebGL2, but the
     // capability is checked rather than assumed: a cubemap that cannot be
     // filtered would band horribly across every rough surface in the game.
     const hdr = !!(caps && caps.textureHalfFloatLinearFiltering);
     this._envHDR = hdr;
-    // Without HDR storage everything has to fit under 1.0, so sources are
-    // scaled down and the intensity multiplier makes up the difference.
-    const K = hdr ? 1 : 0.19;
-
-    // Softboxes in direction-space: [x, y, z, angular radius, intensity, warmth]
-    const lights = [
-      [ 0.45,  0.80,  0.40, 0.34,  7.0,  0.07],  // key, high front-left, warm
-      [-0.70,  0.25,  0.30, 0.46,  2.6, -0.05],  // fill, low left, cool
-      [ 0.10,  0.35, -0.95, 0.30,  4.4, -0.03],  // rim, behind, cool
-      [-0.25,  0.94, -0.22, 0.16,  9.5,  0.02],  // small hot overhead
-    ];
-
-    // Vertical strip lights around the equator. Modelled as very tall, very
-    // narrow softboxes: wide in elevation, tight in azimuth.
-    const STRIPS = 8;
-    const strips = [];
-    for (let i = 0; i < STRIPS; i++) {
-      const a = (i / STRIPS) * Math.PI * 2 + 0.35;
-      strips.push([
-        Math.cos(a), Math.sin(a),                 // azimuth direction
-        i % 2 === 0 ? 6.5 : 3.0,                 // alternating intensity
-        i % 3 === 0 ? 0.05 : -0.03,               // warmth
-      ]);
-    }
-
-    // A jeweller's light tent: a scattered field of small, very bright
-    // sources. This is not decoration — a pavé surface is thousands of tiny
-    // mirrors, and with only a few broad softboxes to reflect, most stones
-    // reflect nothing and the whole surface reads as dark grey. Many small
-    // sources means every stone catches something, which is what produces
-    // sparkle. It is how jewellery is actually photographed.
-    // Distributed over the FULL sphere, not just above. A pavé stone tilted
-    // downward reflects whatever is below it, and with an upper-hemisphere-only
-    // tent that is darkness — which rendered the suit black while the smooth
-    // face beside it stayed bright. A real light tent surrounds the piece.
-    const TENT = 56;
-    for (let i = 0; i < TENT; i++) {
-      const t = (i + 0.5) / TENT;
-      const y = 1 - 2 * t;                            // full sphere
-      const r = Math.sqrt(Math.max(0, 1 - y * y));
-      const theta = i * 2.39996;                      // golden angle
-      lights.push([
-        r * Math.cos(theta),
-        y * 0.92,
-        r * Math.sin(theta),
-        0.048,
-        y > -0.15 ? 7.5 : 3.4,                        // softer from below
-        (i % 3 === 0) ? 0.05 : -0.02,
-      ]);
-    }
-    for (const L of lights) {
-      const n = Math.hypot(L[0], L[1], L[2]);
-      L[0] /= n; L[1] /= n; L[2] /= n;
-      L[4] *= K;
-    }
-    for (const S of strips) S[2] *= K;
-
-    for (let f = 0; f < 6; f++) {
-      const data = hdr ? new Uint16Array(px) : new Uint8Array(px);
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          // pixel -> direction on the unit cube
-          const u = (2 * (x + 0.5)) / size - 1;
-          const v = 1 - (2 * (y + 0.5)) / size;
-          let dx, dy, dz;
-          switch (f) {
-            case 0: dx =  1; dy =  v; dz = -u; break; // +X
-            case 1: dx = -1; dy =  v; dz =  u; break; // -X
-            case 2: dx =  u; dy =  1; dz = -v; break; // +Y
-            case 3: dx =  u; dy = -1; dz =  v; break; // -Y
-            case 4: dx =  u; dy =  v; dz =  1; break; // +Z
-            default: dx = -u; dy = v; dz = -1;        // -Z
-          }
-          const inv = 1 / Math.hypot(dx, dy, dz);
-          dx *= inv; dy *= inv; dz *= inv;
-
-          // --- gradient dome ---
-          // Deliberately DARK. Polished metal is a mirror: it looks like metal
-          // only when there is high contrast between bright sources and dark
-          // surroundings. A bright, even environment makes chrome look like
-          // grey plastic — which is exactly what the first blockout showed.
-          const up = dy * 0.5 + 0.5;             // 0 down, 1 up
-          // Floor raised off pure black. Anything a stone reflects that is
-          // exactly zero becomes a dead facet, and a pavé surface is mostly
-          // facets pointing away from the key light.
-          let r = 0.070 + up * 0.130;
-          let g = 0.074 + up * 0.140;
-          let b = 0.088 + up * 0.165;
-          // warm floor bounce
-          const down = Math.max(0, -dy);
-          r += down * 0.105; g += down * 0.076; b += down * 0.048;
-          // tight bright horizon band — this is what draws the long specular
-          // streak across a curved polished surface and sells "jewellery"
-          const horizon = Math.exp(-Math.abs(dy) * 13.0) * 0.34;
-          r += horizon; g += horizon * 0.985; b += horizon * 0.95;
-
-          // --- vertical strip lights ---
-          // Bright over a wide band of elevation but only a few degrees of
-          // azimuth. Cheap: the elevation term is one exponential and the
-          // azimuth term is one dot product against a 2D direction.
-          const hLen = Math.sqrt(dx * dx + dz * dz);
-          if (hLen > 1e-4) {
-            const ax = dx / hLen, az = dz / hLen;
-            // Panels run from a little below the horizon to well above it.
-            const elev = Math.exp(-Math.pow((dy - 0.18) / 0.62, 2));
-            for (let i = 0; i < strips.length; i++) {
-              const S = strips[i];
-              const c = ax * S[0] + az * S[1];
-              if (c < 0.972) continue;              // ~13 degrees wide
-              const t = (c - 0.972) / 0.028;
-              const s = t * t * (3 - 2 * t) * S[2] * elev * hLen;
-              r += s * (1 + S[3]);
-              g += s;
-              b += s * (1 - S[3]);
-            }
-          }
-
-          // --- overhead ring light ---
-          // An annulus at about 35 degrees off vertical. Gives every dome in
-          // the game a defined circular catchlight rather than a soft smear.
-          const ring = Math.exp(-Math.pow((dy - 0.815) / 0.045, 2)) * 3.4 * K;
-          r += ring * 1.02; g += ring; b += ring * 0.96;
-
-          // --- softboxes ---
-          for (let i = 0; i < lights.length; i++) {
-            const L = lights[i];
-            const d = dx * L[0] + dy * L[1] + dz * L[2];
-            if (d <= 0) continue;
-            const ang = Math.acos(Math.min(1, d));
-            if (ang > L[3] * 1.9) continue;
-            // Gaussian rather than a hard-edged disc. A hard disc reflected in
-            // a smooth surface is a hard dot, and 56 of them turned the
-            // character's polished face into a field of measles. A soft edge
-            // gives the same sparkle on pavé and a continuous gradient on
-            // anything smooth.
-            const t = ang / L[3];
-            const s = Math.exp(-t * t * 2.3) * L[4];
-            r += s * (1 + L[5]);
-            g += s;
-            b += s * (1 - L[5]);
-          }
-
-          const o = (y * size + x) * 4;
-          if (hdr) {
-            data[o]     = toHalf(r);
-            data[o + 1] = toHalf(g);
-            data[o + 2] = toHalf(b);
-            data[o + 3] = 0x3c00;                  // 1.0
-          } else {
-            data[o]     = Math.min(255, r * 255) | 0;
-            data[o + 1] = Math.min(255, g * 255) | 0;
-            data[o + 2] = Math.min(255, b * 255) | 0;
-            data[o + 3] = 255;
-          }
-        }
-      }
-      faces.push(data);
-    }
+    // The room itself lives in env.js — it grew past the point where it should
+    // share a file with the material library, and it is the most important
+    // single thing in this directory.
+    const faces = buildStudioEnvFaces(size, hdr);
 
     const tex = new RawCubeTexture(
       this.ctx.scene,
@@ -312,6 +140,12 @@ export default class Materials {
     this._pave = generatePaveMaps(size, cells);
     this._brushSize = size >> 1;
     this._brush = generateBrushedMaps(this._brushSize);
+    // Isotropic polish, for the big smooth forms — the face and the mitten
+    // hands. The brushed map's directional streaks stretch through a sphere's
+    // UVs into visible vertical scratches, which is what made the face read as
+    // pearlescent plastic.
+    this._polishSize = size >> 1;
+    this._polish = generatePolishMaps(this._polishSize);
 
     // Everything else. Generated once, at init, never per frame.
     //
@@ -341,12 +175,12 @@ export default class Materials {
    * Shared by (key, tiling): four materials asking for hammered gold at the
    * same scale get one texture rather than four copies of the same megabyte.
    */
-  _rawTex(key, data, size, gamma, tile, level) {
+  _rawTex(key, data, size, gamma, tile, level, uMul) {
     // `level` is part of the key because Texture.level lives on the TEXTURE,
     // not on the material. Sharing one texture between two materials that want
     // different bump strengths silently gave both of them whichever was set
     // last — six of the eight metals were running on rhodium's bump level.
-    const id = `${key}|${tile}|${gamma ? 'g' : 'l'}|${level === undefined ? '' : level}`;
+    const id = `${key}|${tile}|${gamma ? 'g' : 'l'}|${level === undefined ? '' : level}|${uMul || 1}`;
     const hit = this.textures.get(id);
     if (hit) return hit;
     const t = RawTexture.CreateRGBATexture(
@@ -358,7 +192,12 @@ export default class Materials {
     t.wrapV = Texture.WRAP_ADDRESSMODE;
     t.anisotropicFilteringLevel = this.ctx.config.q.anisotropy;
     t.gammaSpace = !!gamma;
-    t.uScale = tile;
+    // uScale and vScale are NOT always equal, and that is the fix for the
+    // stones coming out as vertical ovals. A UV sphere maps u over 2*pi*R of
+    // arc and v over pi*R, so one square texture tile lands on a patch twice as
+    // wide as it is tall and every circular stone is squashed. Repeating twice
+    // as often around the equator makes the tile square again on the surface.
+    t.uScale = tile * (uMul || 1);
     t.vScale = tile;
     if (level !== undefined) t.level = level;
     this.textures.set(id, t);
@@ -415,7 +254,11 @@ export default class Materials {
     if (this.cache.has(name)) return this.cache.get(name);
     const m = new PBRMaterial(`p_${name}`, this.ctx.scene);
     m.albedoColor = new Color3(col.r, col.g, col.b);
-    m.albedoTexture = this._rawTex('pave_a', this._pave.albedo, this._paveSize, true, tile);
+    // uMul 2 everywhere on this material: every mesh wearing pavé in this game
+    // is a UV sphere, and a sphere's u runs over twice the arc length of its v.
+    // Without it the stones render as vertical ovals in grid-aligned columns,
+    // which is what made the suit read as a pinecone.
+    m.albedoTexture = this._rawTex('pave_a', this._pave.albedo, this._paveSize, true, tile, undefined, 2);
     m.metallic = 1.0;              // scaled per-pixel by the ORM blue channel
     m.roughness = 1.0;             // driven entirely by the ORM map
     // Set stones sit in a lit tent, not in the room's ambient. Lifting the
@@ -426,10 +269,20 @@ export default class Materials {
     // this is a multiplier ON TOP of that, not an absolute — every number in
     // this file was tuned by looking at the composited result, not by reading
     // the value here.
-    m.environmentIntensity = 1.22;
+    // Below 1.0 now, where it used to be 1.22. world/ sets scene
+    // environmentIntensity per zone at 1.75-2.05, so this is a multiplier on
+    // top of roughly 1.9, and the room it multiplies is no longer a dim one.
+    m.environmentIntensity = 0.88;
     m.usePhysicalLightFalloff = true;
+    // Raise the dielectric reflectance of the stones. Babylon computes
+    // F0 = 0.04 * metallicF0Factor for the non-metal part of the surface, and
+    // 0.04 is window glass; a stone that is nearly black in the diffuse term
+    // and only 4% reflective in the specular one has no way to be bright at
+    // all. This lifts them toward diamond without touching the setting metal,
+    // whose F0 comes from its albedo instead.
+    m.metallicF0Factor = 2.6;
 
-    m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile, 0.88);
+    m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile, 1.0, 2);
     // Full-strength stone normals throw reflections so wide that most facets
     // sample the darkest part of the room. Softening keeps the sparkle while
     // holding the overall value up.
@@ -443,7 +296,7 @@ export default class Materials {
     // map in the directory rather than negating four generators.
     m.invertNormalMapY = true;
 
-    m.metallicTexture = this._rawTex('pave_orm', this._pave.orm, this._paveSize, false, tile);
+    m.metallicTexture = this._rawTex('pave_orm', this._pave.orm, this._paveSize, false, tile, undefined, 2);
     m.useRoughnessFromMetallicTextureGreen = true;
     m.useMetallnessFromMetallicTextureBlue = true;
     m.useAmbientOcclusionFromMetallicTextureRed = true;
@@ -463,11 +316,15 @@ export default class Materials {
     //
     // Gated on q.glint, which is false on the low preset.
     if (this.ctx.config.q.glint) {
+      // Full intensity, not 0.45. With the stone body now near-black this coat
+      // IS the stone's specular: at IOR 2.42 it reflects 17% of everything it
+      // sees, versus the 4% a default dielectric would, and that ratio is the
+      // difference between a diamond and a wet pebble.
       m.clearCoat.isEnabled = true;
-      m.clearCoat.intensity = 0.45;
-      m.clearCoat.roughness = 0.028;
-      m.clearCoat.indexOfRefraction = 2.4;   // diamond
-      m.clearCoat.bumpTexture = this._rawTex('pave_f', this._pave.facet, this._paveSize, false, tile, 0.85);
+      m.clearCoat.intensity = 1.0;
+      m.clearCoat.roughness = 0.022;
+      m.clearCoat.indexOfRefraction = 2.42;  // diamond
+      m.clearCoat.bumpTexture = this._rawTex('pave_f', this._pave.facet, this._paveSize, false, tile, 0.9, 2);
       // DISPERSION WAS TRIED AND REMOVED. A thin-film iridescence term is the
       // cheapest believable stand-in for a diamond's coloured fire, and at
       // intensity 0.16 it looked good — but it is a second full BRDF branch on
@@ -478,6 +335,41 @@ export default class Materials {
       // the clear-coat glint above. If it comes back it needs a real device
       // and a real frame-time measurement first, not a guess.
     }
+
+    m.freeze();
+    this.cache.set(name, m);
+    return m;
+  }
+
+  /**
+   * Mirror-polished metal with no directional structure.
+   *
+   * For the big smooth forms — the face, the mitten hands, the boots, the wing.
+   * These were the most literal instance of the owner's complaint still in the
+   * build: "matte white plastic eggs with zero specular". They are metal, so
+   * they get metallic 1.0 and a roughness low enough that the studio's hard key
+   * lands on them as a small clipped white highlight rather than a wide grey
+   * smear. The only surface detail is a faint isotropic orange peel, because
+   * anything directional stretches through sphere UVs into scratches.
+   */
+  polished(name, col, roughness = 0.10, tile = 2) {
+    if (this.cache.has(name)) return this.cache.get(name);
+    const m = new PBRMaterial(`q_${name}`, this.ctx.scene);
+    m.albedoColor = new Color3(col.r, col.g, col.b);
+    m.metallic = 1.0;
+    m.roughness = roughness;
+    m.environmentIntensity = 1.0;
+    m.usePhysicalLightFalloff = true;
+
+    m.bumpTexture = this._rawTex('pol_n', this._polish.normal, this._polishSize, false, tile, 0.65);
+    m.invertNormalMapY = true;      // see the note in pave() — one convention
+
+    m.metallicTexture = this._rawTex('pol_orm', this._polish.orm, this._polishSize, false, tile);
+    m.useRoughnessFromMetallicTextureGreen = true;
+    m.useMetallnessFromMetallicTextureBlue = true;
+    m.useAmbientOcclusionFromMetallicTextureRed = true;
+    // roughness above SCALES the map, whose own range is about 0.03..0.08.
+    m.roughness = roughness / 0.055;
 
     m.freeze();
     this.cache.set(name, m);
@@ -513,7 +405,13 @@ export default class Materials {
     // being stones and becomes noise.
     this.pave('paveWhite', PALETTE.whiteGold, 1.9);
     this.pave('paveWhiteFine', PALETTE.whiteGold, 3.0);   // small parts
-    this.pave('paveRuby', PALETTE.ruby, 2.3);
+    // The ruby orb. The tint runs well above 1.0 on the red channel on purpose:
+    // the pavé albedo map is now a near-BLACK stone body (see pave.js), so a
+    // literal ruby tint of 0.76 multiplied through it produces a black ball. The
+    // stones need lifting back to a readable ruby while the metal beads between
+    // them, which are near 1.0 in the map, clip to a hot pink-white — which is
+    // what a bead of metal between two rubies actually does.
+    this.pave('paveRuby', { r: 2.20, g: 0.34, b: 0.62 }, 2.3);
 
     // ---------------------------------------------------------------
     // MATERIAL NAME CONTRACT
@@ -574,10 +472,23 @@ export default class Materials {
       },
     });
 
-    // --- polished, unset metal: face, hands, boots, trim ---
-    this.brushed('polRose', PALETTE.roseGold, 3, 0.72);
-    this.brushed('polRhodium', PALETTE.rhodium, 3, 1.05);
-    this.brushed('polGold', PALETTE.yellowGold, 3, 0.85);
+    // --- polished, unset metal: face, hands, boots, trim -------------------
+    //
+    // All three were `brushed`, and all three were wrong for the same reason.
+    // The brushed map's streaks run in texture space, and every one of these
+    // parts is a sphere, so the streaks stretched toward the poles and the face
+    // came out as pearlescent plastic with vertical scratches down it. They are
+    // now isotropic mirror polish.
+    //
+    // polRose carries the FACE. The reference face is polished yellow gold, not
+    // rose: a warm near-white metal reads as "slightly off-white silver" beside
+    // a white-gold hood and the face stops separating from it entirely.
+    this.polished('polRose', { r: 1.00, g: 0.780, b: 0.360 }, 0.115);
+    // Hands, thumbs, boots and the wing ribs. Polished WHITE gold — these were
+    // "matte white plastic eggs with zero specular", the single most literal
+    // instance of the owner's complaint left in the build.
+    this.polished('polRhodium', PALETTE.rhodium, 0.060);
+    this.polished('polGold', PALETTE.yellowGold, 0.085);
 
     // --- the structural metals -------------------------------------------
     // These are the rails, the lane inlays, the columns, the obstacles, the
@@ -594,8 +505,21 @@ export default class Materials {
     // star — so the tile number is the only thing keeping the hammer dishes
     // the same physical size across the set. At tile 2 a column's dishes came
     // out a metre across and it read as tree bark, not as metal.
-    this.surface('roseGold',   'gold', PALETTE.roseGold,
-      { tile: 5.0, bump: 0.14, roughScale: 1.0 });
+    // The columns and the full-height blockers. These shipped at a roughness
+    // that made a hundred cardboard tubes in terracotta clay: matte salmon says
+    // nothing about a jewel box. Now a pale champagne satin, which takes the
+    // studio's vertical strips as a bright band down one side and falls away
+    // dark on the other — that band is what gives a cylinder its round.
+    //
+    // BUMP IS THE DIAL HERE, NOT ROUGHNESS. At bump 0.30 the hammer dishes
+    // scattered the surface normal widely enough that every part of the column
+    // could find one of the hot strips, and a hundred metres of column rendered
+    // as tubes of blown white with a bloom halo round each one. Flattening the
+    // hammering to 0.09 leaves a smooth reflection with ONE band in it. A
+    // high-contrast room punishes normal detail on large simple shapes in a way
+    // a dim room never did.
+    this.surface('roseGold',   'gold', { r: 1.00, g: 0.815, b: 0.605 },
+      { tile: 5.0, bump: 0.09, roughScale: 1.0 });
     this.surface('yellowGold', 'gold', PALETTE.yellowGold,
       { tile: 4.0, bump: 0.45, roughScale: 0.95 });
     this.surface('whiteGold',  'gold', PALETTE.whiteGold,
@@ -648,7 +572,14 @@ export default class Materials {
     // Lighter than the structural dark chrome. The membrane is a thin sheet
     // catching light from one side; at darkChrome's value it rendered as a
     // black cut-out with no form at all.
-    this.brushed('wingChrome', PALETTE.wingChrome, 2, 0.95);
+    // Mirror-polished dark metal, so the membrane swings from near-black to
+    // blown white across its own curve — which is exactly what the wing does in
+    // the reference, and the only reason a flat sheet reads as a surface at all.
+    // Darker than it looks it should be. A mirror shows you the room, and the
+    // room is mostly black; the value of this material is set by how much of the
+    // key and the panels the membrane's curve happens to catch, which is exactly
+    // the near-black-to-blown-white swing the wing has in the reference.
+    this.polished('wingChrome', { r: 0.320, g: 0.335, b: 0.375 }, 0.075, 3);
     this.mutate('wingChrome', (m) => { m.backFaceCulling = false; });
 
     // enamel(name, colour, roughness)

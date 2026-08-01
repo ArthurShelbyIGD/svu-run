@@ -1,12 +1,12 @@
 {
-  "preset": "medium",
+  "preset": "high",
   "poses": [
     {
-      "name": "char-face",
-      "file": "char-face.png",
+      "name": "hero",
+      "file": "hero.png",
       "viewport": "desktop",
-      "preset": "medium",
-      "note": "face close-up — compare directly with docs/reference.jpeg",
+      "preset": "high",
+      "note": "default chase view, mid-run — the shot the whole game is judged on",
       "errors": []
     }
   ]
