@@ -76,6 +76,17 @@ const MIN_GAP = new Float64Array([
   0.045, 0.09, 0.08, 0.15, 0.06, 0.25, 0.20, 0.60, 0.10, 0.30, 0.60,
 ]);
 
+/**
+ * "Last played" for a sound that has never played.
+ *
+ * Not zero. A suspended AudioContext's clock is frozen at zero until it is
+ * unlocked, which is exactly the state every phone starts in — so with zeroes
+ * here the first death would be inside the death gap, the first corner inside
+ * the corner gap, and the welcome chime inside its own, and the first thing an
+ * iPhone player would hear is nothing at all.
+ */
+const NEVER = -1000;
+
 /** Seconds of game time without a star before the ladder falls back to zero. */
 const COMBO_GAP = 3.2;
 
@@ -97,7 +108,9 @@ export default class Audio {
     this.enabled = false;
     this.ready = false;      // graph built
     this.unlocked = false;   // context has actually run at least once
-    this.muted = false;
+    this.muted = false;      // derived: hidden OR the player asked for silence
+    this.userMuted = false;
+    this._hidden = false;
 
     // Own RNG stream, seeded from the run seed. Deliberately NOT ctx.rng:
     // drawing from the gameplay stream would make the world generation depend
@@ -112,6 +125,7 @@ export default class Audio {
     this._stepPhase = 0;
     this._foot = 0;
     this._last = new Float64Array(S_COUNT);
+    this._last.fill(NEVER);
     this._offs = [];
     this._domOffs = [];
     this._suspendTimer = 0;
@@ -131,6 +145,8 @@ export default class Audio {
 
     this._rng = new Rng((cfg.seed ^ 0x41554449) >>> 0);
     this._q = this._presetBlock(cfg.presetName);
+    try { this.userMuted = localStorage.getItem('svu.mute') === '1'; } catch (err) { /* private mode */ }
+    this.muted = this.userMuted;
 
     try {
       // Created eagerly, resumed lazily. Creating it up front means the whole
@@ -240,26 +256,59 @@ export default class Audio {
     }
   }
 
-  // ---- tab visibility --------------------------------------------------
+  // ---- muting ----------------------------------------------------------
 
   _bindVisibility() {
-    const onVis = () => this.setMuted(document.hidden);
+    const onVis = () => this.setHidden(document.hidden);
     document.addEventListener('visibilitychange', onVis);
     this._domOffs.push(() => document.removeEventListener('visibilitychange', onVis));
     // Desktop alt-tab does not always fire visibilitychange on every browser.
-    const onBlur = () => this.setMuted(true);
-    const onFocus = () => { if (!document.hidden) this.setMuted(false); };
+    const onBlur = () => this.setHidden(true);
+    const onFocus = () => { if (!document.hidden) this.setHidden(false); };
     window.addEventListener('blur', onBlur);
     window.addEventListener('focus', onFocus);
     this._domOffs.push(() => window.removeEventListener('blur', onBlur));
     this._domOffs.push(() => window.removeEventListener('focus', onFocus));
+
+    // M mutes. There is no audio control in the HUD and the HUD is not this
+    // subsystem's to change, so the keyboard is the honest place to put one —
+    // a game that can only be silenced by silencing the whole device is a game
+    // people close.
+    const onKey = (e) => {
+      if (e.code !== 'KeyM' || e.metaKey || e.ctrlKey || e.altKey) return;
+      this.setUserMuted(!this.userMuted);
+    };
+    window.addEventListener('keydown', onKey);
+    this._domOffs.push(() => window.removeEventListener('keydown', onKey));
   }
+
+  /** The tab went away. Independent of the player's own choice. */
+  setHidden(h) {
+    if (this._hidden === h) return;
+    this._hidden = h;
+    this._applyMute();
+  }
+
+  /** The player pressed mute. Remembered across sessions. */
+  setUserMuted(v) {
+    if (this.userMuted === v) return;
+    this.userMuted = v;
+    try { localStorage.setItem('svu.mute', v ? '1' : '0'); } catch (err) { /* private mode */ }
+    this._applyMute();
+  }
+
+  /** The name the tooling drives. Means "the tab is gone", not "the player asked". */
+  setMuted(m) { this.setHidden(m); }
 
   /**
    * Mute cleanly. A fade first, then suspend — suspending on the same tick
    * chops whatever was ringing mid-cycle, and a chopped reverb tail is a click.
+   *
+   * Two independent reasons to be silent, one piece of machinery: coming back
+   * to the tab must not un-mute a player who chose silence.
    */
-  setMuted(m) {
+  _applyMute() {
+    const m = this._hidden || this.userMuted;
     if (!this.ready || this.muted === m) return;
     this.muted = m;
     const ac = this.ac;
@@ -373,6 +422,8 @@ export default class Audio {
     this._lastStar = -99;
     this._turns = 0;
     this._stepPhase = 0;
+    // A new run always gets its sounds, however recently the last one played.
+    this._last.fill(NEVER);
     if (!this.ready) return;
     const now = this.ac.currentTime;
     this.bus.duck(now, 1, 0, 0.2);
@@ -681,6 +732,8 @@ export default class Audio {
       ready: this.ready,
       unlocked: this.unlocked,
       muted: this.muted,
+      userMuted: this.userMuted,
+      hidden: this._hidden,
       state: this.ac ? this.ac.state : 'none',
       combo: this._combo,
       nodes: this.nodeCount,

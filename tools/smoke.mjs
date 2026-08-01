@@ -427,6 +427,19 @@ try {
     `${st.ladder.chimed}/${st.ladder.pickups} rungs at 60ms apart`);
   check('audio self-test passes', st.ok === true);
 
+  // The per-sound rate limiter must not swallow the FIRST of anything. A
+  // suspended context's clock sits at zero, which is where every phone starts,
+  // so a "last played" of zero would put the first death inside the death gap.
+  const aFirst = await g.page.evaluate(() => {
+    const A = window.SVU.ctx.get('audio');
+    window.SVU.ctx.emit('run:start', null);
+    const before = A.debug().voices;
+    window.SVU.ctx.emit('player:death', { cause: 'wall' });
+    return { before, after: A.debug().voices };
+  });
+  check('the first sound of a run is never rate-limited away',
+    aFirst.after > aFirst.before, `${aFirst.before} -> ${aFirst.after} voices`);
+
   // Hiding the tab must silence it, and coming back must not leave it muted.
   const aMute = await g.page.evaluate(async () => {
     const A = window.SVU.ctx.get('audio');
@@ -443,6 +456,27 @@ try {
   check('audio comes back when the tab returns',
     aMute.shown.muted === false && aMute.shown.state === 'running',
     `state=${aMute.shown.state}`);
+
+  // M mutes, and returning to the tab must not override the player's choice.
+  const aKey = await g.page.evaluate(async () => {
+    const A = window.SVU.ctx.get('audio');
+    const out = {};
+    await g_press('KeyM');
+    out.afterM = A.debug();
+    A.setMuted(true); A.setMuted(false);           // a tab round-trip
+    out.afterTab = A.debug();
+    await g_press('KeyM');
+    out.afterM2 = A.debug();
+    return out;
+    function g_press(code) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+      return new Promise((r) => setTimeout(r, 30));
+    }
+  });
+  check('M mutes the game', aKey.afterM.userMuted === true && aKey.afterM.muted === true);
+  check('returning to the tab does not un-mute a muted player',
+    aKey.afterTab.muted === true, `muted=${aKey.afterTab.muted}`);
+  check('M un-mutes again', aKey.afterM2.userMuted === false && aKey.afterM2.muted === false);
 
   // ---- junction turns ----
   const turnRes = await g.page.evaluate(() => {
