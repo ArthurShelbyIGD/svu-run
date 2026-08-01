@@ -131,14 +131,23 @@ export function buildStudioEnvFaces(size, hdr) {
   // the rest of it near-black. That streak is what a photograph of a metal
   // cylinder looks like, and it is the single most recognisable signal of
   // "photographed jewellery" available for the price of one dot product.
+  //
+  // Their RADIANCE, though, has to stay near 10 and not near 46. A strip is an
+  // AREA source: a mirror-finish cylinder reflects a whole one somewhere on its
+  // curve no matter which way it faces, so at 46 every column in the game
+  // rendered as a tube of blown white wearing a bloom halo. The rule that came
+  // out of it: area sources set the level a mirror sits at and must stay near
+  // the clipping point, while POINT sources — the 240x key below, the tent —
+  // are what actually punch through it, because they land on a handful of
+  // pixels rather than on a whole shape.
   const panels = [
     // azimuth, half-width, low dy, high dy, radiance, warmth
-    [ 0.60, 0.055, -0.30, 0.88, 46,  0.05],   // key-side strip, tall and hot
-    [ 1.35, 0.030, -0.10, 0.60, 14,  0.02],
-    [ 2.30, 0.045, -0.20, 0.74, 16, -0.04],
-    [ 3.55, 0.050, -0.34, 0.82, 26, -0.05],   // back-left, the rim strip
-    [ 4.30, 0.028, -0.05, 0.55, 10,  0.03],
-    [ 5.05, 0.035, -0.16, 0.68, 12,  0.03],
+    [ 0.60, 0.055, -0.30, 0.88, 11,  0.05],   // key-side strip, tall and hot
+    [ 1.35, 0.030, -0.10, 0.60,  4,  0.02],
+    [ 2.30, 0.045, -0.20, 0.74,  5, -0.04],
+    [ 3.55, 0.050, -0.34, 0.82,  7, -0.05],   // back-left, the rim strip
+    [ 4.30, 0.028, -0.05, 0.55,  3,  0.03],
+    [ 5.05, 0.035, -0.16, 0.68, 3.5, 0.03],
   ];
   const panelDir = panels.map((p) => [Math.cos(p[0]), Math.sin(p[0])]);
 
@@ -184,7 +193,7 @@ export function buildStudioEnvFaces(size, hdr) {
         // is a few degrees tall: one clean bright line that a curved polished
         // surface draws as a straight streak, exactly like a strip light in a
         // photograph.
-        const slot = Math.exp(-Math.abs(dy) * 52.0) * 3.5;
+        const slot = Math.exp(-Math.abs(dy) * 52.0) * 2.5;
         r += slot; g += slot * 0.985; b += slot * 0.94;
 
         // --- softbox panels ------------------------------------------------
@@ -215,7 +224,7 @@ export function buildStudioEnvFaces(size, hdr) {
         // --- overhead ring -------------------------------------------------
         // An annulus about 35 degrees off vertical: a defined circular
         // catchlight on every dome in the game — eyes, orb, boots, hands.
-        const ring = Math.exp(-Math.pow((dy - 0.815) / 0.022, 2)) * 11.0;
+        const ring = Math.exp(-Math.pow((dy - 0.815) / 0.022, 2)) * 5.0;
         r += ring * 1.02; g += ring; b += ring * 0.96;
 
         // --- point sources -------------------------------------------------

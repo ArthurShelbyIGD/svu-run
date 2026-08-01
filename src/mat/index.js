@@ -272,7 +272,7 @@ export default class Materials {
     // Below 1.0 now, where it used to be 1.22. world/ sets scene
     // environmentIntensity per zone at 1.75-2.05, so this is a multiplier on
     // top of roughly 1.9, and the room it multiplies is no longer a dim one.
-    m.environmentIntensity = 0.88;
+    m.environmentIntensity = 1.30;
     m.usePhysicalLightFalloff = true;
     // Raise the dielectric reflectance of the stones. Babylon computes
     // F0 = 0.04 * metallicF0Factor for the non-metal part of the surface, and
@@ -352,7 +352,7 @@ export default class Materials {
    * smear. The only surface detail is a faint isotropic orange peel, because
    * anything directional stretches through sphere UVs into scratches.
    */
-  polished(name, col, roughness = 0.10, tile = 2) {
+  polished(name, col, roughness = 0.10, tile = 2, direct = 0.5) {
     if (this.cache.has(name)) return this.cache.get(name);
     const m = new PBRMaterial(`q_${name}`, this.ctx.scene);
     m.albedoColor = new Color3(col.r, col.g, col.b);
@@ -360,6 +360,23 @@ export default class Materials {
     m.roughness = roughness;
     m.environmentIntensity = 1.0;
     m.usePhysicalLightFalloff = true;
+
+    // Analytic lights turned DOWN on these surfaces. world/ hangs four point
+    // lights off the character at intensities up to 30, and the GGX peak of a
+    // roughness-0.05 metal under a point light is enormous — each light became a
+    // blazing dot, the bloom pass at threshold 0.72 smeared the four of them
+    // together, and the result was the "matte white plastic egg" the critic saw:
+    // a small object drowned in its own highlight. The piece is meant to be lit
+    // by the light tent in the environment, which is what a jeweller's bench
+    // actually is, so the environment keeps full weight and the lamps take half.
+    //
+    // The FACE is the exception and keeps them at full. A face is a large smooth
+    // sphere, and a large smooth sphere reflecting a mostly-black room is a flat
+    // disc of its own albedo — with the lamps turned down the face rendered as a
+    // mustard-painted ball with no highlight anywhere on it. Portrait lighting
+    // is what gives a head its form; the small parts do not need it and cannot
+    // survive it.
+    m.directIntensity = direct;
 
     m.bumpTexture = this._rawTex('pol_n', this._polish.normal, this._polishSize, false, tile, 0.65);
     m.invertNormalMapY = true;      // see the note in pave() — one convention
@@ -411,7 +428,7 @@ export default class Materials {
     // stones need lifting back to a readable ruby while the metal beads between
     // them, which are near 1.0 in the map, clip to a hot pink-white — which is
     // what a bead of metal between two rubies actually does.
-    this.pave('paveRuby', { r: 2.20, g: 0.34, b: 0.62 }, 2.3);
+    this.pave('paveRuby', { r: 4.20, g: 0.30, b: 0.58 }, 2.3);
 
     // ---------------------------------------------------------------
     // MATERIAL NAME CONTRACT
@@ -427,29 +444,32 @@ export default class Materials {
     // only and is tinted here, so four stones cost one megabyte rather than
     // four. Tints run above 1.0 where the target is lighter than the map's
     // mid-grey; Babylon multiplies straight through and that is intended.
-    this.surface('stoneCarved', 'stone', { r: 1.00, g: 0.94, b: 0.84 },
+    this.surface('stoneCarved', 'stone', { r: 1.22, g: 1.14, b: 1.00 },
       { tile: 1.6, bump: 1.0, roughScale: 1.0 });
-    this.surface('stonePolished', 'marble', { r: 1.14, g: 1.08, b: 0.98 },
-      { tile: 1.6, bump: 0.5, roughScale: 0.62 });
-    this.surface('marbleDark', 'marble', { r: 0.30, g: 0.30, b: 0.36 },
-      { tile: 1.2, bump: 0.45, roughScale: 0.52 });
-    this.surface('marbleLight', 'marble', { r: 1.42, g: 1.38, b: 1.30 },
-      { tile: 1.2, bump: 0.45, roughScale: 0.48 });
+    this.surface('stonePolished', 'marble', { r: 1.34, g: 1.27, b: 1.15 },
+      { tile: 1.6, bump: 0.5, roughScale: 0.55 });
+    // Dark marble is the one place a low roughness is safe on a large surface:
+    // a dark dielectric reflects the room at a few percent, so it gains a sheen
+    // and a horizon streak without ever approaching white.
+    this.surface('marbleDark', 'marble', { r: 0.22, g: 0.225, b: 0.28 },
+      { tile: 1.2, bump: 0.45, roughScale: 0.34 });
+    this.surface('marbleLight', 'marble', { r: 1.55, g: 1.50, b: 1.40 },
+      { tile: 1.2, bump: 0.45, roughScale: 0.42 });
 
     // --- gold ---
     // Hammered and leafed. goldTrim tiles far finer because it goes on small
     // parts, and hammer dishes that change physical size between the trim and
     // the panel it sits on is the fastest way to break the illusion.
     this.surface('goldLeaf', 'gold', PALETTE.yellowGold,
-      { tile: 3.0, bump: 0.70, roughScale: 1.10 });
+      { tile: 3.0, bump: 0.55, roughScale: 0.70 });
     this.surface('goldTrim', 'gold', PALETTE.yellowGold,
-      { tile: 6.0, bump: 0.55, roughScale: 0.85 });
+      { tile: 6.0, bump: 0.40, roughScale: 0.55 });
 
     // --- track ---
     this.surface('trackStone', 'track', { r: 1, g: 1, b: 1 },
       { tile: 2.5, bump: 0.85, roughScale: 1.0 });
     this.surface('trackInlay', 'gold', PALETTE.yellowGold,
-      { tile: 4.0, bump: 0.5, roughScale: 0.75 });
+      { tile: 4.0, bump: 0.25, roughScale: 0.50 });
 
     this.enamel('glassGem', PALETTE.ruby, 0.08);
 
@@ -483,12 +503,12 @@ export default class Materials {
     // polRose carries the FACE. The reference face is polished yellow gold, not
     // rose: a warm near-white metal reads as "slightly off-white silver" beside
     // a white-gold hood and the face stops separating from it entirely.
-    this.polished('polRose', { r: 1.00, g: 0.780, b: 0.360 }, 0.115);
+    this.polished('polRose', { r: 1.00, g: 0.780, b: 0.360 }, 0.135, 2, 1.15);
     // Hands, thumbs, boots and the wing ribs. Polished WHITE gold — these were
     // "matte white plastic eggs with zero specular", the single most literal
     // instance of the owner's complaint left in the build.
-    this.polished('polRhodium', PALETTE.rhodium, 0.060);
-    this.polished('polGold', PALETTE.yellowGold, 0.085);
+    this.polished('polRhodium', PALETTE.rhodium, 0.085, 2, 0.55);
+    this.polished('polGold', PALETTE.yellowGold, 0.10, 2, 0.8);
 
     // --- the structural metals -------------------------------------------
     // These are the rails, the lane inlays, the columns, the obstacles, the
@@ -505,23 +525,37 @@ export default class Materials {
     // star — so the tile number is the only thing keeping the hammer dishes
     // the same physical size across the set. At tile 2 a column's dishes came
     // out a metre across and it read as tree bark, not as metal.
-    // The columns and the full-height blockers. These shipped at a roughness
-    // that made a hundred cardboard tubes in terracotta clay: matte salmon says
-    // nothing about a jewel box. Now a pale champagne satin, which takes the
-    // studio's vertical strips as a bright band down one side and falls away
-    // dark on the other — that band is what gives a cylinder its round.
+    // The columns and the full-height blockers.
     //
-    // BUMP IS THE DIAL HERE, NOT ROUGHNESS. At bump 0.30 the hammer dishes
-    // scattered the surface normal widely enough that every part of the column
-    // could find one of the hot strips, and a hundred metres of column rendered
-    // as tubes of blown white with a bloom halo round each one. Flattening the
-    // hammering to 0.09 leaves a smooth reflection with ONE band in it. A
-    // high-contrast room punishes normal detail on large simple shapes in a way
-    // a dim room never did.
-    this.surface('roseGold',   'gold', { r: 1.00, g: 0.815, b: 0.605 },
-      { tile: 5.0, bump: 0.09, roughScale: 1.0 });
+    // THIS NAME NOW RETURNS A STONE, NOT A METAL, and that is deliberate.
+    // Everything about the columns as polished champagne metal was wrong in a
+    // way no amount of tuning fixed. A cylinder's normal sweeps a full 180
+    // degrees across its visible width, so a near-mirror one finds an analytic
+    // light's specular peak SOMEWHERE on that sweep no matter which way it
+    // faces: with the world's directional key at 2.6 and a roughness under 0.15
+    // every column in the game rendered as a floor-to-ceiling tube of blown
+    // white wearing a bloom halo. Roughen it past 0.25 to kill that and the same
+    // light spreads into a flat wash and the column reads as terracotta clay.
+    // There is no roughness between the two that is a column.
+    //
+    // Pale veined marble is a DIELECTRIC: its specular is four percent instead
+    // of a hundred, so a hard key lands on it as a highlight rather than as a
+    // detonation, and its form comes from albedo and normal detail that survive
+    // at any distance. It also earns the masonry courses in the stone map, which
+    // land as the drum joints of a real stone column, and it sets the gold rails
+    // off far better than more gold did. The critic asked for "polished gold or
+    // white marble with gold banding" and the second one is the one that works.
+    this.surface('roseGold',   'marble', { r: 1.34, g: 1.255, b: 1.125 },
+      { tile: 1.6, bump: 0.85, roughScale: 0.85, metalScale: 0.0 });
+    // The lane rails. The critic called the gold rails running to the vanishing
+    // point the best-composed element in the frame, so they are worth polishing
+    // properly: at roughScale 0.95 they were flat mustard bands, and a rail is
+    // small enough in screen area that letting its highlight clip is exactly
+    // what should happen. The hammering is flattened for the same reason it was
+    // on the columns — broad normal detail on a long simple shape scatters the
+    // one coherent streak that makes it read as metal.
     this.surface('yellowGold', 'gold', PALETTE.yellowGold,
-      { tile: 4.0, bump: 0.45, roughScale: 0.95 });
+      { tile: 4.0, bump: 0.22, roughScale: 0.50 });
     this.surface('whiteGold',  'gold', PALETTE.whiteGold,
       { tile: 4.0, bump: 0.40, roughScale: 0.85 });
     this.surface('rhodium',    'gold', PALETTE.rhodium,
@@ -554,7 +588,7 @@ export default class Materials {
     // Signage gold: double-sided, because arrows are viewed from whichever
     // side the corner happens to face.
     this.surface('signGold', 'gold', PALETTE.yellowGold,
-      { tile: 3.0, bump: 0.45, roughScale: 1.1, twoSided: true });
+      { tile: 3.0, bump: 0.30, roughScale: 0.65, twoSided: true });
 
     // --- character ---
     // Eyes are the single biggest factor in whether the character is
@@ -579,7 +613,7 @@ export default class Materials {
     // room is mostly black; the value of this material is set by how much of the
     // key and the panels the membrane's curve happens to catch, which is exactly
     // the near-black-to-blown-white swing the wing has in the reference.
-    this.polished('wingChrome', { r: 0.320, g: 0.335, b: 0.375 }, 0.075, 3);
+    this.polished('wingChrome', { r: 0.320, g: 0.335, b: 0.375 }, 0.075, 3, 0.7);
     this.mutate('wingChrome', (m) => { m.backFaceCulling = false; });
 
     // enamel(name, colour, roughness)

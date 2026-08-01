@@ -220,7 +220,7 @@ export function generatePaveMaps(size, cells) {
         // NEAR-BLACK BODY. This is the change the whole second pass turns on.
         // 0.80 white here was the bubble wrap; the fire comes from the clear
         // coat and the facets, not from the diffuse term.
-        const a = 0.050 + t * t * 0.055 + s1 * 0.020;
+        const a = 0.175 + t * t * 0.085 + s1 * 0.035;
         ar = a * 0.94; ag = a * 0.97; ab = a * 1.10;    // faintly blue-white
       } else if (bead > 0.14) {
         // The bead itself: bright polished metal, the one thing on this surface
@@ -232,7 +232,7 @@ export function generatePaveMaps(size, cells) {
         // a large fraction of the suit and the character bloomed into one
         // luminous cloud — the bead has to be the brightest thing on the
         // surface, not the brightest thing in the frame.
-        const a = 0.46 + bead * 0.18;
+        const a = 0.70 + bead * 0.22;
         ar = a; ag = a * 0.905; ab = a * 0.74;          // champagne gold
       } else {
         // The dark valley between stones. Deliberately deep: this shadow is the
@@ -240,9 +240,9 @@ export function generatePaveMaps(size, cells) {
         // than an embossed pattern.
         const gap = clamp01(e1 / (cellW * 0.30));
         rough = 0.22 + gap * 0.16;
-        occ = 0.20 + bead * 1.6 + gap * 0.10;
+        occ = 0.34 + bead * 1.4 + gap * 0.10;
         metal = 255;
-        const a = 0.16 + bead * 1.4 + gap * 0.10;
+        const a = 0.30 + bead * 1.2 + gap * 0.10;
         ar = a; ag = a * 0.94; ab = a * 0.84;
       }
 

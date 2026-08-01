@@ -76,6 +76,16 @@ export function generateTrackMaps(size, slabs = 2, inlay = 1) {
                         * (1 - smoothstep(PIN_OUT - 0.003, PIN_OUT + 0.005, edge));
       const loz = inlay * (1 - smoothstep(LOZENGE - 0.008, LOZENGE, corner));
       const gold = clamp01(Math.max(pin, loz) * (1 - joint));
+      // The MILLED CHANNEL the inlay sits in. The gold used to sit proud of the
+      // slab, which is a stripe painted on a floor; a real inlay is let into a
+      // cut channel with a chamfered lip, and it is that lip — a few pixels of
+      // angled stone either side of the metal — that catches the light and
+      // makes the inlay read as a separate material rather than as a decal.
+      const chan = inlay * clamp01(Math.max(
+        smoothstep(PIN_IN - 0.018, PIN_IN - 0.007, edge)
+          * (1 - smoothstep(PIN_OUT + 0.007, PIN_OUT + 0.018, edge)),
+        1 - smoothstep(LOZENGE + 0.004, LOZENGE + 0.015, corner),
+      )) * (1 - joint);
 
       // --- marble inside the slab ---------------------------------------------
       // Per-slab tone so no two slabs are the same block of stone. This is what
@@ -95,7 +105,8 @@ export function generateTrackMaps(size, slabs = 2, inlay = 1) {
       let h = (mottle - 0.5) * 0.10 + (speck - 0.5) * 0.04 + veinAll * 0.05;
       h += crystal * 0.10;
       h -= joint * 0.62;                                    // the joint channel
-      h += gold * 0.10;                                     // inlay sits proud
+      h -= chan * 0.34;                                     // milled channel
+      h += gold * 0.26;                                     // inlay, just below flush
       height[i] = h;
 
       // --- albedo -------------------------------------------------------------------
@@ -111,10 +122,15 @@ export function generateTrackMaps(size, slabs = 2, inlay = 1) {
         // shipped as a mirror and rendered near-white on real hardware against
         // a cream backdrop, and the character appeared to run through empty
         // space. The surface must own its value, not borrow the sky's.
-        let lum = 0.42 + (mottle - 0.5) * 0.17 + slabTone + (speck - 0.5) * 0.05;
-        lum = mix(lum, 0.68, veinAll * 0.38);
-        lum += crystal * 0.28;
-        lum *= 1 - joint * 0.40;
+        // MUCH darker than the first pass. The track is the largest surface in
+        // every frame, so its value sets the frame's value, and at 0.42 it held
+        // the whole histogram in a mid-grey band no highlight could escape from.
+        // A dark floor is also what a bright gold inlay needs in order to read
+        // as bright; a stripe is only bright relative to what it sits in.
+        let lum = 0.24 + (mottle - 0.5) * 0.15 + slabTone + (speck - 0.5) * 0.05;
+        lum = mix(lum, 0.46, veinAll * 0.40);
+        lum += crystal * 0.26;
+        lum *= 1 - joint * 0.55;
         const cool = 0.030 + veinAll * 0.01;
         albedo[o]     = clamp255((lum - cool) * 255);
         albedo[o + 1] = clamp255(lum * 255);
@@ -123,17 +139,17 @@ export function generateTrackMaps(size, slabs = 2, inlay = 1) {
       albedo[o + 3] = 255;
 
       // --- ORM ------------------------------------------------------------------------
-      const occ = clamp01(1 - joint * 0.44 - (1 - mottle) * 0.05);
+      const occ = clamp01(1 - joint * 0.58 - chan * 0.22 - (1 - mottle) * 0.05);
       let rough;
       let metal;
       if (gold > 0.5) {
-        rough = 0.16 + (mottle - 0.5) * 0.12;
+        rough = 0.11 + (mottle - 0.5) * 0.10;
         metal = 255;
       } else {
         // Satin, with polish variation. The variation matters more than the
         // absolute value: a constant roughness over 180 m of floor is what
         // made it read as painted card.
-        rough = 0.42 + (mottle - 0.5) * 0.16 + (speck - 0.5) * 0.08 + joint * 0.22;
+        rough = 0.26 + (mottle - 0.5) * 0.16 + (speck - 0.5) * 0.08 + joint * 0.26;
         rough -= crystal * 0.28;
         rough -= veinAll * 0.06;
         metal = 8;
