@@ -805,8 +805,8 @@ export default class Character {
     // finally rounds it. It is affordable because the simulation is now O(rows)
     // — about a dozen scalars — and the per-vertex cost is one rotation.
     const flutes = low ? 9 : (high ? 13 : 11);
-    const perFlute = 6;
-    const rows = low ? 9 : (high ? 14 : 12);
+    const perFlute = low ? 5 : 6;
+    const rows = low ? 7 : (high ? 14 : 12);
 
     // The yoke line. Everything below is measured off docs/reference-rear.png,
     // scaled by head radius, which is the only proportion both the reference
@@ -854,6 +854,7 @@ export default class Character {
       fluteAmp: 0.085,
       hemCut: 0.120,
       trimR: 0.010,
+      trimSu: low ? 4 : 5,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
       // swings once through a corner and settles rather than flapping.
@@ -923,7 +924,7 @@ export default class Character {
 
     const bed = new Geo();
     bed.at(0, 0, 0, 0, 0, 0, 0.985, 1, 0.985);
-    bed.add(surface(yokeSurf, this.su, this.sd, 2, 1));
+    bed.add(surface(yokeSurf, this.lowQ ? 14 : this.su, this.lowQ ? 4 : 6, 2, 1));
     bed.toMesh('yokeBed', scene, mat.get('darkChrome'), capeRoot);
 
     const st = new Geo();
@@ -931,7 +932,8 @@ export default class Character {
     // uOpen: the yoke is an ARC, not a closed ring — without this the stone
     // field wraps u around and lays a row of stones across the open front.
     this._stones(st, yokeSurf, {
-      v0: 0.06, v1: 0.93, uOpen: true, uPad: 0.035, pitch: this.pitch * 0.86,
+      v0: 0.06, v1: 0.93, uOpen: true, uPad: 0.035,
+      pitch: this.pitch * (this.lowQ ? 1.0 : 0.86),
     });
     st.toMesh('yokeStones', scene, mat.get('whiteGold'), capeRoot);
 

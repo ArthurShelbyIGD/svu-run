@@ -76,6 +76,7 @@ export class Cape {
     this.hemCut = opts.hemCut;
     this.rippleAmp = opts.rippleAmp;
     this.trimR = opts.trimR;
+    this.trimSu = opts.trimSu;
     this.stiff = opts.stiff;
     this.damp = opts.damp;
 
@@ -393,7 +394,7 @@ export class Cape {
   // ragged hem.
 
   _buildTrim(scene, mat, parent) {
-    const su = 5, ring = su + 1, cols = this.cols;
+    const su = this.trimSu, ring = su + 1, cols = this.cols;
     this._trimSu = su;
     const idx = [];
     for (let i = 0; i < cols - 1; i++) {
