@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-side",
-      "file": "char-side.png",
+      "name": "hero",
+      "file": "hero.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "profile — proportion and wing read",
+      "note": "default chase view, mid-run — the shot the whole game is judged on",
       "errors": []
     }
   ]

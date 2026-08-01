@@ -773,7 +773,7 @@ export default class Character {
       halfW1: 0.95,
       scallops,
       colsPerRib,
-      hemCut: 0.30,
+      hemCut: 0.34,
       shoulderR: 0.205,
       shoulderSpread: 2.30,
     });
@@ -787,10 +787,10 @@ export default class Character {
     // faces reflect opposite halves of the room.
     this.cape.init(
       this.ctx.scene,
-      mat.get('clothCape'),      // top surface: satin silver, mid value
-      mat.get('polRhodium'),     // ribs
+      mat.get('clothCape'),      // top surface: satin silver
+      mat.get('polGold'),        // ribs
       capeRoot, 3, 3,
-      mat.get('darkChrome'),     // underside: the dark cavity
+      mat.get('marbleDark'),     // underside: the dark cavity
     );
 
     // Clasp: a gold collar plate over the cape's pinned edge, so the cape looks

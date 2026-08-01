@@ -219,7 +219,7 @@ export class Cape {
       const rad = new Float32Array(this.rows);
       for (let r = 0; r < this.rows; r++) {
         idx[r] = r * this.cols + c;
-        rad[r] = 0.031 * (1 - 0.52 * (r / (this.rows - 1)));
+        rad[r] = 0.026 * (1 - 0.78 * (r / (this.rows - 1)));
       }
       strands.push({ idx, rad });
     }
@@ -227,7 +227,7 @@ export class Cape {
       const idx = new Int32Array(this.cols);
       const rad = new Float32Array(this.cols);
       const base = (this.rows - 1) * this.cols;
-      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.016; }
+      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.010; }
       strands.push({ idx, rad });
     }
     this.strands = strands;
