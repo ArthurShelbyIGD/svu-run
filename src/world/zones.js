@@ -17,9 +17,11 @@ export const BLEND_LENGTH = 150;  // metres of crossfade into the next
 
 /**
  * sky    : gradient stops for the whole panorama, zenith first, nadir last.
- *          The horizon sits at v = 0.78, which is where the brightest stop
- *          should go — that is what makes the room read as lit from the sides
- *          rather than as a vertical wash.
+ *          On a sphere v = 0.5 IS the horizon — the first version of this
+ *          panorama put its bright horizon band at v = 0.78, which is fifty
+ *          degrees below eye level, i.e. underground. All the value structure
+ *          was painted where the floor covers it. The bright band belongs
+ *          just ABOVE 0.5, where a clerestory would actually be.
  * shaft  : colour of the overhead light shafts and the clerestory windows
  * glow   : low gem glow, [r,g,b,alpha]
  * stone  : masonry silhouette colour, '#rrggbb'
@@ -35,8 +37,8 @@ export const ZONES = [
   {
     name: 'Vault',
     sky: [
-      [0.00, '#030306'], [0.20, '#08070e'], [0.44, '#151020'],
-      [0.62, '#241a24'], [0.78, '#4a3427'], [0.90, '#140f12'], [1.00, '#050408'],
+      [0.00, '#030306'], [0.24, '#0a0810'], [0.38, '#20182a'],
+      [0.46, '#4a3327'], [0.56, '#241a1c'], [0.74, '#100b12'], [1.00, '#040308'],
     ],
     shaft: 'rgba(255,214,150,',
     shaftAlpha: 0.30,
@@ -50,8 +52,8 @@ export const ZONES = [
   {
     name: 'Ruby',
     sky: [
-      [0.00, '#080206'], [0.20, '#14040c'], [0.44, '#2e0817'],
-      [0.62, '#4a0d22'], [0.78, '#8a1c36'], [0.90, '#20060e'], [1.00, '#080205'],
+      [0.00, '#080206'], [0.24, '#16050d'], [0.38, '#3d0a1d'],
+      [0.46, '#7d1630'], [0.56, '#3a0a17'], [0.74, '#14040b'], [1.00, '#060204'],
     ],
     shaft: 'rgba(255,170,180,',
     shaftAlpha: 0.26,
@@ -65,8 +67,8 @@ export const ZONES = [
   {
     name: 'Sapphire',
     sky: [
-      [0.00, '#02040c'], [0.20, '#050a1e'], [0.44, '#0a1a3e'],
-      [0.62, '#123063'], [0.78, '#2a63a6'], [0.90, '#07122a'], [1.00, '#02040c'],
+      [0.00, '#02040c'], [0.24, '#060c22'], [0.38, '#0e2450'],
+      [0.46, '#275c9c'], [0.56, '#0d2851'], [0.74, '#060c1e'], [1.00, '#02040a'],
     ],
     shaft: 'rgba(180,215,255,',
     shaftAlpha: 0.30,
@@ -80,8 +82,8 @@ export const ZONES = [
   {
     name: 'Emerald',
     sky: [
-      [0.00, '#010708'], [0.20, '#041113'], [0.44, '#082a28'],
-      [0.62, '#0d4438'], [0.78, '#1e7a5c'], [0.90, '#051815'], [1.00, '#010707'],
+      [0.00, '#010708'], [0.24, '#041315'], [0.38, '#0b3835'],
+      [0.46, '#1d785a'], [0.56, '#0a3730'], [0.74, '#041413'], [1.00, '#010606'],
     ],
     shaft: 'rgba(190,255,225,',
     shaftAlpha: 0.26,
@@ -95,8 +97,8 @@ export const ZONES = [
   {
     name: 'Gilt',
     sky: [
-      [0.00, '#0a0703'], [0.20, '#1a1006'], [0.44, '#3a260a'],
-      [0.62, '#5e3f11'], [0.78, '#b8862f'], [0.90, '#241705'], [1.00, '#0a0703'],
+      [0.00, '#0a0703'], [0.24, '#1d1207'], [0.38, '#4d310d'],
+      [0.46, '#ad7d2c'], [0.56, '#4a3210'], [0.74, '#1d1206'], [1.00, '#080502'],
     ],
     shaft: 'rgba(255,232,180,',
     shaftAlpha: 0.38,
@@ -146,9 +148,11 @@ const BAYS = 10;   // architectural bays around the full 360 degrees
  * drawn. On a dome the same painting has a real heading, so turning a corner
  * swings the room around the player and the backdrop stops being flat.
  *
- * v = 0 is the zenith, v = 0.78 the horizon, v = 1 the nadir. The room is
- * built in bands: vault, clerestory (the light source), arcade, colonnade,
- * horizon haze, floor.
+ * v = 0 is the zenith, v = 0.5 the HORIZON, v = 1 the nadir. Bands, in order:
+ * vault, clerestory (the light source, just above eye level so it reads over
+ * the top of the colonnade), entablature, then the far hall below eye level —
+ * which is visible either side of the track, because the track is only 7.2m
+ * wide and the floor of the world stops at its rails.
  */
 export function paintZone(c, zone, w, h) {
   const bayW = w / BAYS;
@@ -156,12 +160,18 @@ export function paintZone(c, zone, w, h) {
   const warm = rgba(zone.warm);
   const [gr, gg, gb, ga] = zone.glow;
 
-  const Y_VAULT = h * 0.19;
-  const Y_CLERE_T = h * 0.21;
-  const Y_CLERE_B = h * 0.44;
-  const Y_ARC_T = h * 0.46;
-  const Y_ARC_B = h * 0.70;
-  const Y_HORIZ = h * 0.78;
+  // Band edges, in v. These are not arbitrary: the chase camera sits 3m up and
+  // looks DOWN about fourteen degrees, so the only sky that is ever on screen
+  // runs from the horizon (v = 0.5) to roughly thirteen degrees above it
+  // (v = 0.43). A clerestory painted higher than that is a clerestory nobody
+  // will ever see — which is what the previous two versions of this panorama
+  // both did, in different ways.
+  const Y_VAULT = h * 0.26;     // ribbed vault, only visible on a jump
+  const Y_CLERE_T = h * 0.395;  // bright windows start ~19 degrees up
+  const Y_CLERE_B = h * 0.487;  // ...and end just above eye level
+  const Y_ARC_T = h * 0.515;
+  const Y_ARC_B = h * 0.655;
+  const Y_FAR = h * 0.70;       // where the hall floor takes over
 
   // ---- 1. base value structure ----------------------------------------
   const g = c.createLinearGradient(0, 0, 0, h);
@@ -234,7 +244,17 @@ export function paintZone(c, zone, w, h) {
     c.fillRect(cx - halfW, springs + (bot - springs) * 0.42, halfW * 2, h * 0.005);
   }
 
-  // ---- 4. the great arcade ----------------------------------------------
+  // ---- 3b. the entablature the clerestory sits on ------------------------
+  // A dark horizontal band right at eye level. It is what separates "sky" from
+  // "room" and gives the far architecture a base to stand on.
+  c.fillStyle = stone + '0.95)';
+  c.fillRect(0, Y_CLERE_B, w, Y_ARC_T - Y_CLERE_B);
+  c.fillStyle = 'rgba(255,226,180,0.16)';
+  c.fillRect(0, Y_CLERE_B, w, h * 0.006);
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.fillRect(0, Y_ARC_T - h * 0.008, w, h * 0.008);
+
+  // ---- 4. the great arcade, below eye level -----------------------------
   c.fillStyle = 'rgba(0,0,0,0.30)';
   c.fillRect(0, Y_ARC_T, w, Y_ARC_B - Y_ARC_T);
 
@@ -247,9 +267,9 @@ export function paintZone(c, zone, w, h) {
 
     // the void beyond the arch, with warmth pooling at its foot
     const og = c.createLinearGradient(0, top, 0, bot);
-    og.addColorStop(0, 'rgba(0,0,0,0.86)');
-    og.addColorStop(0.55, 'rgba(0,0,0,0.70)');
-    og.addColorStop(1, warm + '0.42)');
+    og.addColorStop(0, 'rgba(0,0,0,0.88)');
+    og.addColorStop(0.5, 'rgba(0,0,0,0.62)');
+    og.addColorStop(1, warm + '0.72)');
     c.fillStyle = og;
     c.beginPath();
     c.moveTo(cx - halfW, bot);
@@ -280,9 +300,9 @@ export function paintZone(c, zone, w, h) {
   for (let i = 0; i < BAYS * 3; i++) {
     const x = (i / (BAYS * 3)) * w + h1(i) * bayW * 0.12;
     const wdt = bayW * (0.055 + h1(i + 40) * 0.04);
-    const top = Y_ARC_B + (Y_HORIZ - Y_ARC_B) * (0.05 + h1(i + 80) * 0.18);
+    const top = Y_ARC_B + (Y_FAR - Y_ARC_B) * (0.05 + h1(i + 80) * 0.18);
     c.fillStyle = 'rgba(0,0,0,0.42)';
-    c.fillRect(x - wdt * 0.5, top, wdt, Y_HORIZ - top);
+    c.fillRect(x - wdt * 0.5, top, wdt, Y_FAR - top);
   }
 
   // ---- 6. light shafts, raked off vertical -------------------------------
@@ -293,7 +313,7 @@ export function paintZone(c, zone, w, h) {
     const skew = bayW * 0.30;
     const topW = bayW * 0.16;
     const botW = bayW * 0.44;
-    const sg = c.createLinearGradient(0, Y_CLERE_T, 0, Y_HORIZ + h * 0.05);
+    const sg = c.createLinearGradient(0, Y_CLERE_T, 0, Y_FAR + h * 0.06);
     sg.addColorStop(0, zone.shaft + (zone.shaftAlpha * 0.9) + ')');
     sg.addColorStop(0.55, zone.shaft + (zone.shaftAlpha * 0.30) + ')');
     sg.addColorStop(1, zone.shaft + '0)');
@@ -301,8 +321,8 @@ export function paintZone(c, zone, w, h) {
     c.beginPath();
     c.moveTo(cx - topW, Y_CLERE_T);
     c.lineTo(cx + topW, Y_CLERE_T);
-    c.lineTo(cx + skew + botW, Y_HORIZ + h * 0.05);
-    c.lineTo(cx + skew - botW, Y_HORIZ + h * 0.05);
+    c.lineTo(cx + skew + botW, Y_FAR + h * 0.06);
+    c.lineTo(cx + skew - botW, Y_FAR + h * 0.06);
     c.closePath();
     c.fill();
   }
@@ -323,14 +343,14 @@ export function paintZone(c, zone, w, h) {
   // light somewhere rather than swinging a single blob into view
   for (let i = 0; i < BAYS; i++) {
     const cx = i * bayW + bayW * (0.2 + h1(i + 7) * 0.6);
-    const amp = 0.45 + h1(i + 21) * 0.75;
+    const amp = 0.70 + h1(i + 21) * 0.95;
     const rad = bayW * (0.7 + h1(i + 33) * 0.8);
-    const gl = c.createRadialGradient(cx, Y_HORIZ, 1, cx, Y_HORIZ, rad);
+    const gl = c.createRadialGradient(cx, Y_FAR, 1, cx, Y_FAR, rad);
     gl.addColorStop(0, `rgba(${gr},${gg},${gb},${ga * amp})`);
     gl.addColorStop(0.4, `rgba(${gr},${gg},${gb},${ga * amp * 0.35})`);
     gl.addColorStop(1, `rgba(${gr},${gg},${gb},0)`);
     c.fillStyle = gl;
-    c.fillRect(cx - rad, Y_HORIZ - rad, rad * 2, rad * 2);
+    c.fillRect(cx - rad, Y_FAR - rad, rad * 2, rad * 2);
   }
   c.globalCompositeOperation = 'source-over';
 
@@ -340,21 +360,21 @@ export function paintZone(c, zone, w, h) {
   // architecture at the top, dissolved architecture at the bottom.
   const [fr, fg, fb] = zone.fog;
   const fogCol = `${Math.round(fr * 255 * 2.6)},${Math.round(fg * 255 * 2.6)},${Math.round(fb * 255 * 2.6)}`;
-  const hz = c.createLinearGradient(0, Y_ARC_T, 0, h);
-  hz.addColorStop(0, `rgba(${fogCol},0)`);
-  hz.addColorStop(0.55, `rgba(${fogCol},0.42)`);
-  hz.addColorStop(0.78, `rgba(${fogCol},0.72)`);
-  hz.addColorStop(1, 'rgba(0,0,0,0.55)');
+  const hz = c.createLinearGradient(0, Y_CLERE_B, 0, h);
+  hz.addColorStop(0, `rgba(${fogCol},0.14)`);
+  hz.addColorStop(0.26, `rgba(${fogCol},0.40)`);
+  hz.addColorStop(0.52, `rgba(${fogCol},0.52)`);
+  hz.addColorStop(1, 'rgba(0,0,0,0.42)');
   c.fillStyle = hz;
-  c.fillRect(0, Y_ARC_T, w, h - Y_ARC_T);
+  c.fillRect(0, Y_CLERE_B, w, h - Y_CLERE_B);
 
   // a hard-ish horizon line keeps the floor from merging into the wall
-  const hb = c.createLinearGradient(0, Y_HORIZ - h * 0.03, 0, Y_HORIZ + h * 0.04);
+  const hb = c.createLinearGradient(0, Y_FAR - h * 0.03, 0, Y_FAR + h * 0.04);
   hb.addColorStop(0, 'rgba(255,246,230,0)');
-  hb.addColorStop(0.45, 'rgba(255,246,230,0.13)');
+  hb.addColorStop(0.45, 'rgba(255,246,230,0.10)');
   hb.addColorStop(1, 'rgba(255,246,230,0)');
   c.fillStyle = hb;
-  c.fillRect(0, Y_HORIZ - h * 0.03, w, h * 0.07);
+  c.fillRect(0, Y_FAR - h * 0.03, w, h * 0.07);
 
   // ---- 8. floor reflections ---------------------------------------------
   // A polished floor answers the clerestory. Cheap, and it stops the lower
@@ -362,13 +382,13 @@ export function paintZone(c, zone, w, h) {
   c.globalCompositeOperation = 'lighter';
   for (let i = -1; i <= BAYS; i++) {
     const cx = i * bayW + bayW * 0.5;
-    const rg = c.createLinearGradient(0, Y_HORIZ, 0, h * 0.96);
-    rg.addColorStop(0, zone.shaft + '0.16)');
+    const rg = c.createLinearGradient(0, Y_FAR, 0, h * 0.96);
+    rg.addColorStop(0, zone.shaft + '0.22)');
     rg.addColorStop(1, zone.shaft + '0)');
     c.fillStyle = rg;
     c.beginPath();
-    c.moveTo(cx - bayW * 0.10, Y_HORIZ);
-    c.lineTo(cx + bayW * 0.10, Y_HORIZ);
+    c.moveTo(cx - bayW * 0.10, Y_FAR);
+    c.lineTo(cx + bayW * 0.10, Y_FAR);
     c.lineTo(cx + bayW * 0.30, h * 0.96);
     c.lineTo(cx - bayW * 0.30, h * 0.96);
     c.closePath();

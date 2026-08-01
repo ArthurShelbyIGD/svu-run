@@ -170,10 +170,11 @@ export function star(scene, bucket, o) {
     const tip = 2 + i * 2;
     const inn = tip + 1;
     const nextTip = 2 + ((i + 1) % pts) * 2;
-    idx.push(0, tip, inn);
-    idx.push(0, inn, nextTip);
-    idx.push(1, inn, tip);
-    idx.push(1, nextTip, inn);
+    // Reversed for Babylon's left-handed winding — same trap as flutedShaft.
+    idx.push(0, inn, tip);
+    idx.push(0, nextTip, inn);
+    idx.push(1, tip, inn);
+    idx.push(1, inn, nextTip);
   }
   const nor = new Float32Array(pos.length);
   const P = new Float32Array(pos);
