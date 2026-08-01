@@ -1,0 +1,13 @@
+{
+  "preset": "high",
+  "poses": [
+    {
+      "name": "char-front",
+      "file": "char-front.png",
+      "viewport": "desktop",
+      "preset": "high",
+      "note": "front three-quarter — the silhouette check",
+      "errors": []
+    }
+  ]
+}

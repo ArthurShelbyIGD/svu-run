@@ -57,57 +57,103 @@ import { EV } from './ctx.js';
  *    a mean of 0.32 almost the whole image sat below the pivot, so contrast
  *    1.12 was a darkening operator, not a contrast operator. It made the image
  *    muddier while appearing to add punch. Exposure first, contrast second.
+ *
+ * SECOND MEASUREMENT PASS. The numbers above bought a punchier frame and then
+ * two of them quietly took it back. Re-sampled with the obstacle-gap framing
+ * the real capture uses — the first probe skipped that seek, posed the camera
+ * inside an obstacle, and spent an hour measuring the inside of a grey box:
+ *
+ *   shipped grade      meanL 68.2   p5  10   p99 224   >250 0.026%   <40 43.5%
+ *   vignette OFF only  meanL 132.8                              <40  5.3%
+ *
+ * The vignette at weight 3.2 / K 0.52 was halving the mean luminance of the
+ * WHOLE FRAME. It is applied before the tonemapper, so it does not dim pixels,
+ * it crushes them into the toe. The critic's "44.6% of the frame below
+ * luminance 40 and the top quarter is dead black holding nothing" was almost
+ * entirely this one number, not the backdrop and not the lighting.
+ *
+ * `vignetteK` is also backwards from how it reads: it scales the vignette
+ * COORDINATE, so a LARGER K is a tighter, stronger vignette. Dropping K from
+ * 0.52 to 0.34 while raising the weight from 3.2 to 4.6 keeps the corners
+ * genuinely dark and stops the falloff eating the upper third of the frame.
+ *
+ * EXPOSURE 2.05 WAS DESTROYING THE MATERIAL. This is the important one. The
+ * previous pass raised exposure to reach the ACES shoulder, which worked for
+ * the corridor and was ruinous for the character: the pavé is a large area of
+ * near-white albedo, so at 2.05 it sat on a flat clipped plateau with all of
+ * its stone-by-stone structure gone. Measured on the face pose, 37.7% of that
+ * frame was below luminance 40 while p95 was 239 — the whole image was either
+ * black or blown, with nothing in between. Pulling exposure back to 1.80 gives
+ * the pavé, the hood rim, the boot stones and the second eye catchlight back.
+ *
+ * SHARPEN IS THE SPARKLE LEVER, and it was set an order of magnitude too low.
+ * The frame had essentially no pixels at 255 — a pavé surface under studio
+ * light is defined by pixel-scale blowouts and there were none. Raising
+ * `highlightsExposure` produces them, but it is a luminance-BAND operator: it
+ * cannot tell a 2px specular from the character's whole white head, and at 58
+ * it clipped 8% of the face pose to paper. Sharpen is a LOCAL contrast
+ * operator, so it lifts a bright pixel only relative to its neighbours.
+ * Measured on the face pose at exposure 1.6: edgeAmount 0.40 -> 1.0 moved
+ * pixels above luminance 250 from 0.215% to 1.063% while the frame mean moved
+ * 93.4 -> 93.6. That is the definition of the effect wanted here — sparkle
+ * without exposure drift.
  */
 const LOOKS = {
   high: {
-    exposure: 2.05,
-    contrast: 1.45,
-    vignetteWeight: 3.2,
-    vignetteK: 0.52,
-    bloomThreshold: 1.60,
+    exposure: 1.80,
+    contrast: 1.22,
+    vignetteWeight: 4.6,
+    vignetteK: 0.34,
+    bloomThreshold: 1.90,
     bloomKernel: 64,
     bloomScale: 0.5,
     samples: 4,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.40,
+    sharpenEdge: 1.00,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.15, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
-    exposure: 2.05,
-    contrast: 1.45,
-    vignetteWeight: 3.0,
-    vignetteK: 0.52,
-    bloomThreshold: 1.55,
+    exposure: 1.80,
+    contrast: 1.22,
+    vignetteWeight: 4.4,
+    vignetteK: 0.34,
+    bloomThreshold: 1.85,
     bloomKernel: 48,
     bloomScale: 0.5,
     samples: 1,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.34,
+    sharpenEdge: 0.90,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.05, samples: 6, expensiveBlur: false, maxZ: 45 },
   },
   low: {
-    // 'low' must hold 60fps on a mid-range phone, so it gets no AO and no
-    // sharpen pass — the two things here that cost a whole extra draw. It
-    // still gets the full grade, because colour curves, dithering and the
-    // tonemapper all live inside the one image-processing shader that was
-    // going to run anyway, so the look survives the budget intact.
-    // 'low' is where the phones are, and a phone is often held in daylight.
-    // It runs a stop brighter and a notch less contrasty than the desktop
-    // grade so the corridor stays readable behind screen glare, at the cost of
-    // a little of the vault's drama.
-    exposure: 2.18,
-    contrast: 1.36,
-    vignetteWeight: 2.3,
-    vignetteK: 0.52,
-    bloomThreshold: 1.50,
+    // 'low' must hold 60fps on a mid-range phone, so it still gets no AO —
+    // that is the expensive pass here, a depth-aware sample kernel plus a
+    // bilateral blur.
+    //
+    // Sharpen is now ON at 'low', reversing the previous decision. The reason
+    // is a cost comparison rather than a taste one: Babylon's sharpen is a
+    // single full-screen quad with five texture taps, while FXAA — which
+    // 'low' already runs — is roughly a dozen. Sharpen is therefore about 40%
+    // of a pass 'low' has already bought, and it is the single control that
+    // makes the pavé read as set stones rather than as a smooth white ball.
+    // Trading it away was trading away the art direction to save very little.
+    //
+    // 'low' is where the phones are, and a phone is often held in daylight, so
+    // it still runs a little brighter and less contrasty than the desktop
+    // grade to survive screen glare.
+    exposure: 1.92,
+    contrast: 1.16,
+    vignetteWeight: 3.4,
+    vignetteK: 0.34,
+    bloomThreshold: 1.80,
     bloomKernel: 32,
     bloomScale: 0.4,
     samples: 1,
     dither: true,
-    sharpen: false,
-    sharpenEdge: 0,
+    sharpen: true,
+    sharpenEdge: 0.70,
     ssao: null,
   },
 };
@@ -138,9 +184,14 @@ const GRADE = {
   // as grey plastic, and it is what the flat build was missing most.
   globalHue: 0, globalDensity: 0, globalSaturation: 26, globalExposure: 0,
 
-  // Deep, cool, slightly violet shadows. Exposure is pushed hard negative
-  // because the slider is squared: -55 is only a 0.85x multiplier.
-  shadowsHue: 224, shadowsDensity: 58, shadowsSaturation: -6, shadowsExposure: -55,
+  // Deep, cool, slightly violet shadows. The slider is squared, so -55 is only
+  // a 0.85x multiplier — but stacked on top of a vignette that was already
+  // crushing the frame into the tonemapper's toe it was the last push that
+  // turned shadow into void. Measured: -55 -> -22 lifts the hero pose's p5 from
+  // 24 to 29 and costs nothing anywhere else. The COOL is what earns its place
+  // here, not the darkness; the darkness is the vignette's job and the
+  // vignette was doing far too much of it.
+  shadowsHue: 224, shadowsDensity: 58, shadowsSaturation: -6, shadowsExposure: -22,
 
   // Midtones carry the saturation, and lean a touch warm so skin/gold in the
   // middle of the range does not sit in the same neutral band as the track.
@@ -149,7 +200,15 @@ const GRADE = {
   // Warm lifted highlights — the "gold light" of the reference. Saturation is
   // pulled back slightly so specular hits still bleach towards white, which is
   // what sells a polished surface.
-  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 30,
+  //
+  // MEASURED CEILING on this one. Pushing highlightsExposure to reach 255 is
+  // tempting and wrong: this is a luminance-BAND operator (it lands on every
+  // pixel above ~0.83 luma), so it cannot separate a 2px specular from the
+  // character's entire white head. On the face pose, 58 clipped 8.1% of the
+  // frame to paper and erased the pavé. 40 is where the corridor emitters and
+  // the gold rails reach the top of the range and the character does not.
+  // Pixel-scale sparkle comes from `sharpenEdge` instead, which is local.
+  highlightsHue: 38, highlightsDensity: 46, highlightsSaturation: -10, highlightsExposure: 40,
 };
 
 export class Post {
@@ -255,9 +314,13 @@ export class Post {
     this.curves = curves;
 
     // --- display-space effects --------------------------------------------
-    // Deliberately near the threshold of visibility: a texture-detail cue
-    // rather than an effect the player should notice. The failure mode is
-    // being obvious.
+    // SHARPEN — promoted from "barely visible texture cue" to a load-bearing
+    // part of the material read. See the measurement note on LOOKS: at 0.40 it
+    // did nothing measurable; at 1.00 it roughly quintuples the number of
+    // pixels reaching 255 without moving the frame mean, because it is a local
+    // operator and the thing being lifted is a stone facet against its own
+    // shadow. FXAA runs after it, which is what keeps the halo from reading as
+    // a ringing artefact on the corridor's long converging edges.
     if (look.sharpen) {
       pipeline.sharpenEnabled = true;
       // colorAmount 1 = keep the original colour and only add the edge term.
@@ -345,6 +408,10 @@ export class Post {
       this.pipeline.bloomThreshold = look.bloomThreshold;
       this.pipeline.bloomKernel = look.bloomKernel;
       this.pipeline.sharpenEnabled = !!look.sharpen;
+      if (this.pipeline.sharpen) {
+        this.pipeline.sharpen.colorAmount = 1.0;
+        this.pipeline.sharpen.edgeAmount = look.sharpenEdge;
+      }
     }
     // AO is torn down rather than weakened: a struggling device wants the
     // whole pass gone, not a cheaper version of it.
@@ -372,10 +439,12 @@ export class Post {
     if (o.contrast !== undefined) ip.contrast = o.contrast;
     if (o.vignetteWeight !== undefined) ip.vignetteWeight = o.vignetteWeight;
     if (o.vignetteStretch !== undefined) ip.vignetteStretch = o.vignetteStretch;
+    if (o.vignetteK !== undefined) { this._look = Object.assign({}, this._look, { vignetteK: o.vignetteK }); this._updateVignette(); }
     if (o.bloomThreshold !== undefined) this.pipeline.bloomThreshold = o.bloomThreshold;
     if (o.bloomKernel !== undefined) this.pipeline.bloomKernel = o.bloomKernel;
     if (o.bloomWeight !== undefined) this.pipeline.bloomWeight = o.bloomWeight;
     if (o.curvesEnabled !== undefined) ip.colorCurvesEnabled = o.curvesEnabled;
+    if (o.sharpenEdge !== undefined && this.pipeline.sharpen) this.pipeline.sharpen.edgeAmount = o.sharpenEdge;
     if (o.ssaoStrength !== undefined && this.ssao) this.ssao.totalStrength = o.ssaoStrength;
     if (o.ssaoRadius !== undefined && this.ssao) this.ssao.radius = o.ssaoRadius;
     if (o.ssaoMaxZ !== undefined && this.ssao) this.ssao.maxZ = o.ssaoMaxZ;
