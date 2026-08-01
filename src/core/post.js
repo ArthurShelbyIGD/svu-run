@@ -158,22 +158,26 @@ import { EV } from './ctx.js';
  * shader uses the highlights curve alone, so lifting midtones cannot re-clip
  * anything. Measured on the hero pose:
  *
+ * `after` here is the SHIPPED state, including the vignette ease documented
+ * further down; every pair is two separate page loads, one variant each.
+ *
  *   pose                mean  p95  p99   luma255  chan-clip   <32   hi sigma
  *   hero      before    73.6  234  255    1.26%     4.77%    44.6%    16.6
- *             after     65.9  205  247    0.42%     1.70%    46.9%    17.8
+ *             after     69.5  209  248    0.44%     1.80%    44.5%    17.1
  *   char-rear before    75.8  238  255    1.58%     5.15%    43.5%    17.9
- *             after     68.2  208  251    0.54%     2.07%    45.1%    17.9
+ *             after     71.1  211  252    0.56%     2.18%    43.9%    18.1
  *   phone     before    88.5  242  255    1.69%     7.14%    35.6%    15.7
- *             after     79.0  216  253    0.66%     2.76%    38.9%    15.8
+ *             after     83.2  219  253    0.71%     2.93%    35.3%    15.3
  *   phone/low before    95.2  252  255    1.57%    11.75%    31.7%    15.9
- *             after     88.1  217  237    0.00%     0.58%    28.7%    11.5
+ *             after     88.6  219  236    0.00%     0.36%    28.1%    11.2
  *
- * Clipping down 3-20x depending on the pose, the dark end within three points
- * of where it was (the mood is intact — this is not a lifted-blacks fix), the
- * mean down 7-9%, and the spread of luminance WITHIN the bright band holding
- * or rising: there is shape in the highlights where there was a plateau. The
- * worst frame in the set was the one most people will actually see — the phone
- * at 'low' had one pixel in eight with a clipped channel.
+ * Clipping down 2.4x to 30x depending on the pose, the dark end within a point
+ * of where it started on every frame (the mood is intact — this is not a
+ * lifted-blacks fix), the mean down 5-7%, and the spread of luminance WITHIN
+ * the bright band holding or rising: there is shape in the highlights where
+ * there was a plateau. The worst frame in the set was the one most people will
+ * actually see — the phone at 'low' had one pixel in eight with a clipped
+ * channel, and now has one in three hundred.
  *
  * BLOOM. Re-checked rather than assumed, because the threshold is a linear
  * value against a scene that got brighter underneath it. 1.90 -> 2.40 pulls
