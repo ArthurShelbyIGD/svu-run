@@ -9,6 +9,13 @@ spread across many token windows survivable.
 
 ## Current state
 
+**Sprint 4 (char) — PAVE IS GEOMETRY NOW.** The single biggest change to how the
+game looks. See "Seventh finding" below. The runner is a diamond-set piece
+rather than a grey ball: ~1,230 individually cut stones on `high` (779 on
+`low`), laid at one constant physical pitch over the hood, ears, torso, arms,
+legs and the ruby, sitting proud of a dark setting bed. The cape is a silver
+bat wing with tapered gold ribs and a dark cavity underneath.
+
 **Sprint 3 — CHARACTER REBUILT.** The runner now reads as the reference NFT:
 hooded onesie with a framed face opening, warm rose-gold face with oversized
 eyes and catchlights, bear ears with inner colour, a scalloped bat wing with
@@ -73,6 +80,45 @@ cleanly.
 - `audio/`: registered stub — module graph proven, no implementation.
 - `tools/`: `smoke.mjs` (26 checks), `capture.mjs` (10 deterministic poses),
   `harness.mjs` (shared browser plumbing).
+
+**Seventh finding: a normal map cannot be pavé, and three of these bugs were
+sign errors that no test could see.**
+
+The character was "a grey knitted sponge ball with a black bin-bag stuck to it"
+(critic, looking only at frames). Four separate causes, all found by rendering:
+
+1. *Pavé was a tiled normal map at ~70 stones across the hood.* At gameplay
+   distance each stone was 2-4 pixels, and a 2-pixel bump averages to flat matte
+   grey — the original "flat matt grey thing" complaint, with a waffle texture
+   on top. Worse, a normal map leaves the SILHOUETTE a perfectly smooth arc, and
+   a smooth outline on a stone-set surface is the most obvious tell there is.
+   `char/pave.js` now lays real cut stones — table facet, crown facets, girdle,
+   randomised rotation and tilt — over any parametric surface at a constant
+   physical pitch (0.066m on `high`), which puts ~12 across the hood crown, as
+   the reference does. The stones are merged per material, so the whole hood is
+   still one draw call.
+2. *The cape's vertex normals had the wrong sign.* `_computeNormals` accumulated
+   (p1-p0) x (p2-p0); Babylon's front face is (p2-p0) x (p1-p0). Nothing looked
+   broken — the sheet just shaded as though lit from the far side, so a polished
+   membrane sampled the dark half of the environment and rendered black with a
+   few blown streaks. The garbage-bag cape was a sign error, not a material
+   choice. The rib mesh had the same bug, which is why the silver ribs rendered
+   as flat black lines. Fixed, and the cape is now two meshes over one
+   simulation: a bright top and a dark underside, which is what the reference
+   wing actually is.
+3. *The torso's stone field was emitted at the origin.* The helper reset the
+   accumulator transform, teleporting every torso stone down around the boots.
+   The torso rendered as a bare dark chrome egg. Invisible in the rear pose,
+   obvious in one profile frame.
+4. *The face's eyes were 3.7cm inside the head.* They were positioned with a
+   guessed (x, y, z); at that x offset the face sphere's surface is further
+   forward than the guess. Features are now placed by spherical ANGLE, where
+   k = 1 is on the surface by construction and the mistake cannot recur.
+
+Two more from the same pass: the hood's "cowl over the shoulders" was a lathe
+whose profile ran the wrong way, so it was in fact a second cap sitting on the
+crown; and the cape's centre hem hung 19cm below the road, rendering as a thin
+wire trailing out of frame.
 
 ### Key finding from Sprint 0
 
@@ -159,8 +205,11 @@ adding polish.
 | 1 | Zones change the backdrop but the world still has no landmarks or parallax depth layers | `world/` | Sprint 4 |
 | 12 | Gilt zone has the lowest track/background contrast of the five — watch it on a phone in daylight | `world/zones.js` | needs a device |
 | 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
-| 3 | Fringe under the hood rim still reads weakly; face/hood separation could go further | `char/` | polish |
-| 13 | No pavé surface treatment yet — the stretch goal from PLAN.md section 2 | `mat/` | optional |
+| 3 | Character is 44 draw calls. Fine on desktop, on the high side for a phone; the bed/stones split doubles most parts | `char/` | if perf bites |
+| 14 | No rim or back light on the character. `world.attachPortraitRig` has a warm rim at 22 intensity but the back still sits at road value in `hero` | `world/` | next |
+| 15 | Feet have no contact shadow; the character reads as floating in `char-front` | `world/` | next |
+| 16 | Cape gold ribs read slightly as a wire frame at the tips where the scalloped membrane cuts back furthest | `char/` | polish |
+| 13 | `mat/`'s procedural pavé normal map is now unused by `char/` (geometry replaced it). Still applied to nothing; `paveWhite`/`paveWhiteFine`/`paveRuby` are dead weight | `mat/` | tidy |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
 | 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
@@ -210,6 +259,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-08-01 | 1 | Sprint 4 (char): pavé rebuilt as real cut-stone geometry; cape normal sign bug fixed and the wing turned silver; torso stone field was landing at the origin; face features re-placed by spherical angle. 36/36 smoke. |
 | 2026-07-31 | 2 | Sprint 3: character rebuilt to resemble the NFT. Face/hood separation, eyes with catchlights, bat wing, antenna, better animation. |
 | 2026-07-31 | 2 | Jewel-box world shipped with five progressive zones. Art direction chosen by comparing three built mockups rather than describing them. |
 | 2026-07-31 | 1 | Camera moved to path-space smoothing (fixes "bouncing off the barrier"); sky sphere replaced with a background layer (fixes the clipped bubble). 36 checks. |
