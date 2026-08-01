@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-rear",
-      "file": "char-rear.png",
+      "name": "corner",
+      "file": "corner.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
+      "note": "approaching a junction — does the corner read as a corner?",
       "errors": []
     }
   ]
