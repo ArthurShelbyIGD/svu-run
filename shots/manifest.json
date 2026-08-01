@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-face",
-      "file": "char-face.png",
+      "name": "char-rear",
+      "file": "char-rear.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "face close-up — compare directly with docs/reference.jpeg",
+      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
       "errors": []
     }
   ]

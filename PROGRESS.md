@@ -86,6 +86,72 @@ Consequence for later sprints: **spend effort on the environment before
 spending it on materials.** Material parameters are close to irrelevant next to
 what they are reflecting.
 
+**Eighth finding: the post pipeline was measured a second time, and three of
+the "measured" numbers from the first pass were measuring the wrong frame.**
+
+The first grading probe posed the hero shot by fast-forwarding to a fixed time
+and never ran the obstacle-gap seek that `tools/capture.mjs` runs. In capture
+mode collision is disabled, so the player coasts into a solid block: every
+histogram in the first pass was taken from **inside a grey obstacle**. Re-run
+with the seek, three things changed sign.
+
+1. **The vignette was the darkness.** Not the backdrop, not the lighting rig,
+   not the fog. Hero pose mean luminance 68.2 as shipped, 132.8 with only the
+   vignette switched off. It is applied *before* the tonemapper, so it does not
+   dim pixels, it crushes them into the ACES toe. The critic's "44.6% of the
+   frame below luminance 40, top quarter dead black holding nothing" was almost
+   entirely this one control. Also: `vignetteK` scales the vignette
+   *coordinate*, so a LARGER K is a TIGHTER vignette — the opposite of how it
+   reads. 3.2/K0.52 -> 4.6/K0.34 keeps the corners dark and stops the falloff
+   eating the top third. Pixels below luminance 40: 43.5% -> 18.6%.
+
+2. **Exposure 2.05 was erasing the pavé.** The first pass raised exposure to
+   reach the ACES shoulder. That was right for the corridor and ruinous for the
+   character, whose surface is a large area of near-white albedo: it sat on a
+   flat clipped plateau. The face pose measured 37.7% of the frame below
+   luminance 40 *and* p95 at 239 — every pixel either black or blown. Exposure
+   1.80 gives back the stone-by-stone structure, the hood rim, the boot stones
+   and the second eye catchlight.
+
+3. **Sharpen, not exposure, is the sparkle lever.** The frame had essentially
+   no pixels at 255, and a pavé surface under studio light is *defined* by
+   pixel-scale blowouts. `highlightsExposure` produces them but is a luminance-
+   BAND operator — it cannot tell a 2px specular from the character's entire
+   white head, and at 58 it clipped 8.1% of the face pose to paper. Sharpen is
+   LOCAL: 0.40 -> 1.00 moved pixels above luminance 250 from 0.215% to 1.063%
+   while the frame mean moved 93.4 -> 93.6. It is now on at `low` too, because
+   it is roughly 40% of the FXAA pass `low` already runs.
+
+**AO was switched on and doing nothing.** `ssao.radius` was 1.6 *metres* —
+most of the character's height. Measured on the front pose: mean luminance 95.4
+with AO on against 96.1 with it off, a 0.7% difference, because nearly every
+sample landed in open space. The creases that matter (hood/head junction, ear
+roots, arm sockets, boot contact) are 0.1..0.4m features. At 0.55m the effect is
+~3.5x and the difference image shows it landing on those junctions. This is the
+fix for "the character reads as a pile of separate balls".
+
+**No bloom threshold can separate the corridor from the character.** The
+previous note claimed the emissive columns were "far brighter than 1.6". That
+was assumed, never sampled, and it is false. Swept and looked at: at 1.90 the
+emitters glow, at 2.30 they are visibly dimmer, at 2.80 they are completely
+flat, and 3.50 is pixel-identical to 2.80 — nothing in the scene is above 3.5.
+The emitters and the pavé sit in the same narrow linear band. Separating them
+needs a mask, not a threshold: **a `GlowLayer` on the emitters in `world/`**
+would let the bloom threshold here rise out of the character's range entirely.
+Until then 1.90 is the compromise. What post could take was the KERNEL: 64 ->
+40 concentrates the same light into a smaller radius, which reads as specular
+rather than as fog (face pose pixels over luminance 250, 1.8% -> 2.4%).
+
+**The lens did not fit the frame it was in.** Babylon's `FreeCamera` defaults
+to `FOVMODE_VERTICAL_FIXED`, which holds the vertical angle and lets the
+horizontal one collapse with the aspect ratio — a 27 degree horizontal field on
+a 390x844 phone. `camFovBase` is now an aspect-compensated getter in
+`core/config.js`: a tangent-space blend between vertical-fixed and
+horizontal-fixed, so portrait gains corridor width and desktop gains subject
+size without either going near a fisheye. The blend was tuned by looking, twice
+— 0.45 improved desktop and shrank the phone framing to a seventh of frame
+height, 0.20 is where both hold.
+
 **Seventh finding: the post pipeline was three separate measurement failures,
 and one of them belongs to somebody else.**
 
@@ -219,11 +285,13 @@ adding polish.
 | 14 | **Sky Layer is double-gamma'd** — zone gradients authored in sRGB are blitted as linear then gamma-encoded again, so the dark vault backdrop renders as a mid tan wash. See seventh finding. Largest single remaining defect in the final image | `world/zones.js` | next |
 | 1 | Zones change the backdrop but the world still has no landmarks or parallax depth layers | `world/` | Sprint 4 |
 | 12 | Gilt zone has the lowest track/background contrast of the five — watch it on a phone in daylight | `world/zones.js` | needs a device |
-| 2 | Portrait framing puts the character quite large in frame; camera may need a per-aspect distance | `play/`, `core/config.js` | Sprint 2 |
+| 2 | ~~Portrait framing puts the character quite large in frame~~ — MISDIAGNOSED. The character was not large; the corridor was narrow, because Babylon's vertical-fixed fov left portrait with a 27 degree horizontal field. `camFovBase` is now an aspect-compensated getter. Remaining: `play/` has no lateral camera offset, so every shot is dead-astern and the face and wing are never seen in play | `play/` | Sprint 4 |
 | 3 | Fringe under the hood rim still reads weakly; face/hood separation could go further | `char/` | polish |
 | 13 | No pavé surface treatment yet — the stretch goal from PLAN.md section 2 | `mat/` | optional |
 | 4 | Shadows not visibly landing; generator wired but unverified | `world/` | Sprint 1 |
-| 15 | AO is on but subtle — the scene is mostly convex objects far apart, so there is little for SSAO to occlude. It will pay off much more once `world/` has clutter and `track/` has surface relief | `world/`, `track/` | with detail work |
+| 16 | **Corridor emitters and the character occupy the same linear brightness band (1.9..2.3), so no bloom threshold can glow one without haloing the other.** Needs a `GlowLayer` driven by the emitters' emissive channel; then `core/post.js` can raise its threshold out of the character's range | `world/` | next |
+| 17 | The wing is a zero-thickness sheet and catches one softbox as a single blown white disc in `char-rear.png`. Post cannot fix a specular that large — it is geometry | `char/` | polish |
+| 15 | ~~AO is on but subtle~~ — RESOLVED as a bug, not a limitation: the radius was 1.6m, most of the character's height, so the pass measured as inert (0.7% frame difference against AO off). Now 0.55m. It will still pay off more once `world/` has clutter and `track/` has surface relief | `world/`, `track/` | with detail work |
 | 5 | Env cubemap mips are not properly convolved, so rough materials are approximate. Fine while everything is polished | `mat/` | Sprint 2 if needed |
 | 6 | Wall arrow is small and low-contrast against the dark chrome wall | `track/`, `mat/` | Sprint 2 |
 | 11 | Turn frequency (42% of chunks) is still an untuned guess | `track/` | needs a human playing |
@@ -272,6 +340,7 @@ Fan-out starts at Sprint 4.
 |---|---|---|
 | 2026-07-31 | 1 | Sprint 0: repo, scaffold, core engine, materials, blockout character, track, harness, docs. Build + smoke + capture all green. |
 | 2026-07-31 | 1 | Sprint 1 (partial): chunk grammar with solvability validator, three obstacle types, swept collision, collectible stars, death + results + restart. Smoke test 16 -> 26 checks. Turns still outstanding. |
+| 2026-08-01 | 2 | Post re-measured with the correct pose (the first probe had been sampling the inside of an obstacle). Vignette was halving frame luminance; exposure 2.05 was erasing the pavé; sharpen 0.40 -> 1.00 is the sparkle lever and is now on at `low`; SSAO radius 1.6m -> 0.55m turned an inert pass into contact occlusion; bloom kernel 64 -> 40; aspect-compensated lens in `core/config.js`. Below luminance 40 on the hero pose: 43.5% -> 18.6%. 36 checks pass. |
 | 2026-08-01 | 1 | Post pipeline rebuilt in `core/post.js`: SSAO2 (high + medium), measured exposure/contrast, split-tone colour curves, bloom threshold 0.72 -> 1.60, aspect-stable vignette, dithering. Grain, chromatic aberration and depth of field evaluated and rejected. Found and documented the sky-layer double-gamma defect for `world/`. 36 checks pass, all 15 poses capture. |
 | 2026-07-31 | 2 | Sprint 3: character rebuilt to resemble the NFT. Face/hood separation, eyes with catchlights, bat wing, antenna, better animation. |
 | 2026-07-31 | 2 | Jewel-box world shipped with five progressive zones. Art direction chosen by comparing three built mockups rather than describing them. |
