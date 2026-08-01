@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "phone",
-      "file": "phone.png",
-      "viewport": "phone",
+      "name": "char-rear",
+      "file": "char-rear.png",
+      "viewport": "desktop",
       "preset": "high",
-      "note": "portrait, the way most people will actually see it",
+      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
       "errors": []
     }
   ]

@@ -45,7 +45,6 @@ import { Matrix, Vector3, VertexData, Mesh } from '../core/bjs.js';
 
 
 const _v = new Vector3();
-const _n = new Vector3();
 
 /** Signed power — the superellipsoid primitive. e=1 is a sphere, e→0 a box. */
 function sp(v, e) {
@@ -70,12 +69,6 @@ export class Geo {
     const r = Matrix.RotationYawPitchRoll(ry, rx, rz);
     const t = Matrix.Translation(tx, ty, tz);
     this.m.copyFrom(s.multiply(r).multiply(t));
-    return this;
-  }
-
-  /** Mirror the current transform across X — for the second of a pair. */
-  mirrorX() {
-    this.m.copyFrom(Matrix.Scaling(-1, 1, 1).multiply(this.m));
     return this;
   }
 

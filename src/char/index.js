@@ -23,7 +23,7 @@
 // dozen draw calls despite having roughly twenty times the detail of the
 // primitive blockout it replaces.
 
-import { MeshBuilder, TransformNode } from '../core/bjs.js';
+import { TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
 import { Geo, ellipsoid, lathe, tube, torus, arc, pipe, gem } from './geom.js';
 import { Cape } from './cape.js';
