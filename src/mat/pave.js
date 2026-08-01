@@ -196,7 +196,7 @@ export function generatePaveMaps(size, cells) {
         const t = d / stoneR;
         // Soft, and not too dark. At 0.50 the stones read as black polka
         // dots at any distance and the suit looked spotted rather than set.
-        const a = (0.66 + t * 0.13 + bestSeed * 0.06) * 255;
+        const a = (0.80 + t * 0.11 + bestSeed * 0.06) * 255;
         albedo[o] = a | 0; albedo[o + 1] = a | 0; albedo[o + 2] = a | 0;
       } else {
         // The setting metal, darkened down into the channel between stones.

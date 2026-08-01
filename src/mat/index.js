@@ -408,7 +408,12 @@ export default class Materials {
     // Set stones sit in a lit tent, not in the room's ambient. Lifting the
     // environment contribution for this material specifically is what keeps
     // the piece reading as jewellery when the zone around it is nearly black.
-    m.environmentIntensity = 1.05;
+    // Set stones sit in a lit tent, not in the room's ambient. Note that
+    // world/ overwrites scene.environmentIntensity per zone (1.75 - 2.05), so
+    // this is a multiplier ON TOP of that, not an absolute — every number in
+    // this file was tuned by looking at the composited result, not by reading
+    // the value here.
+    m.environmentIntensity = 1.22;
     m.usePhysicalLightFalloff = true;
 
     m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile, 0.88);
