@@ -21,6 +21,19 @@ export function box(scene, bucket, w, h, d, x, y, z, ry = 0, rx = 0, rz = 0) {
   return m;
 }
 
+/**
+ * A horizontal quad lying in the XZ plane, used for baked contact occlusion.
+ * The material is double-sided, so which way the normal ended up pointing
+ * after the rotation is deliberately not this function's problem.
+ */
+export function slab(scene, bucket, w, d, x, y, z) {
+  const m = MeshBuilder.CreatePlane('_ao', { width: w, height: d }, scene);
+  m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, z);
+  bucket.push(m);
+  return m;
+}
+
 /** Cylinder helper. dT/dB are diameters, so mouldings can flare. */
 export function cyl(scene, bucket, dT, dB, h, x, y, z, tess) {
   const m = MeshBuilder.CreateCylinder('_c', {

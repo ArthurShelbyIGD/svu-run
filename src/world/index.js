@@ -30,6 +30,7 @@ export default class World {
     this._fog = new Color3();
     this._zoneIndex = -1;
     this._offs = [];
+    this._w = [0, 0, 0];   // scratch for path->world, never reallocated
   }
 
   init() {
@@ -43,31 +44,57 @@ export default class World {
     scene.fogStart = 48;
     scene.fogEnd = 205;
 
-    // The environment cubemap does most of the lighting work. These two lights
-    // exist mainly to produce a directional shadow and a little extra shaping.
-    this.key = new DirectionalLight('key', new Vector3(-0.45, -0.82, 0.36), scene);
-    // A dark interior wants a tighter, warmer key and much less fill: the
-    // environment cubemap is doing the heavy lifting, and a strong ambient
-    // would wash the room back out to the flat grey we just escaped.
-    this.key.intensity = 2.6;
-    this.key.diffuse = new Color3(1.0, 0.93, 0.83);
-    this.key.specular = new Color3(1.0, 0.97, 0.90);
+    // THE KEY IS RAKING, NOT OVERHEAD.
+    //
+    // The critic's loudest note was that not one column throws a shadow onto
+    // the road. Half of that was wiring (see below); the other half was this
+    // vector. A key at 55 degrees elevation puts a column's shadow underneath
+    // the column, where nobody can see it. Dropped to ~33 degrees and swung
+    // almost fully across the corridor, the same column lays a hard bar right
+    // across the running surface — which is the single cheapest way to prove
+    // to the eye that the light is real and the geometry is in it.
+    this.key = new DirectionalLight('key', new Vector3(-0.80, -0.53, 0.28), scene);
+    this.key.intensity = 6.4;
+    this.key.diffuse = new Color3(1.0, 0.91, 0.78);
+    this.key.specular = new Color3(1.0, 0.96, 0.88);
 
     this.ambient = new HemisphericLight('amb', new Vector3(0, 1, 0), scene);
-    this.ambient.intensity = 0.16;
-    this.ambient.diffuse = new Color3(0.72, 0.78, 0.95);
-    this.ambient.groundColor = new Color3(0.30, 0.25, 0.20);
+    this.ambient.intensity = 0.10;
+    this.ambient.diffuse = new Color3(0.66, 0.74, 0.95);
+    this.ambient.groundColor = new Color3(0.14, 0.11, 0.09);
 
     if (q.shadows && q.shadowMapSize > 0) {
       this.shadowGen = new ShadowGenerator(q.shadowMapSize, this.key);
-      this.shadowGen.useExponentialShadowMap = true;
-      this.shadowGen.usePercentageCloserFiltering = false;
-      this.shadowGen.darkness = 0.42;
-      this.shadowGen.bias = 0.0016;
-      this.shadowGen.normalBias = 0.012;
+      // Hard-edged, not exponential. ESM was chosen when the only caster was
+      // the character and a soft blob under it was the goal; the goal now is
+      // architectural bars with a readable edge, and ESM light-leaks badly
+      // through the thin voussoirs of an arch.
+      this.shadowGen.useExponentialShadowMap = false;
+      this.shadowGen.usePercentageCloserFiltering = true;
+      this.shadowGen.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
+      this.shadowGen.darkness = 0.18;
+      this.shadowGen.bias = 0.00035;
+      this.shadowGen.normalBias = 0.014;
+      // A DirectionalLight normally derives its ortho box from the bounding
+      // info of everything in the render list. Every prop mesh here has
+      // `doNotSyncBoundingInfo` set — its bounds are a lie by design — so the
+      // auto-extend path would size the frustum from garbage. A fixed frustum
+      // is deterministic, and 54m across a 2048 map is ~2.6cm per texel, which
+      // is sharp enough for a column edge at running distance.
+      this.key.shadowFrustumSize = 54;
+      this.key.autoUpdateExtends = false;
+      this.key.shadowMinZ = 1;
+      this.key.shadowMaxZ = 88;
     }
 
     this.props.init();
+
+    // WIRING, NOT PHYSICS. `props.casters()` existed and returned the right
+    // meshes and nothing ever called it, so the entire colonnade was invisible
+    // to the shadow map. No test can see this; one screenshot can.
+    if (this.shadowGen) {
+      for (const m of this.props.casters()) this.addCasterMesh(m);
+    }
 
     this._applyZone(0);
 
@@ -182,17 +209,32 @@ export default class World {
     this.props.update(play.z, track);
   }
 
-  /** The shadow-casting light follows the player so the map stays tight. */
+  /**
+   * The shadow-casting light follows the player so the map stays tight.
+   *
+   * `play.x` and `play.z` are PATH space — lateral offset and distance
+   * travelled — not world coordinates. The previous version fed them straight
+   * into a world-space position, which is correct only until the first corner;
+   * after one left turn the shadow frustum was parked sideways in a wall and
+   * the road went unshadowed for the rest of the run.
+   */
   renderUpdate() {
     const play = this.ctx.tryGet('play');
     if (!play) return;
     this._applyZone(play.z);
     if (!this.key) return;
-    this.key.position.set(play.x - 14, 24, play.z - 8);
-    if (this.shadowGen) {
-      this.key.shadowMinZ = 6;
-      this.key.shadowMaxZ = 60;
+    const track = this.ctx.tryGet('track');
+    if (track && track.path) {
+      // Aim a little ahead: the shadows that matter are the ones the player is
+      // about to run through, not the ones already behind the camera.
+      track.path.toWorldExact(play.z + 12, play.x, 0, this._w);
+    } else {
+      this._w[0] = play.x; this._w[1] = 0; this._w[2] = play.z + 12;
     }
+    const d = this.key.direction;
+    this.key.position.set(
+      this._w[0] - d.x * 34, this._w[1] - d.y * 34, this._w[2] - d.z * 34,
+    );
   }
 
   dispose() {

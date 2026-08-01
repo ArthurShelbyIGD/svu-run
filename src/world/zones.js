@@ -28,10 +28,25 @@ export const BLEND_LENGTH = 150;  // metres of crossfade into the next
  * warm   : the colour spilling out of the arcade openings
  * fog    : [r,g,b] — must sit close to the gradient's lower half or the track
  *          will appear to fade into a colour that is not behind it
- * env    : scene.environmentIntensity. Dark rooms need MORE, not less: the
- *          metals are lit almost entirely by the environment cubemap, and if
- *          it is dimmed to match the backdrop the character goes flat.
- * bloom  : bloom weight; gem glows want more than daylight would
+ * env    : scene.environmentIntensity.
+ *
+ *          This used to sit around 2.0, on the reasoning that a dark room
+ *          needs MORE image-based light because the metals are lit almost
+ *          entirely by the cubemap. That is true of the character, and it was
+ *          a disaster for the world, because IBL is ambient: it arrives from
+ *          every direction, it casts nothing, and a shadow cannot remove it.
+ *          With the environment supplying the large majority of every
+ *          surface's light, the directional key had almost nothing left to
+ *          take away — so the shadow map rendered correctly all week and
+ *          changed almost no pixels.
+ *
+ *          Halved, with the key roughly doubled to compensate, the same scene
+ *          suddenly has a light DIRECTION: lit faces and dark faces on one
+ *          column, and hard bars where the colonnade crosses the floor.
+ * bloom  : bloom weight. Also halved. At the old values ordinary marble was
+ *          clearing the bloom threshold, which turned the bright end of the
+ *          corridor into a featureless white oval and every particle into a
+ *          soft white disc that read as dirt on the lens.
  */
 export const ZONES = [
   {
@@ -46,7 +61,7 @@ export const ZONES = [
     stone: '#2a2331',
     warm: '#6b4a26',
     fog: [0.055, 0.050, 0.070],
-    env: 1.95, bloom: 0.85,
+    env: 1.02, bloom: 0.42,
     gem: [1.00, 0.78, 0.36],
   },
   {
@@ -61,7 +76,7 @@ export const ZONES = [
     stone: '#3a1220',
     warm: '#7d1b2c',
     fog: [0.090, 0.030, 0.048],
-    env: 1.85, bloom: 0.95,
+    env: 0.98, bloom: 0.46,
     gem: [1.00, 0.32, 0.42],
   },
   {
@@ -76,7 +91,7 @@ export const ZONES = [
     stone: '#16233f',
     warm: '#1d4a86',
     fog: [0.035, 0.055, 0.105],
-    env: 2.05, bloom: 0.85,
+    env: 1.08, bloom: 0.42,
     gem: [0.44, 0.66, 1.00],
   },
   {
@@ -91,7 +106,7 @@ export const ZONES = [
     stone: '#0e2b2a',
     warm: '#14624a',
     fog: [0.035, 0.080, 0.070],
-    env: 2.00, bloom: 0.80,
+    env: 1.05, bloom: 0.40,
     gem: [0.36, 1.00, 0.74],
   },
   {
@@ -106,7 +121,7 @@ export const ZONES = [
     stone: '#33230d',
     warm: '#8a6320',
     fog: [0.130, 0.098, 0.048],
-    env: 1.75, bloom: 1.00,
+    env: 0.92, bloom: 0.48,
     gem: [1.00, 0.82, 0.40],
   },
 ];

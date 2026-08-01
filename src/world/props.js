@@ -28,7 +28,7 @@ import {
   MeshBuilder, Mesh, Matrix, Vector3, Quaternion, StandardMaterial,
   DynamicTexture, Texture, Color3, Constants,
 } from '../core/bjs.js';
-import { box, cyl, gem, flutedShaft, arch, star, mergeBucket } from './geo.js';
+import { box, cyl, gem, slab, flutedShaft, arch, star, mergeBucket } from './geo.js';
 
 export const BAY_LEN = 24;
 const COL_X = 4.95;              // matches the track's own column offset
@@ -46,6 +46,8 @@ const COL_SLOTS = Math.ceil((AHEAD + BEHIND) / COL_STEP) * 2 + 4;
 // use the SAME number or the two disagree and a bare cylinder shows through.
 const COL_JUNCTION_SPAN = 16.5;
 const ACCENT_X = 7.7;
+const RUNNER_STEP = 8;           // metres per inlaid road panel
+const RUNNER_SLOTS = Math.ceil((AHEAD + BEHIND) / RUNNER_STEP) + 3;
 
 export default class Props {
   constructor(ctx) {
@@ -54,6 +56,9 @@ export default class Props {
     this.bayBufs = [];
     this.colBufs = [];
     this.accentBufs = [];
+    this.runnerBufs = [];
+    this._nextRunnerS = 0;
+    this._runnerSlot = 0;
     this._nextColS = 0;
     this._colSlot = 0;
     this._m = new Matrix();
@@ -77,6 +82,8 @@ export default class Props {
     this._rng = this.ctx.rng.fork();
     this._rngSeed = this._rng.seed;
 
+    this._buildContactMaterials(scene);
+    this._buildRunner(scene, mat, q);
     this._buildBay(scene, mat, q);
     this._buildColumn(scene, mat, q);
     this._buildAccents(scene, mat, q);
@@ -85,6 +92,141 @@ export default class Props {
   }
 
   // ---- prototypes ------------------------------------------------------
+
+  /**
+   * BAKED CONTACT OCCLUSION.
+   *
+   * A cast shadow says where the light is. Contact occlusion says where the
+   * ground is — and it is the thing whose absence made everything in this
+   * scene look like it was hovering a centimetre off the floor. Two
+   * multiply-blended gradients do the whole job:
+   *
+   *   aoPatch  a radial pool, dropped under every column and every plinth
+   *   aoStrip  a symmetric band, run along every wall/floor junction
+   *
+   * They cost two draw calls per family and, unlike the shadow map, they are
+   * present on the `low` preset, where `q.shadows` is false and there is
+   * otherwise no darkening anywhere in the frame at all.
+   */
+  _buildContactMaterials(scene) {
+    const S = 128;
+
+    const patch = new DynamicTexture('aoPatch', { width: S, height: S }, scene, true);
+    {
+      const c = patch.getContext();
+      c.clearRect(0, 0, S, S);
+      const g = c.createRadialGradient(S / 2, S / 2, 1, S / 2, S / 2, S / 2);
+      // Not a linear ramp: real occlusion falls off fast near the object and
+      // then lingers. A straight gradient reads as an airbrushed blob.
+      g.addColorStop(0.00, 'rgba(0,0,0,0.86)');
+      g.addColorStop(0.22, 'rgba(0,0,0,0.62)');
+      g.addColorStop(0.50, 'rgba(0,0,0,0.24)');
+      g.addColorStop(0.78, 'rgba(0,0,0,0.06)');
+      g.addColorStop(1.00, 'rgba(0,0,0,0)');
+      c.fillStyle = g;
+      c.fillRect(0, 0, S, S);
+      patch.update(false);
+      patch.hasAlpha = true;
+    }
+
+    const strip = new DynamicTexture('aoStrip', { width: S, height: 4 }, scene, true);
+    {
+      const c = strip.getContext();
+      c.clearRect(0, 0, S, 4);
+      // Symmetric across u, so ONE texture grounds both sides of a wall foot
+      // and the same mesh works mirrored on the far side of the corridor.
+      const g = c.createLinearGradient(0, 0, S, 0);
+      g.addColorStop(0.00, 'rgba(0,0,0,0)');
+      g.addColorStop(0.34, 'rgba(0,0,0,0.30)');
+      g.addColorStop(0.50, 'rgba(0,0,0,0.72)');
+      g.addColorStop(0.66, 'rgba(0,0,0,0.30)');
+      g.addColorStop(1.00, 'rgba(0,0,0,0)');
+      c.fillStyle = g;
+      c.fillRect(0, 0, S, 4);
+      strip.update(false);
+      strip.hasAlpha = true;
+    }
+
+    this.aoTextures = [patch, strip];
+    this.aoMats = [patch, strip].map((tex, i) => {
+      const m = new StandardMaterial(i === 0 ? 'aoPatchMat' : 'aoStripMat', scene);
+      m.disableLighting = true;
+      m.diffuseColor = new Color3(0, 0, 0);
+      m.specularColor = new Color3(0, 0, 0);
+      m.emissiveColor = new Color3(0, 0, 0);
+      m.opacityTexture = tex;
+      m.opacityTexture.getAlphaFromRGB = false;
+      m.backFaceCulling = false;
+      m.disableDepthWrite = true;
+      // Fogged like everything else, so occlusion dissolves into the haze at
+      // distance instead of staying a hard black smear at the vanishing point.
+      m.fogEnabled = true;
+      return m;
+    });
+  }
+
+  /**
+   * THE ONYX RUNNER — an inlaid panel laid down the middle of the road.
+   *
+   * WHY THIS EXISTS, AND WHY IT IS AWKWARD.
+   * The critic's top two notes were "no column casts a shadow onto the road"
+   * and "the road is one untextured grey covering 45% of the hero frame".
+   * Both have the same cause and it is not in this directory: `trackFloor` is
+   * a PBR METAL. A metal has no diffuse term, so essentially all of its light
+   * arrives from the environment cubemap — and a shadow map cannot subtract
+   * ambient light. The shadow generator was working perfectly; the surface it
+   * was falling on was physically incapable of showing it.
+   *
+   * The one-line fix belongs to `mat/` (make `trackFloor` a dielectric, i.e.
+   * `enamel` not `metal`) and I do not own that file. What I can do without
+   * crossing the line is what a real interior would do anyway: lay a carpet.
+   * This is a decorative inlay — dark polished onyx with gold seams — that
+   * sits 1.6cm proud of the track deck, well under the track's own lane lines
+   * and chevrons, strictly inside the play area, and is DIELECTRIC. It takes
+   * a cast shadow, it gives the road a value and a pattern, and it does not
+   * require anyone else's file to change.
+   *
+   * FLAGGED IN PROGRESS.md: when `mat/` makes the floor a dielectric, this
+   * should be reconsidered — the honest version of this is a track material,
+   * not a prop.
+   */
+  _buildRunner(scene, mat, q) {
+    const low = q.name === 'low';
+    const D = [];   // marbleDark  — the onyx field
+    const G = [];   // goldTrim    — seams and chevrons
+    const W = 6.4;  // covers all three lanes plus the player's radius
+    const L = RUNNER_STEP;
+
+    // The field. 2cm thick so it has an edge to catch light, not a decal.
+    box(scene, D, W, 0.05, L, 0, 0.016, 0);
+
+    // Seam lines. Transverse every 4m and a hairline down each margin. These
+    // stream past at running speed and are most of what sells forward motion
+    // once the lane dashes are no longer the only marks on the ground.
+    for (const sz of [-0.5, 0.5]) {
+      box(scene, G, W, 0.03, 0.075, 0, 0.045, sz * L * 0.5);
+    }
+    for (const sx of [-1, 1]) {
+      box(scene, G, 0.07, 0.03, L, sx * (W * 0.5 - 0.16), 0.045, 0);
+    }
+
+    if (!low) {
+      // A hex/lozenge inlay in the pale marble, at the seam crossings. Small,
+      // and the point is not that anybody reads a hexagon — it is that the
+      // 45% of frame the road occupies stops being one unbroken value.
+      for (const sx of [-1, 0, 1]) {
+        box(scene, G, 0.34, 0.028, 0.34, sx * 2.13, 0.044, -L * 0.5, 0.785);
+        box(scene, D, 0.20, 0.032, 0.20, sx * 2.13, 0.048, -L * 0.5, 0.785);
+      }
+    }
+
+    this.runnerStone = mergeBucket(scene, 'runnerStone', D, mat.get('marbleDark'));
+    this.runnerGold = mergeBucket(scene, 'runnerGold', G, mat.get('goldTrim'));
+    this.runnerBufs = [];
+    for (const m of [this.runnerStone, this.runnerGold]) {
+      if (m) this.runnerBufs.push(this._alloc(m, RUNNER_SLOTS));
+    }
+  }
 
   _buildBay(scene, mat, q) {
     const low = q.name === 'low';
@@ -222,7 +364,20 @@ export default class Props {
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
-    for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem]) {
+    // --- contact darkening where the walls meet the floor ---
+    // Two bands per side, running the whole bay. This is what turns a set of
+    // objects standing on a plane into a room: the eye reads the junction
+    // between a vertical and a horizontal surface as dark, and when it is not
+    // dark the vertical surface looks pasted on.
+    const A = [];
+    for (const sx of [-1, 1]) {
+      slab(scene, A, 4.4, BAY_LEN, sx * COL_X, -0.062, 0);        // colonnade foot
+      if (!low) slab(scene, A, 5.6, BAY_LEN, sx * 12.4, -0.058, 0); // outer aisle foot
+    }
+    this.bayAO = mergeBucket(scene, 'bayAO', A, this.aoMats[1]);
+    if (this.bayAO) this.bayAO.receiveShadows = false;
+
+    for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem, this.bayAO]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
 
@@ -273,10 +428,16 @@ export default class Props {
       }
     }
 
+    // The pool of darkness the column stands in. Same matrix as the column, so
+    // it simply joins colBufs and is written, cleared and recycled for free.
+    const A = [];
+    slab(scene, A, 3.9, 3.9, 0, -0.052, 0);
     this.colLight = mergeBucket(scene, 'colLight', L, mat.get('marbleLight'));
     this.colDark = mergeBucket(scene, 'colDark', D, mat.get('marbleDark'));
     this.colGold = mergeBucket(scene, 'colGold', G, mat.get('goldTrim'));
-    for (const m of [this.colLight, this.colDark, this.colGold]) {
+    this.colAO = mergeBucket(scene, 'colAO', A, this.aoMats[0]);
+    if (this.colAO) this.colAO.receiveShadows = false;
+    for (const m of [this.colLight, this.colDark, this.colGold, this.colAO]) {
       if (m) this.colBufs.push(this._alloc(m, COL_SLOTS));
     }
   }
@@ -303,14 +464,20 @@ export default class Props {
     cyl(scene, G, 0.16, 0.24, 0.70, 0, 1.63, 0, 8);
     star(scene, G, { outer: 0.82, inner: 0.36, thick: 0.17, x: 0, y: 2.55, z: 0, ry: 0 });
 
+    const A = [];
+    slab(scene, A, 5.0, 5.0, 0, -0.050, 0);
+
     this.accentStone = mergeBucket(scene, 'accentStone', S, mat.get('stonePolished'));
     this.accentGold = mergeBucket(scene, 'accentGold', G, mat.get('goldLeaf'));
-    for (const m of [this.accentStone, this.accentGold]) {
+    this.accentAO = mergeBucket(scene, 'accentAO', A, this.aoMats[0]);
+    if (this.accentAO) this.accentAO.receiveShadows = false;
+    for (const m of [this.accentStone, this.accentGold, this.accentAO]) {
       if (m) this.accentBufs.push(this._alloc(m, ACCENT_SLOTS));
     }
     // The star is hidden on some plinths (a broken, empty pedestal), so the
     // gold buffer is written independently of the stone one.
     this.accentGoldBuf = this.accentBufs[1];
+    this.accentAOBuf = this.accentBufs[2];
   }
 
   /**
@@ -401,9 +568,12 @@ export default class Props {
     this._nextColS = -BAY_LEN + 4;
     this._colSlot = 0;
     this._nextAccentS = 40;
+    this._nextRunnerS = -BAY_LEN;
+    this._runnerSlot = 0;
     for (const b of this.bayBufs) b.fill(0);
     for (const b of this.colBufs) b.fill(0);
     for (const b of this.accentBufs) b.fill(0);
+    for (const b of this.runnerBufs) b.fill(0);
     if (this.floorBuf) this.floorBuf.fill(0);
     if (this.shaftBuf) this.shaftBuf.fill(0);
     this._flush();
@@ -431,6 +601,25 @@ export default class Props {
     while (this._nextColS < limit) {
       this._placeColumnPair(this._nextColS, path, track);
       this._nextColS += COL_STEP;
+      dirty = true;
+    }
+
+    // The runner is generated on the same 8m step as the columns, and stops
+    // short of a junction: the corner pad, the chevrons and the backstop arrow
+    // are the player's only warning that a turn is coming, and a decorative
+    // carpet must never be laid over the top of the signage.
+    while (this._nextRunnerS + RUNNER_STEP * 0.5 < limit) {
+      const mid = this._nextRunnerS + RUNNER_STEP * 0.5;
+      const o = ((this._runnerSlot++) % RUNNER_SLOTS) * 16;
+      if (this._nearJunction(mid, 11, track)) {
+        for (const b of this.runnerBufs) b.fill(0, o, o + 16);
+      } else {
+        path.toWorldExact(mid, 0, 0, this._w);
+        Matrix.RotationYToRef(path.yawExactAt(mid), this._m);
+        this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
+        for (const b of this.runnerBufs) this._m.copyToArray(b, o);
+      }
+      this._nextRunnerS += RUNNER_STEP;
       dirty = true;
     }
 
@@ -508,9 +697,11 @@ export default class Props {
     const o = slot * 16;
     const stoneBuf = this.accentBufs[0];
     const goldBuf = this.accentBufs[1];
+    const aoBuf = this.accentAOBuf;
     if (this._nearJunction(s, 16, track)) {
       stoneBuf.fill(0, o, o + 16);
       goldBuf.fill(0, o, o + 16);
+      if (aoBuf) aoBuf.fill(0, o, o + 16);
       return;
     }
     // propDensity is a quality contract, not a suggestion: on the low preset
@@ -518,6 +709,7 @@ export default class Props {
     if (this._rng.next() > this.ctx.config.q.propDensity) {
       stoneBuf.fill(0, o, o + 16);
       goldBuf.fill(0, o, o + 16);
+      if (aoBuf) aoBuf.fill(0, o, o + 16);
       return;
     }
     const side = this._rng.chance(0.5) ? -1 : 1;
@@ -530,6 +722,7 @@ export default class Props {
     this._p.set(this._w[0], this._w[1], this._w[2]);
     Matrix.ComposeToRef(this._s, this._q, this._p, this._m);
     this._m.copyToArray(stoneBuf, o);
+    if (aoBuf) this._m.copyToArray(aoBuf, o);
     // Two plinths in three still carry their star; the rest are empty and
     // broken, which is what keeps the set dressing from looking stamped out.
     if (this._rng.chance(0.62)) {
@@ -556,9 +749,19 @@ export default class Props {
     }
   }
 
-  /** Every mesh that should cast a shadow. */
+  /**
+   * Every mesh that should cast a shadow.
+   *
+   * Deliberately not everything. Each entry is a full extra pass over all of
+   * its thin instances — 184m of colonnade — and only the geometry near enough
+   * to fall inside the 54m shadow frustum can contribute anything. Columns and
+   * their plinths are the whole point (bars across the road); the arch ribs and
+   * cornice in `bayLight` are the second most valuable, because they stripe the
+   * corridor lengthways. The gold trim, the gems and the floor are omitted:
+   * small, self-shadowing or flat on the ground.
+   */
   casters() {
-    return [this.colLight, this.bayLight, this.bayDark, this.accentStone];
+    return [this.colLight, this.colDark, this.bayLight, this.accentStone];
   }
 
   dispose() {
@@ -569,5 +772,7 @@ export default class Props {
     if (this.gemMat) this.gemMat.dispose();
     if (this.shaftMat) this.shaftMat.dispose();
     if (this.shaftTex) this.shaftTex.dispose();
+    if (this.aoMats) for (const m of this.aoMats) m.dispose();
+    if (this.aoTextures) for (const t of this.aoTextures) t.dispose();
   }
 }
