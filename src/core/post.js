@@ -300,21 +300,30 @@ import { EV } from './ctx.js';
  *    and the character's pavé stay out of the highlight pass. At 0.70 the
  *    column pedestals start to haze and the aisle loses its edge.
  *
- * WHAT THE TWO CHANGES BUY, hero pose, separate page loads:
+ * WHAT THE TWO CHANGES BUY. These rows are `npm run shots` captures of the
+ * shipped build before and after, not probe readings:
  *
  *   pose               mean  p95  p99   >250    luma255   <32    hi sigma
  *   hero    before     61.2  204  243   1.487%   0.357%   49.2%    17.7
- *           after      62.0  199  219   0.170%   0.004%   47.8%     9.8
+ *           after      60.7  199  219   0.209%   0.007%   48.2%    10.5
  *   phone   before     70.7  213  228   0.257%   0.024%   37.0%    10.2
- *           after      71.8  208  214   0.028%   0.000%   35.6%     6.4
+ *           after      69.9  212  218   0.017%   0.000%   36.2%     6.4
+ *   phone   before     73.3  214  230   0.242%   0.000%   32.3%     9.6
+ *   /low    after      74.1  214  227   0.139%   0.000%   31.8%     8.9
  *
- * Clipping down 8.7x on hero and 9x on phone; luma-255 pixels — the actual
+ * Clipping down 7.1x on hero and 15x on phone; luma-255 pixels — the actual
  * white holes — down two orders of magnitude to essentially none. The dark end
- * moves by 1.4 points, so this is not a lifted-blacks fix and the frame is no
- * greyer: the mean is UP slightly, entirely because bloom is finally running.
+ * moves by a point, so this is not a lifted-blacks fix and the frame is no
+ * greyer; the mean is flat because what sharpen takes away bloom gives back.
  * Looked at side by side, the pavé is a field of shaded beads instead of one
- * white blob, the marble columns have their veining back, and the gold reads as
- * gold rather than as pale yellow-white.
+ * white blob, the marble columns have their veining back, the gold rails and
+ * the reflections in the floor have internal gradation where they were
+ * two-tone cut-outs, and the gold reads as gold rather than as white.
+ *
+ * 'low' moves least because it never had sharpen. Its whole gain is bloom
+ * starting to work, which is also the biggest single thing it can be given: it
+ * has no AO and no sharpen, so bloom is the only operator left that can make a
+ * jewel look lit. It costs nothing extra — the pass chain was already running.
  *
  * WHAT WAS TRIED AND REJECTED. Spending the recovered headroom on exposure:
  * 1.62 -> 1.72 with sharpen 0.50 measured well (above250 0.426%, mean 63.2) and
