@@ -129,8 +129,22 @@ export function stoneField(surf, o) {
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
-  const jitter = o.jitter === undefined ? 0.30 : o.jitter;
-  const tilt = o.tilt === undefined ? 0.10 : o.tilt;
+  // POSITIONAL JITTER IS A SEASONING, NOT A LAYOUT. At 0.30 of a cell, plus a
+  // random half-cell row stagger on top, neighbouring stones overlapped in
+  // places and left holes in others, and the field photographed as popcorn
+  // rather than as pavé. Real pavé is a tight, near-regular lattice — its
+  // irregularity is in the FACET ANGLES, not in where the stones are — so the
+  // sparkle stays on `tilt` and the positions tighten up.
+  const jitter = o.jitter === undefined ? 0.14 : o.jitter;
+  const tilt = o.tilt === undefined ? 0.11 : o.tilt;
+  // Gold beading. One grain per stone, dropped in the lattice gap diagonally
+  // between this stone and its neighbours — emitted from inside this loop
+  // rather than from a second pass so it lands in the ACTUAL gaps, jitter and
+  // random row stagger included. Returned separately so the caller can merge it
+  // into a gold mesh it already has, which is why it costs no extra draw call.
+  const beadEvery = o.beadEvery || 0;
+  const beadR = o.beadR === undefined ? pitch * 0.130 : o.beadR;
+  const bpos = [], buv = [], bidx = [];
   // (x, y, z) => true to leave this cell bare. The hood uses it to open a face
   // aperture: the test is "inside the face sphere", so the opening is shaped by
   // the actual intersection of the two forms rather than by a guessed uv box.
@@ -155,7 +169,7 @@ export function stoneField(surf, o) {
     // Square-packed stones read as a grid — a waffle, which is precisely the
     // "knitted" complaint; a strict half-offset still leaves visible concentric
     // rings, because every row starts at the same seam.
-    const stag = ((r & 1) ? 0.5 : 0) + rng() * 0.5;
+    const stag = ((r & 1) ? 0.5 : 0) + rng() * 0.22;
 
     for (let j = 0; j < per; j++) {
       let u = uOpen
@@ -185,10 +199,35 @@ export function stoneField(surf, o) {
       const ml = Math.hypot(mx, my, mz) || 1;
       mx /= ml; my /= ml; mz /= ml;
 
-      const rr = rad * (0.88 + 0.24 * rng());
+      const rr = rad * (0.94 + 0.12 * rng());
       const rt = rr * table;
-      const hi = rise * (0.82 + 0.36 * rng());
+      const hi = rise * (0.88 + 0.24 * rng());
       const ph = rng() * Math.PI * 2;
+
+      // --- gold grain, in the gap up-and-across from this stone ---
+      if (beadEvery && (count % beadEvery) === 0) {
+        const ox = pitch * 0.50, oy = pitch * 0.434;
+        const bx = px + e1x * ox + e2x * oy + nx * beadR * 0.25;
+        const by = py + e1y * ox + e2y * oy + ny * beadR * 0.25;
+        const bz = pz + e1z * ox + e2z * oy + nz * beadR * 0.25;
+        const bb = bpos.length / 3;
+        const s = beadR;
+        // octahedron: 6 verts, 8 tris, and it takes a hard specular hit on the
+        // outward apex — which is the whole point of a grain at 20 metres.
+        bpos.push(bx + nx * s * 1.25, by + ny * s * 1.25, bz + nz * s * 1.25);
+        bpos.push(bx - nx * s * 0.55, by - ny * s * 0.55, bz - nz * s * 0.55);
+        bpos.push(bx + e1x * s, by + e1y * s, bz + e1z * s);
+        bpos.push(bx + e2x * s, by + e2y * s, bz + e2z * s);
+        bpos.push(bx - e1x * s, by - e1y * s, bz - e1z * s);
+        bpos.push(bx - e2x * s, by - e2y * s, bz - e2z * s);
+        for (let k = 0; k < 6; k++) buv.push(0.5, 0.5);
+        const BT = bb, BB = bb + 1, BE = bb + 2;
+        for (let k = 0; k < 4; k++) {
+          const a2 = BE + k, b2 = BE + ((k + 1) % 4);
+          bidx.push(BT, b2, a2);
+          bidx.push(BB, a2, b2);
+        }
+      }
 
       const base = pos.length / 3;
       // table centre
@@ -228,58 +267,5 @@ export function stoneField(surf, o) {
     }
   }
 
-  return { pos, uv, idx, count };
-}
-
-/**
- * Beading: the tiny raised grains that hold each stone in a real pavé setting.
- *
- * Four per stone is how a jeweller does it and is far too expensive here. One
- * grain per stone gap, only on the rows that fall on the SILHOUETTE, buys most
- * of the read for a fraction of the cost — the grains that matter are the ones
- * breaking the outline.
- */
-export function beadField(surf, o) {
-  const pitch = o.pitch;
-  const rng = o.rng;
-  const rad = o.rad === undefined ? pitch * 0.14 : o.rad;
-  const v0 = o.v0 === undefined ? 0 : o.v0;
-  const v1 = o.v1 === undefined ? 1 : o.v1;
-  const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
-
-  const pos = [], uv = [], idx = [];
-  const fr = new Float32Array(12);
-  const mer = meridianLength(surf, 0.27, v0, v1, 20);
-  const rows = Math.max(1, Math.round(mer / pitch));
-
-  for (let r = 0; r <= rows; r++) {
-    const v = v0 + (v1 - v0) * (r / rows);
-    const ring = ringLength(surf, v, 32, false);
-    const per = Math.max(3, Math.round(ring / pitch));
-    for (let j = 0; j < per; j++) {
-      const u = (j + ((r & 1) ? 0 : 0.5)) / per;
-      frameAt(surf, u, v, cx, cy, cz, fr);
-      const px = fr[0] + fr[3] * rad * 0.3;
-      const py = fr[1] + fr[4] * rad * 0.3;
-      const pz = fr[2] + fr[5] * rad * 0.3;
-      const base = pos.length / 3;
-      // octahedral bead: 6 verts, 8 tris, and it catches a hard highlight
-      const ax = [fr[6], fr[7], fr[8]], bx = [fr[9], fr[10], fr[11]], nn = [fr[3], fr[4], fr[5]];
-      const s = rad * (0.8 + 0.4 * rng());
-      pos.push(px + nn[0] * s, py + nn[1] * s, pz + nn[2] * s);
-      pos.push(px - nn[0] * s * 0.5, py - nn[1] * s * 0.5, pz - nn[2] * s * 0.5);
-      pos.push(px + ax[0] * s, py + ax[1] * s, pz + ax[2] * s);
-      pos.push(px + bx[0] * s, py + bx[1] * s, pz + bx[2] * s);
-      pos.push(px - ax[0] * s, py - ax[1] * s, pz - ax[2] * s);
-      pos.push(px - bx[0] * s, py - bx[1] * s, pz - bx[2] * s);
-      for (let k = 0; k < 6; k++) uv.push(0.5, 0.5);
-      const T = base, B = base + 1, E = base + 2;
-      for (let k = 0; k < 4; k++) {
-        const a = E + k, b = E + ((k + 1) % 4);
-        idx.push(T, b, a);
-        idx.push(B, a, b);
-      }
-    }
-  }
-  return { pos, uv, idx };
+  return { pos, uv, idx, count, bead: beadEvery ? { pos: bpos, uv: buv, idx: bidx } : null };
 }
