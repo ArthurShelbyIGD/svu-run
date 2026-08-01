@@ -310,8 +310,18 @@ export class Cape {
 
     // Backward lift, saturating with speed. A heavy metal skirt does not stream
     // out horizontally at 34 m/s the way cloth would — it lifts, and stops.
-    const w = speed * 0.058;
-    let driveX = w / (1 + w * 0.90);
+    //
+    // THE LIFT WAS EATING THE CAPE. At the old gain the chain reached its 0.62
+    // rad cap within a second of the run starting and stayed pinned there for
+    // the entire game, so the ONLY pose the player ever saw was the fully
+    // lifted one. The camera is directly behind, so a hem swung 35 degrees
+    // toward the lens is foreshortened: a rear elevation measured the visible
+    // drop at 0.22 of figure height against the reference's 0.42, and the legs
+    // stood bare below it. The cape was not too short — it was folded away from
+    // the camera. Halving the gain and capping at 0.34 rad keeps the skirt
+    // clearly streaming behind a runner while the drop survives the projection.
+    const w = speed * 0.030;
+    let driveX = w / (1 + w * 1.05);
     // falling floats it up, landing slams it down, the run cycle taps it
     driveX += -ay * 0.0055 - bobV * 0.020;
     // Lateral swing. Negative because the skirt LAGS the body: accelerate right
@@ -324,7 +334,7 @@ export class Cape {
     // is invisible. Measured, not guessed — see the swingHem trace.
     let driveZ = -ax * 0.050;
 
-    if (driveX > 0.62) driveX = 0.62; else if (driveX < -0.34) driveX = -0.34;
+    if (driveX > 0.34) driveX = 0.34; else if (driveX < -0.24) driveX = -0.24;
     if (driveZ > 0.50) driveZ = 0.50; else if (driveZ < -0.50) driveZ = -0.50;
 
     // The chain. Each row chases the row above plus its share of the drive, so

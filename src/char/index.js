@@ -130,6 +130,12 @@ export default class Character {
     this.pitch = low ? 0.086 : (high ? 0.066 : 0.076);
     this.facets = low ? 5 : 6;
 
+    // Gold grains: one per Nth stone. An octahedron is 6 verts and 8 tris and
+    // merges into a gold mesh the part already owns, so this is vertices only —
+    // no extra draw call, no extra material, no texture. `low` gets a third of
+    // them, which still reads as warmth in the gaps at phone size.
+    this.beadEvery = low ? 3 : 1;
+
     // A private deterministic stream. Stone rotations and micro-jitter are
     // procedural geometry, not gameplay, but they still must be identical
     // between runs or the capture harness is worthless — hence a fork of
@@ -166,12 +172,25 @@ export default class Character {
    * with a pile of loose diamonds around the boots. Invisible from the rear
    * pose, obvious in one profile frame. Callers set the transform.
    */
-  _stones(geo, surf, opts) {
+  /**
+   * @param gold  optional Geo that ALREADY has a gold material and a mesh of
+   *              its own. Passing it turns on the beading, and the grains merge
+   *              into that mesh, so warm metal between the stones costs draw
+   *              calls zero. The reference's pavé is silver stones in a GOLD
+   *              bed — that warm/cool pairing is most of what separates
+   *              "jewellery" from "grey object" at chase distance, and it was
+   *              the single largest colour note missing from the back view.
+   */
+  _stones(geo, surf, opts, gold) {
     opts.pitch = opts.pitch === undefined ? this.pitch : opts.pitch;
     opts.facets = this.facets;
     opts.rng = this.rand;
+    if (gold) opts.beadEvery = opts.beadEvery || this.beadEvery;
     const f = stoneField(surf, opts);
     geo.add(f);
+    // Same transform as the stones, copied rather than re-stated: the grains
+    // are generated in the stone field's own space and have to land in it.
+    if (gold && f.bead) { gold.m.copyFrom(geo.m); gold.add(f.bead); }
     this.stoneCount += f.count;
     return f;
   }
@@ -218,13 +237,17 @@ export default class Character {
     bed.add(surface(bodySurf, this.su, this.sv, 2, 1));
     bed.toMesh('onesieBed', this.ctx.scene, mat.get('darkChrome'), body);
 
+    // The gold accumulator for the whole torso — grains plus the zip. Declared
+    // here because the grains are emitted alongside the stones, below.
+    const z = new Geo();
+
     // Front placket: the zip runs down the chest, so no stones there.
     const g = new Geo();
     g.at(0, P.bodyY, 0);
     this._stones(g, bodySurf, {
       v0: 0.02, v1: 0.985,
-      omit: (x, y, z) => Math.abs(x) < 0.050 && z > P.bodyD * 0.55,
-    });
+      omit: (x, y, zz) => Math.abs(x) < 0.050 && zz > P.bodyD * 0.55,
+    }, z);
     g.toMesh('onesieStones', this.ctx.scene, mat.get('whiteGold'), body);
 
     // --- metal garment furniture ---
@@ -244,7 +267,6 @@ export default class Character {
     // The gold used to be a ribbon tied over the crown of the hood, which read
     // as gift wrap around a ball. In the reference the gold is the hood OPENING
     // and a front placket zip, and nothing else. It has been moved to both.
-    const z = new Geo();
     const zTop = P.shoulderY - 0.015, zBot = P.bodyY - P.bodyH * 0.90;
     const rings = [];
     const zn = 10;
@@ -361,12 +383,17 @@ export default class Character {
     }
     bed.toMesh('hoodBed', scene, mat.get('darkChrome'), head);
 
+    // The head's gold accumulator: aperture rim, ear rings, and the grains
+    // between every stone on the hood and the ears. Declared before the stones
+    // because the grains come out of the same loop.
+    const p = new Geo();
+
     const st = new Geo();
     st.at(0, 0, 0);
     this._stones(st, hoodSurf, {
       v0: 0.015, v1: 0.99,
       omit: (x, y, z) => inFace(x, y, z, 0.030),
-    });
+    }, p);
     for (const f of earSurf) {
       st.at(0, 0, 0);
       this._stones(st, f, {
@@ -374,7 +401,7 @@ export default class Character {
         // no stones inside the ear cup
         omit: (x, y, z) => (z - f.cz) > 0.005
           && ((x - f.cx) * (x - f.cx) + (y - f.cy) * (y - f.cy)) < P.earR * P.earR * 0.42,
-      });
+      }, p);
     }
     st.toMesh('hoodStones', scene, mat.get('whiteGold'), head);
 
@@ -390,7 +417,6 @@ export default class Character {
     ic.toMesh('earInner', scene, mat.get('earInner'), head);
 
     // --- gold: the hood aperture rim, and a raised gold ring inside each ear
-    const p = new Geo();
     // The rim is the CIRCLE WHERE THE TWO SPHERES MEET — the hood shell and the
     // face — solved rather than guessed. Two spheres of radii Rh and Rf whose
     // centres are d apart intersect in a circle at
@@ -422,6 +448,27 @@ export default class Character {
       p.at(s * P.earSpread, R * P.earY, -0.048 + P.earR * 0.50, Math.PI / 2, 0, s * -0.20);
       p.add(torus(P.earR * 0.66, 0.016, this.sd + 8, 6, null, 0.9));
     }
+
+    // THE HOOD'S OWN LOWER EDGE, IN GOLD. The reference outlines the hood all
+    // the way round, not just at the face opening, and from behind that wire is
+    // the only thing between the hood and the collar. Without it two pavé
+    // surfaces of nearly the same radius meet 6 cm apart and the head, the
+    // collar and the top of the cape render as one continuous silver mass with
+    // no edges in it — which is what "pale blob" means. Swept along the hood
+    // surface itself at v = 0.985, so it sits ON the fabric everywhere rather
+    // than on a guessed circle. It also closes the rear silhouette: the eye
+    // gets a hard line where the head stops.
+    const edge = [];
+    const en = this.lowQ ? 20 : 34;
+    const ep = [0, 0, 0];
+    for (let i = 0; i <= en; i++) {
+      hoodSurf(i / en, 0.982, ep);
+      // outboard of the setting bed, and clear of the stone girdles
+      edge.push([ep[0] * 1.035, ep[1] - 0.004, ep[2] * 1.035]);
+    }
+    p.at(0, 0, 0);
+    p.add(pipe(edge, () => 0.019, 6));
+
     p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
 
     this._buildFace(head, mat, scene);
@@ -673,19 +720,20 @@ export default class Character {
       fb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
       fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
       fb.toMesh(`foreBed${s}`, scene, mat.get('darkChrome'), elbow);
-      const fs = new Geo();
-      fs.at(0, 0, 0);
-      this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 });
-      fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
-
       // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
       // each pavé sleeve meets the silver hand, and from behind it is one of
       // only three warm accents on the whole back of the piece — the others
       // being the yoke edge and the hem wire. In silver the sleeve ran straight
-      // into the glove as one undifferentiated pale mass.
+      // into the glove as one undifferentiated pale mass. The sleeve's grains
+      // ride in the same mesh, so the whole forearm's gold is one draw call.
       const gc = new Geo();
       gc.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
       gc.add(torus(P.armR * 0.66, 0.028, this.sd + 6, 6, null, 0.85));
+
+      const fs = new Geo();
+      fs.at(0, 0, 0);
+      this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
+      fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
       gc.toMesh(`cuff${s}`, scene, mat.get('polGold'), elbow);
 
       // --- glove ---
@@ -806,12 +854,25 @@ export default class Character {
       lb.add(surface(bandSurf, this.sd + 6, this.sd - 2, 3, 1));
       lb.toMesh(`legBed${s}`, scene, mat.get('darkChrome'), pivot);
 
+      // The leg's gold: a wire either side of the pavé boot band, plus the
+      // grains between the stones. One mesh, one draw call per leg. The boot
+      // band is the lowest thing on the character that is not silver, and from
+      // behind it is what stops the boot and the leg reading as one pale
+      // sausage — the reference draws it with gold either side, not with a
+      // stone band alone.
+      const lg = new Geo();
       const ls = new Geo();
       ls.at(0, 0, 0);
-      this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 });
+      this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 }, lg);
       ls.at(0, 0, 0);
-      this._stones(ls, bandSurf, { v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80 });
+      this._stones(ls, bandSurf, { v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80 }, lg);
       ls.toMesh(`legStones${s}`, scene, mat.get('whiteGold'), pivot);
+
+      for (const e of [-1, 1]) {
+        lg.at(0, bY + e * bt * 0.94, 0, Math.PI / 2, 0, 0, 1, 1, 0.94);
+        lg.add(torus(bR + bt * 0.30, 0.0125, this.sd + 8, 5, null, 0.85));
+      }
+      lg.toMesh(`legGold${s}`, scene, mat.get('polGold'), pivot);
 
       // --- boot ---
       // A shaped last with a toe box, an instep and a heel. From behind you see
@@ -877,7 +938,7 @@ export default class Character {
       // stood clear underneath. 0.715 puts the hem trough at y = 0.195, over
       // the boot tops, and the ratio at 1.48: still stockier than the
       // reference, which this character is everywhere.
-      len: 0.715,
+      len: 0.760,
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
@@ -890,12 +951,23 @@ export default class Character {
       // for the head alone it came out 2.5x as wide as it was long and read as a
       // TUTU. These numbers split the difference and lean on flarePow to buy the
       // rest: 0.98 m across the hem, against a visible 0.56 m drop.
-      rx0: 0.250, rx1: 0.545,
-      rz0: 0.210, rz1: 0.412,
+      //
+      // FLATTER IN Z, WIDER IN X. Measured off a straight-on rear elevation:
+      // the fluted panel the camera actually sees spanned 240 px against a
+      // 350 px hood, so the cape read NARROWER than the head even though its
+      // PLAN width was already 1.15x the hood. The width was all there — it had
+      // just curled away from the lens. At rz1 = 0.412 against rx1 = 0.545 the
+      // hem ellipse is nearly round, so the outer third of the skirt turns
+      // edge-on and renders as two thin dark tabs rather than as cape. Pulling
+      // the depth in and the width out turns the same columns toward the camera,
+      // which is what lets the flutes and the hem scallop read across the whole
+      // silhouette the way they do in the reference.
+      rx0: 0.250, rx1: 0.615,
+      rz0: 0.205, rz1: 0.372,
       // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
       // the skirt and swing clear of it, which is what the reference shows.
-      spread0: 2.10,
-      spread1: 2.66,
+      spread0: 2.04,
+      spread1: 2.50,
       // >1 so the skirt leaves the yoke almost vertical and opens into a bell
       // low down, which is the profile in the reference. It was 1.58, which
       // held the skirt in a near-cylinder for two thirds of its drop and only
@@ -974,22 +1046,34 @@ export default class Character {
    */
   _buildYoke(capeRoot, mat) {
     const scene = this.ctx.scene;
-    const SPREAD = 2.62;          // wider than the skirt collar — it covers the
+    const SPREAD = 2.78;          // wider than the skirt collar — it covers the
                                   // shoulders, and from behind it is a bib
     // THE YOKE MUST SIT PROUD OF THE SKIRT. The first version's lower edge was
     // at radius 0.285 where the skirt is already 0.32 wide, so the whole thing
     // rendered INSIDE the skirt and was invisible from every angle. It now runs
     // from above the skirt's pinned row and stays outboard of it all the way
     // down, which is also what a real yoke does: the cape hangs UNDER it.
+    //
+    // IT ALSO HAS TO CLEAR THE HOOD. Version two was outboard of the skirt and
+    // still did not read, for a different reason: its lower edge sat at radius
+    // 0.355 and y = 0.715, and the hood's cowl ends at radius 0.340 and
+    // y = 0.772. Two pavé surfaces of the same radius, 6 cm apart, with the same
+    // stones on both — from behind that is one continuous pavé mass from the
+    // crown of the head to the top of the cape, which is exactly what the
+    // capture showed. A collar reads when it is WIDER than the head above it and
+    // deep enough to be its own horizontal band, so it now finishes at 0.44
+    // against the hood's 0.34 and drops 0.27 instead of 0.195. The bright gold
+    // wire added around the hood's own lower edge (see _buildHead) draws the
+    // dividing line the shadow alone was not making.
     const yokeSurf = (u, v, out) => {
       const th = (u - 0.5) * SPREAD;
       // drops lower at the centre back and at the shoulder points, like the
       // scalloped bib in the reference
-      const dip = 0.70 + 0.30 * Math.cos(th * 2.1);
-      const ax = 0.205 + 0.150 * v;
-      const az = 0.180 + 0.125 * v;
+      const dip = 0.72 + 0.28 * Math.cos(th * 2.1);
+      const ax = 0.215 + 0.225 * v;
+      const az = 0.190 + 0.185 * v;
       out[0] = ax * Math.sin(th);
-      out[1] = 0.085 - 0.195 * v * dip;
+      out[1] = 0.080 - 0.270 * v * dip;
       out[2] = -az * Math.cos(th);
     };
 
@@ -998,17 +1082,25 @@ export default class Character {
     bed.add(surface(yokeSurf, this.lowQ ? 14 : this.su, this.lowQ ? 4 : 6, 2, 1));
     bed.toMesh('yokeBed', scene, mat.get('darkChrome'), capeRoot);
 
+    const g = new Geo();
+
     const st = new Geo();
     st.at(0, 0, 0);
     // uOpen: the yoke is an ARC, not a closed ring — without this the stone
     // field wraps u around and lays a row of stones across the open front.
+    //
+    // ONE PITCH, the character's. The collar used to run 14% finer than the rest
+    // "because it is a small part", which is precisely the trade the whole pavé
+    // rewrite exists to refuse: finer stones dissolve into texture first, and
+    // the collar is the piece that has to separate two other pavé masses.
     this._stones(st, yokeSurf, {
       v0: 0.06, v1: 0.93, uOpen: true, uPad: 0.035,
-      pitch: this.pitch * (this.lowQ ? 1.0 : 0.86),
-    });
+    }, g);
     st.toMesh('yokeStones', scene, mat.get('whiteGold'), capeRoot);
 
-    // gold edge, swept along the yoke's lower rim
+    // gold edge, swept along the yoke's lower rim. Heavier than the hem wire on
+    // purpose: this is the line that says "the cape hangs from here", and it is
+    // the only hard horizontal on the back of the character.
     const rim = [];
     const rn = this.lowQ ? 20 : 30;
     const p = [0, 0, 0];
@@ -1016,9 +1108,8 @@ export default class Character {
       yokeSurf(i / rn, 1.0, p);
       rim.push([p[0] * 1.02, p[1] - 0.004, p[2] * 1.02]);
     }
-    const g = new Geo();
     g.at(0, 0, 0);
-    g.add(pipe(rim, () => 0.016, 6));
+    g.add(pipe(rim, () => 0.021, 6));
     g.toMesh('yokeEdge', scene, mat.get('polGold'), capeRoot);
   }
 
