@@ -92,7 +92,7 @@ export function generatePaveMaps(size, cells) {
             // perfectly equal stones is the thing that made this read as a
             // machined mesh rather than as set gems.
             const g = hash(c * 3 + 11, r * 7 - 5);
-            bestR = cellW * (g > 0.86 ? 0.520 : g > 0.55 ? 0.462 : 0.410);
+            bestR = cellW * (g > 0.86 ? 0.470 : g > 0.55 ? 0.415 : 0.362);
             bestSeed = hash(c - 19, r + 43);
           }
         }
@@ -164,7 +164,11 @@ export function generatePaveMaps(size, cells) {
         // environment contribution, and the environment is doing nearly all
         // the lighting here, so aggressive AO does not read as depth — it
         // reads as the object being switched off.
-        occl = 0.74 + 0.18 * bead + 0.06 * gap;
+        // Deep. The dark channel between stones is the single strongest
+        // signal that these are individually SET stones rather than an
+        // embossed pattern, and at the previous floor of 0.74 the suit read
+        // as bubble wrap in every close-up.
+        occl = 0.50 + 0.34 * bead + 0.10 * gap;
       }
 
       const o = (py * size + px) * 4;
@@ -190,10 +194,17 @@ export function generatePaveMaps(size, cells) {
         // where a real stone catches its neighbours' light. Per-stone
         // variation again, because a uniform field reads as a printed pattern.
         const t = d / stoneR;
-        const a = (0.50 + t * 0.20 + bestSeed * 0.10) * 255;
+        // Soft, and not too dark. At 0.50 the stones read as black polka
+        // dots at any distance and the suit looked spotted rather than set.
+        const a = (0.66 + t * 0.13 + bestSeed * 0.06) * 255;
         albedo[o] = a | 0; albedo[o + 1] = a | 0; albedo[o + 2] = a | 0;
       } else {
-        albedo[o] = 255; albedo[o + 1] = 255; albedo[o + 2] = 255;
+        // The setting metal, darkened down into the channel between stones.
+        const gap = (d - stoneR) / Math.max(1e-4, cellW * 0.5 - stoneR);
+        const bead = Math.exp(-Math.pow((d - stoneR - beadR) / (beadR * 0.9), 2));
+        const a = (0.58 + 0.42 * bead + 0.10 * gap) * 255;
+        const c = a > 255 ? 255 : a | 0;
+        albedo[o] = c; albedo[o + 1] = c; albedo[o + 2] = c;
       }
       albedo[o + 3] = 255;
     }

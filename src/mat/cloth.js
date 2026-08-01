@@ -33,7 +33,9 @@ export function generateClothMaps(size, threads = 44) {
   const orm = new Uint8Array(n * 4);
   const height = new Float32Array(n);
 
-  const METALLIC_EVERY = 7;
+  // Sparse. At every seventh thread the metallic warp dominated the weave and
+  // read as a printed zigzag rather than as thread woven through cloth.
+  const METALLIC_EVERY = 11;
 
   for (let py = 0; py < size; py++) {
     const v = (py + 0.5) / size;
@@ -88,9 +90,9 @@ export function generateClothMaps(size, threads = 44) {
       const o = i * 4;
       if (metalHere) {
         // Gold thread: warm, and much brighter than the ground weave.
-        albedo[o]     = clamp255((0.98 + fuzz) * 255);
-        albedo[o + 1] = clamp255((0.80 + fuzz) * 255);
-        albedo[o + 2] = clamp255((0.40 + fuzz) * 255);
+        albedo[o]     = clamp255((0.88 + fuzz + h * 0.10) * 255);
+        albedo[o + 1] = clamp255((0.74 + fuzz + h * 0.10) * 255);
+        albedo[o + 2] = clamp255((0.44 + fuzz + h * 0.10) * 255);
       } else {
         const l = clamp01(shade + fuzz);
         albedo[o]     = clamp255(l * 253);

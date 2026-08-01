@@ -126,7 +126,7 @@ export default class Materials {
       const a = (i / STRIPS) * Math.PI * 2 + 0.35;
       strips.push([
         Math.cos(a), Math.sin(a),                 // azimuth direction
-        i % 2 === 0 ? 2.6 : 1.3,                 // alternating intensity
+        i % 2 === 0 ? 6.5 : 3.0,                 // alternating intensity
         i % 3 === 0 ? 0.05 : -0.03,               // warmth
       ]);
     }
@@ -199,7 +199,7 @@ export default class Materials {
           r += down * 0.105; g += down * 0.076; b += down * 0.048;
           // tight bright horizon band — this is what draws the long specular
           // streak across a curved polished surface and sells "jewellery"
-          const horizon = Math.exp(-Math.abs(dy) * 16.0) * 0.26;
+          const horizon = Math.exp(-Math.abs(dy) * 13.0) * 0.34;
           r += horizon; g += horizon * 0.985; b += horizon * 0.95;
 
           // --- vertical strip lights ---
@@ -317,7 +317,7 @@ export default class Materials {
     this._maps = {
       stone: generateStoneMaps(size, 1),
       marble: generateStoneMaps(size, 0),
-      gold: generateGoldMaps(size, low ? 7 : 10, 1),
+      gold: generateGoldMaps(size, low ? 14 : 22, 1),
       cloth: generateClothMaps(size, low ? 28 : 44),
       track: generateTrackMaps(size, 2, 1),
     };
@@ -329,8 +329,12 @@ export default class Materials {
    * Shared by (key, tiling): four materials asking for hammered gold at the
    * same scale get one texture rather than four copies of the same megabyte.
    */
-  _rawTex(key, data, size, gamma, tile) {
-    const id = `${key}|${tile}|${gamma ? 'g' : 'l'}`;
+  _rawTex(key, data, size, gamma, tile, level) {
+    // `level` is part of the key because Texture.level lives on the TEXTURE,
+    // not on the material. Sharing one texture between two materials that want
+    // different bump strengths silently gave both of them whichever was set
+    // last — six of the eight metals were running on rhodium's bump level.
+    const id = `${key}|${tile}|${gamma ? 'g' : 'l'}|${level === undefined ? '' : level}`;
     const hit = this.textures.get(id);
     if (hit) return hit;
     const t = RawTexture.CreateRGBATexture(
@@ -344,6 +348,7 @@ export default class Materials {
     t.gammaSpace = !!gamma;
     t.uScale = tile;
     t.vScale = tile;
+    if (level !== undefined) t.level = level;
     this.textures.set(id, t);
     return t;
   }
@@ -364,8 +369,8 @@ export default class Materials {
     const m = new PBRMaterial(`s_${name}`, this.ctx.scene);
     m.albedoColor = new Color3(col.r, col.g, col.b);
     m.albedoTexture = this._rawTex(`${mapKey}_a`, maps.albedo, this._size, true, tile);
-    m.bumpTexture = this._rawTex(`${mapKey}_n`, maps.normal, this._size, false, tile);
-    m.bumpTexture.level = o.bump === undefined ? 1.0 : o.bump;
+    m.bumpTexture = this._rawTex(`${mapKey}_n`, maps.normal, this._size, false, tile,
+      o.bump === undefined ? 1.0 : o.bump);
     m.invertNormalMapX = false;
     m.invertNormalMapY = true;      // see the note in pave() — one convention
 
@@ -406,11 +411,10 @@ export default class Materials {
     m.environmentIntensity = 1.05;
     m.usePhysicalLightFalloff = true;
 
-    m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile);
+    m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile, 0.88);
     // Full-strength stone normals throw reflections so wide that most facets
     // sample the darkest part of the room. Softening keeps the sparkle while
     // holding the overall value up.
-    m.bumpTexture.level = 0.88;
     m.invertNormalMapX = false;
     // NORMAL MAP Y CONVENTION, found by looking rather than by reasoning.
     // Every generator in mat/ writes ny = -dh/dpy with py measured DOWNWARD
@@ -445,8 +449,7 @@ export default class Materials {
       m.clearCoat.intensity = 0.30;
       m.clearCoat.roughness = 0.04;
       m.clearCoat.indexOfRefraction = 2.4;   // diamond
-      m.clearCoat.bumpTexture = this._rawTex('pave_f', this._pave.facet, this._paveSize, false, tile);
-      m.clearCoat.bumpTexture.level = 0.85;
+      m.clearCoat.bumpTexture = this._rawTex('pave_f', this._pave.facet, this._paveSize, false, tile, 0.85);
       // Dispersion. A diamond's fire is coloured, and a thin-film term is the
       // cheapest believable stand-in for it: the flash shifts hue with angle
       // instead of being another white dot. Kept low — at any strength you can
@@ -476,8 +479,7 @@ export default class Materials {
     m.roughness = roughScale;
     m.environmentIntensity = 1.0;
 
-    m.bumpTexture = this._rawTex('brush_n', this._brush.normal, this._brushSize, false, tile);
-    m.bumpTexture.level = 0.55;
+    m.bumpTexture = this._rawTex('brush_n', this._brush.normal, this._brushSize, false, tile, 0.55);
     m.invertNormalMapY = true;      // see the note in pave() — one convention
 
     m.metallicTexture = this._rawTex('brush_orm', this._brush.orm, this._brushSize, false, tile);
@@ -559,7 +561,7 @@ export default class Materials {
     });
 
     // --- polished, unset metal: face, hands, boots, trim ---
-    this.brushed('polRose', PALETTE.roseGold, 3, 0.95);
+    this.brushed('polRose', PALETTE.roseGold, 3, 0.72);
     this.brushed('polRhodium', PALETTE.rhodium, 3, 0.70);
     this.brushed('polGold', PALETTE.yellowGold, 3, 0.85);
 
@@ -579,7 +581,7 @@ export default class Materials {
     // the same physical size across the set. At tile 2 a column's dishes came
     // out a metre across and it read as tree bark, not as metal.
     this.surface('roseGold',   'gold', PALETTE.roseGold,
-      { tile: 5.0, bump: 0.40, roughScale: 1.0 });
+      { tile: 5.0, bump: 0.14, roughScale: 1.0 });
     this.surface('yellowGold', 'gold', PALETTE.yellowGold,
       { tile: 4.0, bump: 0.45, roughScale: 0.95 });
     this.surface('whiteGold',  'gold', PALETTE.whiteGold,

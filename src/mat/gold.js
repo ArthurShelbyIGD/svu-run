@@ -44,13 +44,19 @@ export function generateGoldMaps(size, cells = 9, leaf = 1) {
       // --- hammer dishes ---------------------------------------------------
       worley(u, v, cells, 8101, 0.85, w);
       const cx = Math.floor(u * cells), cy = Math.floor(v * cells);
-      const depth = 0.55 + hashi(cx, cy, 991) * 0.75;      // varied blow force
+      // Dish depth kept SHALLOW. A deep planish turns a curved metal into
+      // hundreds of small mirrors, and hundreds of small mirrors in a dark
+      // room each reflect the average of that dark room — the column went
+      // matte terracotta, which is the same failure pave.js documents for
+      // stones. The hammering has to be legible without destroying the one
+      // coherent reflection that makes metal look like metal.
+      const depth = 0.26 + hashi(cx, cy, 991) * 0.34;      // varied blow force
       const t = clamp01(w[0] / 0.52);
       // Concave paraboloid: deepest at the strike, rising to a sharp rim where
       // it meets the neighbouring blow.
       const dish = -depth * (1 - t * t);
       // Rim: the tiny burr thrown up where two dishes meet.
-      const rim = Math.exp(-Math.pow((w[1] - w[0]) / 0.10, 2)) * 0.22;
+      const rim = Math.exp(-Math.pow((w[1] - w[0]) / 0.10, 2)) * 0.13;
 
       // --- leaf sheets ------------------------------------------------------
       worley(u, v, LEAF, 4409, 0.55, wl);
@@ -61,7 +67,7 @@ export function generateGoldMaps(size, cells = 9, leaf = 1) {
       const grain = vnoise(u, v, size >> 1, 77) - 0.5;
       const swirl = fbm(u, v, 24, 3, 313) - 0.5;
 
-      height[i] = dish + rim + seam * 0.30 + grain * 0.055 + swirl * 0.10;
+      height[i] = dish + rim + seam * 0.18 + grain * 0.030 + swirl * 0.055;
 
       // --- albedo ------------------------------------------------------------
       // Gold leaf is not one colour, but the variation has to stay SMALL.
@@ -70,8 +76,13 @@ export function generateGoldMaps(size, cells = 9, leaf = 1) {
       // metal, albedo variation reads as dirt, not as form. Metal gets its
       // form from the reflection, so nearly all the variation belongs in the
       // normal and roughness maps, not here.
-      const lum = 0.96 + t * 0.05 + swirl * 0.035 - overlap * 0.04;
-      const warm = (1 - t) * 0.018 + overlap * 0.014;
+      // Nearly uniform, deliberately. Rendered at 256 px the earlier version
+      // read as crazy paving on the columns: on a metal ANY albedo structure
+      // survives minification while the normal detail averages away, so a
+      // faint cell outline in the albedo becomes the dominant feature at
+      // distance. The hammering lives in the normal map and nowhere else.
+      const lum = 0.985 + t * 0.012 + swirl * 0.012 - overlap * 0.012;
+      const warm = (1 - t) * 0.005;
       const o = i * 4;
       albedo[o]     = clamp255((lum + warm) * 255);
       albedo[o + 1] = clamp255(lum * 255);
@@ -79,7 +90,7 @@ export function generateGoldMaps(size, cells = 9, leaf = 1) {
       albedo[o + 3] = 255;
 
       // --- ORM ----------------------------------------------------------------
-      const occ = clamp01(0.90 + (1 - t) * 0.10 - seam * 0.12);
+      const occ = clamp01(0.955 + (1 - t) * 0.045 - seam * 0.05);
       // Crests polished bright, dish floors slightly duller, seams dullest.
       // Range kept tight and LOW: above about 0.3 a metal stops reflecting the
       // studio and starts looking like fired clay, which is exactly what
@@ -93,6 +104,6 @@ export function generateGoldMaps(size, cells = 9, leaf = 1) {
     }
   }
 
-  const normal = heightToNormal(height, size, size * 0.030, null);
+  const normal = heightToNormal(height, size, size * 0.016, null);
   return { albedo, normal, orm };
 }
