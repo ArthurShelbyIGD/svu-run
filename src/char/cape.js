@@ -233,7 +233,11 @@ export class Cape {
 
     const dt2 = dt * dt;
     const gx = -ax;
-    const gy = -GRAV - ay - bobV * 26;
+    // 0.8, not 1.0. At full strength the inertial term exactly cancels gravity
+    // in freefall and the cape goes completely weightless — it flew clean over
+    // the character's head on every jump. Leaving a fifth of the weight in
+    // keeps the flare dramatic and keeps the cape behind the shoulders.
+    const gy = -GRAV - ay * 0.80 - bobV * 26;
     const gz = -az;
     const tt = this.t;
 
@@ -253,7 +257,7 @@ export class Cape {
       // to zero and produces a twist — the two halves fight, the sheet ripples,
       // and nothing drifts.
       const ph = tt * 5.2 + this.turb[i];
-      const flutter = Math.sin(ph) * this.wind * 0.34 * this.side[i];
+      const flutter = Math.sin(ph) * this.wind * 0.26 * this.side[i];
       // and a travelling wave running down the length, which is what the eye
       // actually recognises as cloth in the wind
       const wave = Math.sin(tt * 5.6 - this.down[i] * 6.0) * this.wind * 0.16;

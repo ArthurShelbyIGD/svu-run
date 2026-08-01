@@ -93,6 +93,7 @@ export default class Character {
     this.su = low ? 16 : (high ? 32 : 24);
     this.sv = low ? 10 : (high ? 18 : 14);
     this.sd = low ? 7 : (high ? 12 : 9);     // detail parts: cuffs, fingers
+    this.lowQ = low;
 
     this.root = new TransformNode('charRoot', scene);
     const body = new TransformNode('charBody', scene);
@@ -425,7 +426,7 @@ export default class Character {
     // anything — it is also exactly how the reference piece is built, where
     // every panel meets at a setting rather than a shading gradient.
     const panelN = Math.max(10, Math.round(sv * 0.8));
-    for (const pu of [0.125, 0.375, 0.625, 0.875]) {
+    for (const pu of (this.lowQ ? [0.25, 0.75] : [0.125, 0.375, 0.625, 0.875])) {
       const pts = [];
       for (let i = 0; i <= panelN; i++) {
         const v = 0.055 + (0.665 * i) / panelN;
@@ -583,9 +584,13 @@ export default class Character {
       g.at(fx * s, -R * 1.32, 0.012, 0, 0, splay * s);
       g.add(tube(rings, this.sd, true, true, 1, 3));
       // knuckle bead — catches a highlight and separates the finger from the
-      // palm, which is what stops four tubes reading as a fork
-      g.at(fx * s, -R * 1.30, 0.014, Math.PI / 2, 0, splay * s);
-      g.add(torus(R * 0.20, 0.013, this.sd, 5, null, 0.8));
+      // palm, which is what stops four tubes reading as a fork. Dropped on
+      // `low`: at that budget it is 200 vertices per hand for a detail two
+      // pixels across on a phone.
+      if (!this.lowQ) {
+        g.at(fx * s, -R * 1.30, 0.014, Math.PI / 2, 0, splay * s);
+        g.add(torus(R * 0.20, 0.013, this.sd, 5, null, 0.8));
+      }
     }
 
     // thumb — shorter, thicker, swung out and forward
@@ -674,7 +679,7 @@ export default class Character {
       halfW1: 1.02,
       scallops,
       colsPerRib,
-      hemCut: 0.30,
+      hemCut: 0.26,
       shoulderR: 0.205,
       shoulderSpread: 2.30,
     });

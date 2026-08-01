@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-front",
-      "file": "char-front.png",
-      "viewport": "desktop",
+      "name": "phone",
+      "file": "phone.png",
+      "viewport": "phone",
       "preset": "high",
-      "note": "front three-quarter — the silhouette check",
+      "note": "portrait, the way most people will actually see it",
       "errors": []
     }
   ]
