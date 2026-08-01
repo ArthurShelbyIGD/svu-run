@@ -19,6 +19,14 @@
 
 import { Assembly } from './geom.js';
 
+/**
+ * Height of the top of the running surface for anything inlaid into it.
+ * The paving's top face is y=0; inlays sit 2mm proud so they are never
+ * swallowed by the panel they decorate, and 2mm is far too little to read as
+ * a step or to trip the eye at speed.
+ */
+const INLAY = 0.002;
+
 /* ------------------------------------------------------------------ floor */
 
 /**
@@ -62,10 +70,18 @@ export function buildTile(scene, mat, q, T, withEdges) {
   for (let r = 0; r < 3; r++) {
     const z0 = bounds[r] + (r > 0 ? gj : 0);
     const z1 = bounds[r + 1] - (r < 2 ? gj : 0);
+    const cz = (z0 + z1) * 0.5;
+    const pz = (z1 - z0) * 0.5;
+    const px = lw * 0.5 - 0.15;
     for (let l = 0; l < T.laneCount; l++) {
       const x = (l - (T.laneCount - 1) / 2) * lw;
-      dark.bevelBox(x, -0.015, (z0 + z1) * 0.5,
-        lw * 0.5 - 0.15, 0.015, (z1 - z0) * 0.5, 0.024);
+      dark.bevelBox(x, -0.015, cz, px, 0.015, pz, 0.024);
+      // Hairline frame inset in each stone. Cheap, and it is what stops the
+      // paving reading as one flat dark field between the medallions.
+      if (detail) {
+        for (const sz of [-1, 1]) light.box(x, INLAY, cz + sz * (pz - 0.13), px - 0.13, 0.008, 0.017);
+        for (const sx of [-1, 1]) light.box(x + sx * (px - 0.13), INLAY, cz, 0.017, 0.008, pz - 0.13);
+      }
     }
   }
 
@@ -85,17 +101,25 @@ export function buildTile(scene, mat, q, T, withEdges) {
     if (detail) {
       for (let l = 0; l <= T.laneCount; l++) {
         const x = (l - T.laneCount / 2) * lw;
-        gold.star(x, -0.004, cz, 0.155, 0.066, 4, 0.014, 'y');
+        gold.star(x, INLAY, cz, 0.155, 0.066, 4, 0.012, 'y');
       }
     }
   }
 
-  // Centre medallion. Flat and inlaid — deliberately NOT raised, so it cannot
-  // be mistaken for something to collect or something to dodge.
+  // Medallions, inlaid flush, in the OUTER lanes only. They were in the centre
+  // lane and fought the corner chevrons, which are also centred and matter
+  // more: two pieces of gold on top of each other read as neither.
+  //
+  // NOTE THE DATUM. star() puts its rim at cy and its ridge at cy+depth, so an
+  // inlay authored at cy=0 has most of its area BELOW the panel it sits on and
+  // is swallowed by it — the first build of this showed nothing but a small
+  // spiky highlight where the ridge broke the surface. The rim goes just above
+  // the paving and the whole motif is then visible.
   if (detail) {
-    light.star(0, -0.006, 0, 0.94, 0.42, 8, 0.014, 'y', Math.PI / 8);
-    gold.star(0, -0.001, 0, 0.44, 0.19, 8, 0.014, 'y');
-    gold.star(0, -0.003, 0, 0.98, 0.90, 24, 0.010, 'y');
+    for (const sx of [-1, 1]) {
+      light.star(sx * lw, INLAY, 0, 0.72, 0.33, 8, 0.010, 'y', Math.PI / 8);
+      gold.star(sx * lw, INLAY + 0.003, 0, 0.34, 0.15, 8, 0.010, 'y');
+    }
   }
 
   if (withEdges) {
@@ -291,9 +315,12 @@ export function buildCornerPad(scene, mat, q, w) {
     gold.box(0, -0.012, s * (w * 0.5 - 0.20), w * 0.5 - 0.06, 0.018, 0.06);
   }
   if (detail) {
-    light.star(0, -0.008, 0, 1.85, 0.80, 12, 0.016, 'y', Math.PI / 12);
-    gold.star(0, -0.002, 0, 0.95, 0.40, 12, 0.016, 'y');
-    a.w(mat.get('ruby')).gem(0, 0.06, 0, 0.20, 0.09);
+    // Raised a little more than the straight-run inlays: floor tiles from both
+    // corridors overlap the corner square, and a rosette flush with the paving
+    // would be buried under whichever tile happens to be drawn on top of it.
+    light.star(0, 0.010, 0, 1.85, 0.80, 12, 0.014, 'y', Math.PI / 12);
+    gold.star(0, 0.014, 0, 0.95, 0.40, 12, 0.014, 'y');
+    a.w(mat.get('ruby')).gem(0, 0.075, 0, 0.20, 0.075);
   }
   const mesh = a.build('cornerPad');
   mesh.receiveShadows = true;
