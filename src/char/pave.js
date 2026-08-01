@@ -124,12 +124,12 @@ export function stoneField(surf, o) {
   const rad = o.rad === undefined ? pitch * 0.470 : o.rad;
   // How proud of the setting the stone sits. This number IS the crenellated
   // silhouette; too small and we are back to a smooth arc with a texture on it.
-  const rise = o.rise === undefined ? pitch * 0.215 : o.rise;
-  const table = o.table === undefined ? 0.58 : o.table;
+  const rise = o.rise === undefined ? pitch * 0.170 : o.rise;
+  const table = o.table === undefined ? 0.70 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
-  const jitter = o.jitter === undefined ? 0.13 : o.jitter;
+  const jitter = o.jitter === undefined ? 0.30 : o.jitter;
   const tilt = o.tilt === undefined ? 0.10 : o.tilt;
   // (x, y, z) => true to leave this cell bare. The hood uses it to open a face
   // aperture: the test is "inside the face sphere", so the opening is shaped by
@@ -139,8 +139,11 @@ export function stoneField(surf, o) {
   const pos = [], uv = [], idx = [];
   const fr = new Float32Array(12);
 
+  // Rows are spaced at the HEXAGONAL pitch (sqrt(3)/2), not the linear one.
+  // At the linear spacing the rows stood off each other and the field rendered
+  // as a stack of visible horizontal bands — a bracelet, not a pavé field.
   const mer = meridianLength(surf, 0.27, v0, v1, 26);
-  const rows = Math.max(1, Math.round(mer / pitch));
+  const rows = Math.max(1, Math.round(mer / (pitch * 0.868)));
   let count = 0;
 
   for (let r = 0; r < rows; r++) {
@@ -148,9 +151,11 @@ export function stoneField(surf, o) {
     const ring = ringLength(surf, v, 40, uOpen);
     let per = Math.round(ring / pitch);
     if (uOpen) { if (per < 1) per = 1; } else if (per < 3) per = 3;
-    // Stagger alternate rows. Square-packed stones read as a grid — a waffle,
-    // which is precisely the "knitted" complaint. Offset rows read as pavé.
-    const stag = (r & 1) ? 0.5 : 0;
+    // Stagger alternate rows, then push the whole row by a random fraction.
+    // Square-packed stones read as a grid — a waffle, which is precisely the
+    // "knitted" complaint; a strict half-offset still leaves visible concentric
+    // rings, because every row starts at the same seam.
+    const stag = ((r & 1) ? 0.5 : 0) + rng() * 0.5;
 
     for (let j = 0; j < per; j++) {
       let u = uOpen

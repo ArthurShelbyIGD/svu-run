@@ -43,18 +43,18 @@ import { Cape } from './cape.js';
 // head is the recognisable part of the collection.
 const P = {
   standH: 1.66,
-  headR: 0.425,
+  headR: 0.408,
   headY: 1.205,
   faceR: 0.345,
   faceZ: 0.168,          // how far the face centre sits forward of the head
   earR: 0.168,
   earSpread: 0.318,
   earY: 0.80,            // fraction of headR above centre
-  bodyW: 0.288, bodyH: 0.352, bodyD: 0.244,
+  bodyW: 0.318, bodyH: 0.352, bodyD: 0.262,
   bodyY: 0.640,
   upperLen: 0.205, foreLen: 0.195, armR: 0.088,
   handR: 0.104,
-  shoulderX: 0.276, shoulderY: 0.880,
+  shoulderX: 0.298, shoulderY: 0.880,
   legR: 0.104, legLen: 0.205,
   bootR: 0.142,
   hipX: 0.147, hipY: 0.452,
@@ -113,7 +113,7 @@ export default class Character {
     // 0.072m on a 0.85m-wide hood puts roughly 12 stones across the visible
     // crown, which is what the reference shows. The old normal map ran at more
     // than 70, which is why it dissolved into fabric texture.
-    this.pitch = low ? 0.090 : (high ? 0.072 : 0.080);
+    this.pitch = low ? 0.086 : (high ? 0.066 : 0.076);
     this.facets = low ? 5 : 6;
 
     // A private deterministic stream. Stone rotations and micro-jitter are
@@ -283,10 +283,15 @@ export default class Character {
         r = Math.sin(a) * R;
         y = Math.cos(a) * R * 1.00;
       } else {
+        // A SHORT cowl. The first version ran 20cm down the back and covered
+        // the shoulders, the chest and half the torso, so from directly behind
+        // the character was a ball with boots and no body at all. The hood has
+        // to stop at the shoulder line or the whole proportion argument is
+        // moot — you cannot fix a head-to-body ratio you cannot see.
         const s = (v - 0.70) / 0.30;
         const a = 0.80 * Math.PI;
-        r = Math.sin(a) * R * (1 + 0.50 * Math.sin(Math.PI * Math.min(1, s * 1.12)));
-        y = Math.cos(a) * R - s * 0.20;
+        r = Math.sin(a) * R * (1 + 0.42 * Math.sin(Math.PI * Math.min(1, s * 1.15)));
+        y = Math.cos(a) * R - s * 0.085;
       }
       // Eight gores. A hood is sewn from panels, and panels are what break up
       // the specular ring a smooth ball reflects. Even count so a ridge — not a
@@ -767,7 +772,13 @@ export default class Character {
     // is silver: a bright top surface, ribs, and a dark cavity underneath. That
     // contrast comes free from a polished double-sided sheet, because the two
     // faces reflect opposite halves of the room.
-    this.cape.init(this.ctx.scene, mat.get('wingChrome'), mat.get('polRhodium'), capeRoot, 3, 3);
+    this.cape.init(
+      this.ctx.scene,
+      mat.get('whiteGold'),      // top surface: bright polished silver
+      mat.get('polRhodium'),     // ribs
+      capeRoot, 3, 3,
+      mat.get('darkChrome'),     // underside: the dark cavity
+    );
 
     // Clasp: a gold collar plate over the cape's pinned edge, so the cape looks
     // fastened rather than growing out of the character's back.

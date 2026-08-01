@@ -104,6 +104,8 @@ export class Cape {
     this._prevBob = 0;
 
     this.mesh = null;
+    this.under = null;
+    this.backNormals = null;
     this.trim = null;
     this._trimPos = null;
     this._trimNrm = null;
@@ -133,7 +135,7 @@ export class Cape {
     out[2] = sz - v * 0.10;
   }
 
-  init(scene, matCape, matTrim, parent, uRep, vRep) {
+  init(scene, matCape, matTrim, parent, uRep, vRep, matUnder) {
     const tmp = [0, 0, 0];
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.cols; c++) {
@@ -161,6 +163,18 @@ export class Cape {
     this._writePositions();
     this._computeNormals();
 
+    // TWO MESHES OVER ONE SIMULATION.
+    //
+    // A cape is a sheet, so it has to render from both sides. The obvious fix
+    // is a double-sided material — which is what shipped, and it forced the
+    // membrane to be one of the three double-sided materials in the library,
+    // all of which are dark. Against a dark world the cape rendered as a solid
+    // black shape with blown white streaks; a critic called it a garbage bag.
+    //
+    // Building the back faces as their own mesh with reversed winding costs one
+    // extra vertex buffer on ~300 particles and buys the thing the reference
+    // actually has: a BRIGHT POLISHED TOP and a DARK CAVITY UNDERNEATH. That
+    // value split is most of what makes the wing read as a wing.
     const mesh = new Mesh('cape', scene);
     const vd = new VertexData();
     vd.positions = this.positions;
@@ -173,6 +187,24 @@ export class Cape {
     mesh.isPickable = false;
     mesh.alwaysSelectAsActiveMesh = true;   // its bounds move; never cull it
     this.mesh = mesh;
+
+    const back = [];
+    for (let t = 0; t < this.indices.length; t += 3) {
+      back.push(this.indices[t], this.indices[t + 2], this.indices[t + 1]);
+    }
+    this.backNormals = new Float32Array(this.normals.length);
+    const under = new Mesh('capeUnder', scene);
+    const vd2 = new VertexData();
+    vd2.positions = this.positions;
+    vd2.indices = back;
+    vd2.normals = this.backNormals;
+    vd2.uvs = this.uvs;
+    vd2.applyToMesh(under, true);
+    under.material = matUnder || matCape;
+    under.parent = parent;
+    under.isPickable = false;
+    under.alwaysSelectAsActiveMesh = true;
+    this.under = under;
 
     // --- silver ribs and hem trim ---
     // The cape material is dark chrome, which is correct for the reference but
@@ -326,7 +358,20 @@ export class Cape {
     }
   }
 
-  /** Grid normals by face accumulation. No allocation, no library call. */
+  /**
+   * Grid normals by face accumulation. No allocation, no library call.
+   *
+   * THE SIGN HERE WAS WRONG AND IT COST THE CAPE ITS MATERIAL.
+   *
+   * Babylon's front face for a triangle (p0, p1, p2) has normal
+   * (p2 - p0) x (p1 - p0) — see the winding note at the top of geom.js. This
+   * function accumulated (p1 - p0) x (p2 - p0), the opposite. With the old
+   * double-sided material that was invisible in the sense that nothing looked
+   * obviously broken: the sheet just shaded as though lit from the far side, so
+   * a polished membrane sampled the dark half of the environment and rendered
+   * as a black shape with a few blown streaks. The garbage-bag cape was a sign
+   * error, not a material choice.
+   */
   _computeNormals() {
     const n = this.normals, p = this.positions;
     n.fill(0);
@@ -335,9 +380,9 @@ export class Cape {
       const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
       const e1x = p[b] - p[a], e1y = p[b + 1] - p[a + 1], e1z = p[b + 2] - p[a + 2];
       const e2x = p[c] - p[a], e2y = p[c + 1] - p[a + 1], e2z = p[c + 2] - p[a + 2];
-      const nx = e1y * e2z - e1z * e2y;
-      const ny = e1z * e2x - e1x * e2z;
-      const nz = e1x * e2y - e1y * e2x;
+      const nx = e2y * e1z - e2z * e1y;
+      const ny = e2z * e1x - e2x * e1z;
+      const nz = e2x * e1y - e2y * e1x;
       n[a] += nx; n[a + 1] += ny; n[a + 2] += nz;
       n[b] += nx; n[b + 1] += ny; n[b + 2] += nz;
       n[c] += nx; n[c + 1] += ny; n[c + 2] += nz;
@@ -459,7 +504,10 @@ export class Cape {
       const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
       const e1x = p[b] - p[a], e1y = p[b + 1] - p[a + 1], e1z = p[b + 2] - p[a + 2];
       const e2x = p[c] - p[a], e2y = p[c + 1] - p[a + 1], e2z = p[c + 2] - p[a + 2];
-      const cx = e1y * e2z - e1z * e2y, cy = e1z * e2x - e1x * e2z, cz = e1x * e2y - e1y * e2x;
+      // Same sign convention as _computeNormals: front face normal is
+      // (p2 - p0) x (p1 - p0). Getting this backwards rendered the silver ribs
+      // as flat black lines drawn on the cape.
+      const cx = e2y * e1z - e2z * e1y, cy = e2z * e1x - e2x * e1z, cz = e2x * e1y - e2y * e1x;
       n[a] += cx; n[a + 1] += cy; n[a + 2] += cz;
       n[b] += cx; n[b + 1] += cy; n[b + 2] += cz;
       n[c] += cx; n[c + 1] += cy; n[c + 2] += cz;
@@ -477,6 +525,12 @@ export class Cape {
     this._computeNormals();
     this.mesh.updateVerticesData('position', this.positions, false, false);
     this.mesh.updateVerticesData('normal', this.normals, false, false);
+    if (this.under) {
+      const n = this.normals, b = this.backNormals;
+      for (let i = 0; i < n.length; i++) b[i] = -n[i];
+      this.under.updateVerticesData('position', this.positions, false, false);
+      this.under.updateVerticesData('normal', b, false, false);
+    }
     if (this.trim) {
       this._updateStrands();
       this.trim.updateVerticesData('position', this._strandPos, false, false);
@@ -486,6 +540,7 @@ export class Cape {
 
   dispose() {
     if (this.mesh) this.mesh.dispose();
+    if (this.under) this.under.dispose();
     if (this.trim) this.trim.dispose();
   }
 }
