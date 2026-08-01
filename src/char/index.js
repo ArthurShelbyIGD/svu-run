@@ -101,6 +101,20 @@ export default class Character {
     const low = q.name === 'low';
     const high = q.name === 'high';
 
+    // PRESENTATION SCALE. Everything in P is authored in metres against the
+    // collision capsule (1.5 m tall, 0.42 m radius), and at that size the
+    // character occupies about a fifth of a 2.4 m lane and read, in the hero
+    // capture, as a pale blob a long way down a busy hall: the pavé dissolved,
+    // the ears merged into the hood and the cape was three grey pixels.
+    //
+    // This scales the visual body only, about its own feet. It is deliberately
+    // NOT a change to P: the collision capsule lives in play/ and belongs to
+    // gameplay, and jump and slide clearances are tuned against it. The visual
+    // was already 1.11x the capsule before this; 1.24x is the same kind of
+    // licence, sized so the hood is a little under half a lane wide, which is
+    // where the stones start to read again at chase distance.
+    this.scale = 1.24;
+
     this.su = low ? 18 : (high ? 30 : 24);
     this.sv = low ? 11 : (high ? 18 : 14);
     this.sd = low ? 7 : (high ? 12 : 9);     // detail parts: cuffs, fingers
@@ -827,14 +841,15 @@ export default class Character {
     // ODD flute counts only — see the note on _lobe() in cape.js. A crease on
     // the centre-back meridian would put a dark seam down the middle of the one
     // view the player looks at all game.
-    // SIX columns per flute, on every preset. This number was found by looking
-    // at the hem, not by counting vertices: at 2, 3 and 4 columns the scalloped
-    // edge sampled as a hard sawtooth and the gold hem wire read as a paper
-    // crown. Six puts two vertices in the bottom of each scallop, which is what
-    // finally rounds it. It is affordable because the simulation is now O(rows)
-    // — about a dozen scalars — and the per-vertex cost is one rotation.
-    const flutes = low ? 9 : (high ? 13 : 11);
-    const perFlute = low ? 5 : 6;
+    // NINE FLUTES AND THREE HEM WAVES, on every preset — that ratio is the
+    // shape, so it must not drift between presets; only the sampling does.
+    // Measured off docs/reference-rear.png at the hem, where both are countable
+    // at once: about nine ribs across the visible back, and three hem waves.
+    // The build this replaces tied one hem wave to every rib, which is why the
+    // hem came out as a paper crown. See _rest() in cape.js.
+    const flutes = 9;
+    const scallops = 3;
+    const perFlute = low ? 5 : (high ? 8 : 6);
     const rows = low ? 7 : (high ? 14 : 12);
 
     // The yoke line. Everything below is measured off docs/reference-rear.png,
@@ -854,8 +869,15 @@ export default class Character {
     this.parts.capeRoot = capeRoot;
 
     this.cape = new Cape({
-      flutes, perFlute, rows,
-      len: 0.650,
+      flutes, scallops, perFlute, rows,
+      // LONGER, because widening it without lengthening it made a tutu. In the
+      // reference the lowest point of the hem reaches the middle of the boots
+      // — 0.11 of figure height — and the skirt is only 1.17x as wide as it is
+      // long. At 0.650 with the new width this model was at 1.72 and the legs
+      // stood clear underneath. 0.715 puts the hem trough at y = 0.195, over
+      // the boot tops, and the ratio at 1.48: still stockier than the
+      // reference, which this character is everywhere.
+      len: 0.715,
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
@@ -868,21 +890,41 @@ export default class Character {
       // for the head alone it came out 2.5x as wide as it was long and read as a
       // TUTU. These numbers split the difference and lean on flarePow to buy the
       // rest: 0.98 m across the hem, against a visible 0.56 m drop.
-      rx0: 0.250, rx1: 0.520,
-      rz0: 0.210, rz1: 0.385,
+      rx0: 0.250, rx1: 0.545,
+      rz0: 0.210, rz1: 0.412,
       // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
       // the skirt and swing clear of it, which is what the reference shows.
       spread0: 2.10,
-      spread1: 2.72,
+      spread1: 2.66,
       // >1 so the skirt leaves the yoke almost vertical and opens into a bell
-      // low down, which is the profile in the reference.
-      flarePow: 1.58,
+      // low down, which is the profile in the reference. It was 1.58, which
+      // held the skirt in a near-cylinder for two thirds of its drop and only
+      // opened it in the last quarter — a funnel, not a bell. Tracing the
+      // reference's outline, its half-width is already 60% of final at
+      // mid-skirt, which is an exponent near 1.3.
+      flarePow: 1.32,
       // Deep. The first pass at 0.052 rendered as a smooth white lampshade:
       // the flutes existed (the hem scallops proved it) but did not swing the
       // normals far enough to band a mirror surface.
-      fluteAmp: 0.085,
-      hemCut: 0.120,
-      trimR: 0.010,
+      //
+      // But it went too far the other way. What bands a mirror is the SLOPE of
+      // the rib, which is depth over width, and at 0.085 across a 0.13 m rib
+      // the sides were near vertical: the ribs stopped being pleats in a sheet
+      // and became separate hanging tubes with gaps between them. The reference
+      // rib stands proud by about a fifth of its own width. At nine flutes each
+      // rib is 0.17 m around, so 0.062 is a little over a third — still much
+      // bolder than the reference, because this is seen at 20 metres in a dark
+      // hall rather than lit on a plinth, and legibility wins.
+      fluteAmp: 0.062,
+      // Hem wave, as a fraction of skirt length. The reference's is 0.125 of
+      // the drop peak-to-trough; a touch more here for the same reason.
+      hemCut: 0.145,
+      // A FINE gold line, which is what the reference has — one bright wire
+      // drawing the scallop, not a rope laid on it. Two things push this down:
+      // the 1.24 presentation scale multiplies whatever is modelled here, and
+      // at the old weight the trim was the brightest object on the character,
+      // so the eye landed on the hem before the hood.
+      trimR: 0.0068,
       trimSu: low ? 4 : 5,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
@@ -1079,7 +1121,7 @@ export default class Character {
         // is held bent, and a straight one reads as a stick.
         bendA = -0.95 - swAlt * 0.35;
         bendB = -0.95 - sw * 0.35;
-        body.position.y = this._bob;
+        body.position.y = this._bob * this.scale;
         body.rotation.x = 0.11;
         wantStretch = 1 + Math.abs(sw) * 0.03;
         break;
@@ -1106,7 +1148,9 @@ export default class Character {
         this.parts.arms[0].rotation.z = -0.5;
         this.parts.arms[1].rotation.z = 0.5;
         bendA = bendB = -1.30;
-        body.position.y = -0.32;
+        // scaled with the body, so the slide silhouette stays as low relative
+        // to the character as it was before the presentation scale went in
+        body.position.y = -0.32 * this.scale;
         body.rotation.x = 1.02;
         wantStretch = 0.86;
         break;
@@ -1122,7 +1166,8 @@ export default class Character {
 
     // Squash and stretch, eased so landings pop rather than snap.
     this._stretch += (wantStretch - this._stretch) * Math.min(1, dtReal * 14);
-    body.scaling.set(1 / Math.sqrt(this._stretch), this._stretch, 1 / Math.sqrt(this._stretch));
+    const s = this.scale, sw2 = s / Math.sqrt(this._stretch);
+    body.scaling.set(sw2, s * this._stretch, sw2);
 
     // Lean into lane changes.
     const wantLean = play.laneT < 1 ? (play.laneTarget - play.lane) * -0.34 : 0;
