@@ -45,8 +45,8 @@ const P = {
   standH: 1.66,
   headR: 0.408,
   headY: 1.205,
-  faceR: 0.345,
-  faceZ: 0.168,          // how far the face centre sits forward of the head
+  faceR: 0.328,
+  faceZ: 0.158,          // how far the face centre sits forward of the head
   earR: 0.168,
   earSpread: 0.318,
   earY: 0.80,            // fraction of headR above centre
@@ -143,13 +143,20 @@ export default class Character {
     }
   }
 
-  /** Emit one stone field, accumulating the total for the perf budget. */
+  /**
+   * Emit one stone field, accumulating the total for the perf budget.
+   *
+   * NOTE: this deliberately does NOT set the Geo transform. It used to reset it
+   * to the identity, which silently teleported the entire torso's stone field
+   * down to the character's feet — the torso rendered as a bare dark chrome egg
+   * with a pile of loose diamonds around the boots. Invisible from the rear
+   * pose, obvious in one profile frame. Callers set the transform.
+   */
   _stones(geo, surf, opts) {
     opts.pitch = opts.pitch === undefined ? this.pitch : opts.pitch;
     opts.facets = this.facets;
     opts.rng = this.rand;
     const f = stoneField(surf, opts);
-    geo.at(0, 0, 0);
     geo.add(f);
     this.stoneCount += f.count;
     return f;
@@ -341,11 +348,13 @@ export default class Character {
     bed.toMesh('hoodBed', scene, mat.get('darkChrome'), head);
 
     const st = new Geo();
+    st.at(0, 0, 0);
     this._stones(st, hoodSurf, {
       v0: 0.015, v1: 0.99,
       omit: (x, y, z) => inFace(x, y, z, 0.030),
     });
     for (const f of earSurf) {
+      st.at(0, 0, 0);
       this._stones(st, f, {
         v0: 0.05, v1: 0.92, cx: f.cx, cy: f.cy, cz: f.cz,
         // no stones inside the ear cup
@@ -544,6 +553,7 @@ export default class Character {
     ob.toMesh('orb', scene, mat.get('glassGem'), prev);
 
     const os = new Geo();
+    os.at(0, 0, 0);
     this._stones(os, orbSurf, {
       pitch: P.orbR * 0.30, v0: 0.03, v1: 0.97,
       cy: segLen, jitter: 0.10, tilt: 0.14,
@@ -590,6 +600,7 @@ export default class Character {
       ub.add(surface(upperSurf, this.sd + 8, this.sd + 2, 2, 1));
       ub.toMesh(`upperBed${s}`, scene, mat.get('darkChrome'), pivot);
       const us = new Geo();
+      us.at(0, 0, 0);
       this._stones(us, upperSurf, { v0: 0.10, v1: 0.94, cy: -P.upperLen * 0.5 });
       us.toMesh(`upperStones${s}`, scene, mat.get('whiteGold'), pivot);
 
@@ -611,6 +622,7 @@ export default class Character {
       fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
       fb.toMesh(`foreBed${s}`, scene, mat.get('darkChrome'), elbow);
       const fs = new Geo();
+      fs.at(0, 0, 0);
       this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 });
       fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
 
@@ -714,6 +726,7 @@ export default class Character {
       lb.add(surface(legSurf, this.sd + 8, this.sd + 2, 2, 1));
       lb.toMesh(`legBed${s}`, scene, mat.get('darkChrome'), pivot);
       const ls = new Geo();
+      ls.at(0, 0, 0);
       this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 });
       ls.toMesh(`legStones${s}`, scene, mat.get('whiteGold'), pivot);
 
@@ -755,9 +768,9 @@ export default class Character {
 
     this.cape = new Cape(cols, rows, {
       iters: low ? 2 : 4,
-      len: 1.22,
+      len: 1.14,
       halfW0: 0.17,
-      halfW1: 1.06,
+      halfW1: 0.95,
       scallops,
       colsPerRib,
       hemCut: 0.30,
@@ -774,7 +787,7 @@ export default class Character {
     // faces reflect opposite halves of the room.
     this.cape.init(
       this.ctx.scene,
-      mat.get('whiteGold'),      // top surface: bright polished silver
+      mat.get('clothCape'),      // top surface: satin silver, mid value
       mat.get('polRhodium'),     // ribs
       capeRoot, 3, 3,
       mat.get('darkChrome'),     // underside: the dark cavity
@@ -877,8 +890,10 @@ export default class Character {
         this.parts.legs[1].rotation.x = swAlt * 0.92;
         this.parts.arms[0].rotation.x = swAlt * 0.62;
         this.parts.arms[1].rotation.x = sw * 0.62;
-        this.parts.arms[0].rotation.z = -0.18 + swAlt * 0.10;
-        this.parts.arms[1].rotation.z = 0.18 - swAlt * 0.10;
+        // splayed further than a real runner. From the side and from behind
+        // the arms sat inside the torso silhouette and simply did not exist.
+        this.parts.arms[0].rotation.z = -0.30 + swAlt * 0.10;
+        this.parts.arms[1].rotation.z = 0.30 - swAlt * 0.10;
         // The elbow is the whole point of the two-segment arm: a runner's arm
         // is held bent, and a straight one reads as a stick.
         bendA = -0.95 - swAlt * 0.35;

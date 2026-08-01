@@ -121,11 +121,11 @@ export function stoneField(surf, o) {
   const v1 = o.v1 === undefined ? 1 : o.v1;
   const rng = o.rng;
   const F = o.facets || 6;
-  const rad = o.rad === undefined ? pitch * 0.470 : o.rad;
+  const rad = o.rad === undefined ? pitch * 0.495 : o.rad;
   // How proud of the setting the stone sits. This number IS the crenellated
   // silhouette; too small and we are back to a smooth arc with a texture on it.
-  const rise = o.rise === undefined ? pitch * 0.170 : o.rise;
-  const table = o.table === undefined ? 0.70 : o.table;
+  const rise = o.rise === undefined ? pitch * 0.135 : o.rise;
+  const table = o.table === undefined ? 0.76 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
