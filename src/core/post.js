@@ -105,13 +105,13 @@ const LOOKS = {
     vignetteWeight: 4.6,
     vignetteK: 0.34,
     bloomThreshold: 1.90,
-    bloomKernel: 64,
+    bloomKernel: 40,
     bloomScale: 0.5,
     samples: 4,
     dither: true,
     sharpen: true,
     sharpenEdge: 1.00,
-    ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.9, samples: 10, expensiveBlur: true, maxZ: 45 },
+    ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.9, samples: 10, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
     exposure: 1.80,
@@ -119,7 +119,7 @@ const LOOKS = {
     vignetteWeight: 4.4,
     vignetteK: 0.34,
     bloomThreshold: 1.85,
-    bloomKernel: 48,
+    bloomKernel: 32,
     bloomScale: 0.5,
     samples: 1,
     dither: true,
@@ -148,7 +148,7 @@ const LOOKS = {
     vignetteWeight: 3.4,
     vignetteK: 0.34,
     bloomThreshold: 1.80,
-    bloomKernel: 32,
+    bloomKernel: 24,
     bloomScale: 0.4,
     samples: 1,
     dither: true,
@@ -290,6 +290,35 @@ export class Post {
     // — which are far brighter than 1.6 — still bloom. Raising the threshold
     // let the WEIGHT go up rather than down: selective bloom can afford to be
     // strong in a way that indiscriminate bloom never can.
+    //
+    // THAT LAST SENTENCE TURNED OUT TO BE WRONG, and the correction is the
+    // useful part. "The emissive light columns are far brighter than 1.6" was
+    // an assumption; it was never sampled. Sweeping the threshold on the hero
+    // pose and looking at the frames:
+    //
+    //   1.90   corridor emitters glow, character has a soft halo
+    //   2.30   emitters already noticeably dimmer
+    //   2.80   emitters completely flat — hard-edged slabs, no glow at all
+    //   3.50   identical to 2.80. Nothing left in the scene is above 3.5.
+    //
+    // The emitters are not "far brighter" than the character's pavé. They sit
+    // in the SAME narrow linear band, roughly 1.9..2.3. So there is no
+    // threshold that blooms the corridor and spares the runner, and hunting for
+    // one is wasted effort — at 5.0 the face pose is beautiful and the vault is
+    // dead, at 1.6 the vault glows and the face is a blob.
+    //
+    // HANDOFF, because the fix is not post's: separating these needs a mask,
+    // not a threshold. A Babylon GlowLayer driven by the emitters' emissive
+    // channel in world/ would let bloom here be raised out of the character's
+    // range entirely while the corridor keeps (and could considerably increase)
+    // its glow. Until then 1.90 is the compromise, chosen by looking: it is the
+    // brightest threshold at which the corridor still reads as lit.
+    //
+    // What IS post's, and what was taken: the KERNEL. 64 -> 40 tightens the
+    // halo around the character without touching what qualifies as a highlight.
+    // Measured on the face pose, kernel 64 -> 32 moved pixels above luminance
+    // 250 from 1.8% to 2.4% — the same light energy concentrated into a smaller
+    // radius, which reads as specular rather than as fog, and costs less.
     pipeline.bloomEnabled = q.bloom;
     if (q.bloom) {
       pipeline.bloomThreshold = look.bloomThreshold;
