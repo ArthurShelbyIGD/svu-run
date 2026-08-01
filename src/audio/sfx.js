@@ -150,11 +150,11 @@ export class Sfx {
     const midi = 72 + ((s / 5) | 0) * 12 + PENTA[s % 5];
     const f = mtof(midi);
     const pan = (this.rng.next() - 0.5) * 0.35;
-    this.dbgA = this.bell(t, f, 0.46, 0.95, 3.03, 1.55, 0.34, pan);
+    this.bell(t, f, 0.46, 0.95, 3.03, 1.55, 0.34, pan);
     if (this.q.extras) {
       // A quiet octave above, struck a hair late — the glassy top that says
       // "cut stone" rather than "sine wave".
-      this.dbgB = this.bell(t + 0.006, f * 2.005, 0.13, 0.5, 2.01, 0.85, 0.45, pan * -1);
+      this.bell(t + 0.006, f * 2.005, 0.13, 0.5, 2.01, 0.85, 0.45, pan * -1);
     }
     // High rungs get a tick of dust on the strike so the ladder keeps growing
     // in excitement after it stops growing in pitch.
@@ -182,13 +182,13 @@ export class Sfx {
 
   /** Slide: a long glassy scrape that falls away. */
   slide(t) {
-    this.noise(t, 0.42, 0.20, 'bandpass', 3400, 620, 2.6, 0.22, 0, 0.012);
-    this.tone(t, 'sawtooth', 220, 90, 0.24, 0.10, 700, 0.08, 0, 0.01);
+    this.noise(t, 0.42, 0.28, 'bandpass', 3400, 620, 2.6, 0.22, 0, 0.012);
+    this.tone(t, 'sawtooth', 220, 90, 0.24, 0.13, 700, 0.08, 0, 0.01);
   }
 
   /** Lane change: a soft metallic swish that crosses the stereo field. */
   lane(t, dir) {
-    const i = this.noise(t, 0.20, 0.20, 'bandpass', 1500, 4600, 2.2, 0.20, 0, 0.008);
+    const i = this.noise(t, 0.20, 0.30, 'bandpass', 1500, 4600, 2.2, 0.20, 0, 0.008);
     this.panSweep(i, t, -0.55 * dir, 0.55 * dir, 0.20);
     if (this.q.extras) {
       const j = this.bell(t + 0.01, mtof(KEY + 26), 0.075, 0.28, 5.4, 1.1, 0.3, -0.3 * dir);

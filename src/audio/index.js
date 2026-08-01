@@ -40,16 +40,16 @@ import { Music } from './music.js';
  * a mid-range phone a frame.
  */
 const PRESETS = {
-  low:    { voices: 8,  musicVoices: 3, irSeconds: 0.55, irChannels: 1, irDecay: 2.6, extras: false, deathGrains: 3, bellDensity: 0.16 },
-  medium: { voices: 14, musicVoices: 4, irSeconds: 1.15, irChannels: 2, irDecay: 2.2, extras: true,  deathGrains: 5, bellDensity: 0.20 },
-  high:   { voices: 20, musicVoices: 5, irSeconds: 1.90, irChannels: 2, irDecay: 2.0, extras: true,  deathGrains: 7, bellDensity: 0.22 },
+  low:    { voices: 8,  musicVoices: 3, irSeconds: 0.55, irChannels: 1, irDecay: 2.6, extras: false, deathGrains: 3, bellDensity: 0.22 },
+  medium: { voices: 14, musicVoices: 4, irSeconds: 1.15, irChannels: 2, irDecay: 2.2, extras: true,  deathGrains: 5, bellDensity: 0.28 },
+  high:   { voices: 20, musicVoices: 5, irSeconds: 1.90, irChannels: 2, irDecay: 2.0, extras: true,  deathGrains: 7, bellDensity: 0.32 },
 };
 
 /** Shared across presets — mix levels, not budgets. */
 const COMMON = {
-  master: 0.85,
+  master: 0.92,
   sfxLevel: 0.80,
-  musicLevel: 0.26,
+  musicLevel: 0.18,
   verbLevel: 0.85,
   padLevel: 0.50,
   padSend: 0.45,

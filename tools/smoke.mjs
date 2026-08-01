@@ -365,6 +365,79 @@ try {
   check('particle pool is a hard cap', fxRes.capped <= fxRes.pool,
     `${fxRes.capped} alive, pool ${fxRes.pool}`);
 
+  // ---- audio ----
+  //
+  // You cannot listen to a headless browser, so audio is verified structurally
+  // and numerically instead: the module builds its graph, a real user gesture
+  // unlocks the context, events reach it, and every synthesised sound is
+  // rendered through an OfflineAudioContext and measured. audio.selfTest()
+  // renders the identical graph the player hears — same bus, same voice pool,
+  // same preset — and reports peak, RMS and onset level per sound.
+  const aReady = await g.page.evaluate(() => window.SVU.ctx.get('audio').debug());
+  check('audio module initialises', aReady.ready === true && aReady.nodes > 20,
+    `${aReady.nodes} nodes, context ${aReady.state}`);
+
+  // A trusted keypress is a user gesture, which is what an AudioContext needs
+  // before it is allowed to run — the same path a phone takes on first touch.
+  await g.page.keyboard.press('KeyP');
+  await waitFrames(g.page, 2);
+  const aLive = await g.page.evaluate(() => {
+    const A = window.SVU.ctx.get('audio');
+    const before = A.debug();
+    const ctx = window.SVU.ctx;
+    ctx.emit('pickup:star', { value: 10 });
+    const c1 = A.debug().combo;
+    ctx.emit('pickup:star', { value: 10 });
+    const c2 = A.debug().combo;
+    ctx.emit('player:jump', null);
+    ctx.emit('player:land', { hard: true });
+    ctx.emit('player:lane', { from: 1, to: 2 });
+    ctx.emit('player:turn', { dir: 1 });
+    ctx.emit('obstacle:hit', { kind: 2, lane: 1 });
+    ctx.emit('player:death', { cause: 'obstacle' });
+    const after = A.debug();
+    return { before, after, c1, c2, dead: after.combo };
+  });
+  check('audio unlocks on a user gesture',
+    aLive.after.unlocked === true && aLive.after.state === 'running',
+    `state=${aLive.after.state}`);
+  check('audio responds to game events',
+    aLive.after.voices > aLive.before.voices,
+    `${aLive.before.voices} -> ${aLive.after.voices} voices started`);
+  check('star chime climbs and resets on death',
+    aLive.c1 === 1 && aLive.c2 === 2 && aLive.dead === 0,
+    `ladder ${aLive.c1} -> ${aLive.c2}, after death ${aLive.dead}`);
+
+  const st = await g.page.evaluate(() => window.SVU.ctx.get('audio').selfTest());
+  check('every sound renders audibly', st.silent && st.silent.length === 0,
+    st.silent && st.silent.length ? `silent: ${st.silent.join(', ')}`
+      : `${st.sounds.length} sounds, weakest onset ${st.weakestRise}x above the tail`);
+  check('mix is finite and inside headroom',
+    st.finite === true && st.peakAll > 0.05 && st.peakAll <= 1.0,
+    `peak ${st.peakAll}`);
+  check('music bed produces sound', st.music.peak > 0.005,
+    `pad peak ${st.music.peak}, ${st.music.notes} bells / ${st.music.chords} chords`);
+  check('voice pool is a hard polyphony cap', st.cap.started <= st.cap.pool,
+    `${st.cap.asked} asked, ${st.cap.started} started, pool ${st.cap.pool}`);
+  check('audio self-test passes', st.ok === true);
+
+  // Hiding the tab must silence it, and coming back must not leave it muted.
+  const aMute = await g.page.evaluate(async () => {
+    const A = window.SVU.ctx.get('audio');
+    A.setMuted(true);
+    await new Promise((r) => setTimeout(r, 260));
+    const hidden = A.debug();
+    A.setMuted(false);
+    await new Promise((r) => setTimeout(r, 120));
+    return { hidden, shown: A.debug() };
+  });
+  check('audio mutes when the tab is hidden',
+    aMute.hidden.muted === true && aMute.hidden.state !== 'running',
+    `state=${aMute.hidden.state}`);
+  check('audio comes back when the tab returns',
+    aMute.shown.muted === false && aMute.shown.state === 'running',
+    `state=${aMute.shown.state}`);
+
   // ---- junction turns ----
   const turnRes = await g.page.evaluate(() => {
     const S = window.SVU;
