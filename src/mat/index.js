@@ -314,12 +314,24 @@ export default class Materials {
     this._brush = generateBrushedMaps(this._brushSize);
 
     // Everything else. Generated once, at init, never per frame.
+    //
+    // Not all at the same resolution. These are heavy CPU loops — the whole
+    // set costs about two seconds of load time at 512 — and the four maps are
+    // not equally visible. The track is the largest surface on screen in every
+    // frame and gets full resolution; the stone and cloth names are not yet
+    // used by any mesh and get half. Sizes are per-set so this stays easy to
+    // rebalance when world/ starts placing carved stone.
+    const big = size;
+    const small = size >> 1;
+    this._sizes = {
+      stone: small, marble: small, cloth: small, gold: big, track: big,
+    };
     this._maps = {
-      stone: generateStoneMaps(size, 1),
-      marble: generateStoneMaps(size, 0),
-      gold: generateGoldMaps(size, low ? 14 : 22, 1),
-      cloth: generateClothMaps(size, low ? 28 : 44),
-      track: generateTrackMaps(size, 2, 1),
+      stone: generateStoneMaps(small, 1),
+      marble: generateStoneMaps(small, 0),
+      gold: generateGoldMaps(big, low ? 14 : 22, 1),
+      cloth: generateClothMaps(small, low ? 22 : 32),
+      track: generateTrackMaps(big, 2, 1),
     };
   }
 
@@ -366,15 +378,16 @@ export default class Materials {
     const o = opt || {};
     const tile = o.tile === undefined ? 2 : o.tile;
     const maps = this._maps[mapKey];
+    const msize = this._sizes[mapKey];
     const m = new PBRMaterial(`s_${name}`, this.ctx.scene);
     m.albedoColor = new Color3(col.r, col.g, col.b);
-    m.albedoTexture = this._rawTex(`${mapKey}_a`, maps.albedo, this._size, true, tile);
-    m.bumpTexture = this._rawTex(`${mapKey}_n`, maps.normal, this._size, false, tile,
+    m.albedoTexture = this._rawTex(`${mapKey}_a`, maps.albedo, msize, true, tile);
+    m.bumpTexture = this._rawTex(`${mapKey}_n`, maps.normal, msize, false, tile,
       o.bump === undefined ? 1.0 : o.bump);
     m.invertNormalMapX = false;
     m.invertNormalMapY = true;      // see the note in pave() — one convention
 
-    m.metallicTexture = this._rawTex(`${mapKey}_orm`, maps.orm, this._size, false, tile);
+    m.metallicTexture = this._rawTex(`${mapKey}_orm`, maps.orm, msize, false, tile);
     m.useRoughnessFromMetallicTextureGreen = true;
     m.useMetallnessFromMetallicTextureBlue = true;
     m.useAmbientOcclusionFromMetallicTextureRed = true;
