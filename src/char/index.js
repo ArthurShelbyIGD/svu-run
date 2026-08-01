@@ -54,7 +54,7 @@ const P = {
   bodyY: 0.640,
   upperLen: 0.205, foreLen: 0.195, armR: 0.088,
   handR: 0.104,
-  shoulderX: 0.298, shoulderY: 0.880,
+  shoulderX: 0.320, shoulderY: 0.880,
   legR: 0.104, legLen: 0.205,
   bootR: 0.142,
   hipX: 0.147, hipY: 0.452,
@@ -331,10 +331,20 @@ export default class Character {
         // the character was a ball with boots and no body at all. The hood has
         // to stop at the shoulder line or the whole proportion argument is
         // moot — you cannot fix a head-to-body ratio you cannot see.
+        // ...AND IT MUST NOT FLARE. The cowl bulged to 1.42x the hood radius
+        // on its way down, which put its widest point at 0.34 — the same
+        // radius as the pavé collar underneath it, 6 cm lower. Two stone-set
+        // surfaces of equal radius stacked that close do not read as a head
+        // over a collar; they read as one cone, which is what every rear
+        // capture showed and what no amount of work on the collar itself could
+        // fix. In the reference the hood is a BALL: its lower edge tucks back
+        // in, and the collar flares out from under it. So the flare drops to
+        // 1.16x and the drop from 8.5 cm to 5 cm, which uncovers about 19 cm of
+        // collar — 11% of figure height, which is what the reference gives it.
         const s = (v - 0.70) / 0.30;
         const a = 0.80 * Math.PI;
-        r = Math.sin(a) * R * (1 + 0.42 * Math.sin(Math.PI * Math.min(1, s * 1.15)));
-        y = Math.cos(a) * R - s * 0.085;
+        r = Math.sin(a) * R * (1 + 0.16 * Math.sin(Math.PI * Math.min(1, s * 1.30)));
+        y = Math.cos(a) * R - s * 0.050;
       }
       // Eight gores. A hood is sewn from panels, and panels are what break up
       // the specular ring a smooth ball reflects. Even count so a ridge — not a
@@ -462,9 +472,9 @@ export default class Character {
     const en = this.lowQ ? 20 : 34;
     const ep = [0, 0, 0];
     for (let i = 0; i <= en; i++) {
-      hoodSurf(i / en, 0.982, ep);
+      hoodSurf(i / en, 0.930, ep);
       // outboard of the setting bed, and clear of the stone girdles
-      edge.push([ep[0] * 1.035, ep[1] - 0.004, ep[2] * 1.035]);
+      edge.push([ep[0] * 1.055, ep[1] - 0.004, ep[2] * 1.055]);
     }
     p.at(0, 0, 0);
     p.add(pipe(edge, () => 0.0125, 6));
@@ -938,7 +948,7 @@ export default class Character {
       // stood clear underneath. 0.715 puts the hem trough at y = 0.195, over
       // the boot tops, and the ratio at 1.48: still stockier than the
       // reference, which this character is everywhere.
-      len: 0.705,
+      len: 0.775,
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
@@ -1069,11 +1079,23 @@ export default class Character {
       const th = (u - 0.5) * SPREAD;
       // drops lower at the centre back and at the shoulder points, like the
       // scalloped bib in the reference
-      const dip = 0.72 + 0.28 * Math.cos(th * 2.1);
-      const ax = 0.215 + 0.270 * v;
-      const az = 0.190 + 0.205 * v;
+      const dip = 0.70 + 0.30 * Math.cos(th * 2.1);
+      // The collar STARTS AT THE HOOD'S LOWER EDGE and flares from there. It
+      // used to start 8 cm up inside the hood at a radius the hood was already
+      // wider than, so the only part of it that ever emerged was the last
+      // centimetre and its gold rim — a gold brim on a stone ball. Beginning it
+      // at y = -0.045 (world 0.865, just above the hood's 0.827 lower edge) and
+      // at a radius that already clears the hood means every row of it is
+      // visible, which is what makes it a collar rather than a hat band.
+      // Width, measured off the reference rather than chosen: its collar's
+      // lower edge is 0.70 of the hood's width and 0.65 of the cape's. At 0.99
+      // across, this one was as wide as the hood and 0.80 of the cape, and the
+      // silhouette went from "collar" to "sombrero". 0.81 across hits both
+      // reference ratios and still clears the skirt underneath by 7 cm.
+      const ax = 0.250 + 0.155 * v;
+      const az = 0.215 + 0.130 * v;
       out[0] = ax * Math.sin(th);
-      out[1] = 0.080 - 0.270 * v * dip;
+      out[1] = -0.045 - 0.215 * v * dip;
       out[2] = -az * Math.cos(th);
     };
 
@@ -1109,7 +1131,7 @@ export default class Character {
       rim.push([p[0] * 1.02, p[1] - 0.004, p[2] * 1.02]);
     }
     g.at(0, 0, 0);
-    g.add(pipe(rim, () => 0.021, 6));
+    g.add(pipe(rim, () => 0.0155, 6));
     g.toMesh('yokeEdge', scene, mat.get('polGold'), capeRoot);
   }
 
@@ -1202,12 +1224,16 @@ export default class Character {
         this.parts.arms[1].rotation.x = sw * 0.62;
         // splayed further than a real runner. From the side and from behind
         // the arms sat inside the torso silhouette and simply did not exist.
-        // Splayed to 0.42 rad. At 0.30 the hands hung inside the skirt's
-        // silhouette and emerged BELOW its hem, which read as the character
-        // having no arms and two spare mittens. The reference hangs them at
-        // nearly 45 degrees, clear of the skirt on both sides.
-        this.parts.arms[0].rotation.z = -0.42 + swAlt * 0.10;
-        this.parts.arms[1].rotation.z = 0.42 - swAlt * 0.10;
+        // At 0.30 the hands hung inside the skirt's silhouette and emerged
+        // BELOW its hem, which read as the character having no arms and two
+        // spare mittens. 0.42 cleared the old skirt by a couple of centimetres
+        // and nothing else, so widening the cape put them back inside it and
+        // the sleeves reappeared as two stone lumps in the cape's outline.
+        // 0.55 rad plus the wider shoulder puts the mitten 11 cm clear of the
+        // hem's radius at its own height — the gold cuff and the silver hand
+        // sit against the background, which is how the reference reads them.
+        this.parts.arms[0].rotation.z = -0.55 + swAlt * 0.10;
+        this.parts.arms[1].rotation.z = 0.55 - swAlt * 0.10;
         // The elbow is the whole point of the two-segment arm: a runner's arm
         // is held bent, and a straight one reads as a stick.
         bendA = -0.95 - swAlt * 0.35;
@@ -1223,8 +1249,8 @@ export default class Character {
         this.parts.legs[1].rotation.x = rise ? -0.28 : 0.66;
         this.parts.arms[0].rotation.x = rise ? -1.35 : -0.50;
         this.parts.arms[1].rotation.x = rise ? -1.35 : -0.50;
-        this.parts.arms[0].rotation.z = -0.46;
-        this.parts.arms[1].rotation.z = 0.46;
+        this.parts.arms[0].rotation.z = -0.58;
+        this.parts.arms[1].rotation.z = 0.58;
         bendA = bendB = rise ? -0.55 : -1.10;
         body.position.y = 0;
         body.rotation.x = rise ? -0.16 : 0.22;
