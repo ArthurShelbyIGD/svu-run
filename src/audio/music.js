@@ -188,7 +188,8 @@ export class Music {
     const md = p.mod[i];
     mod.connect(md);
     md.connect(car.frequency);
-    envPluck(md.gain, t, f * 0.9, 0.004, dur * 0.16);
+    // index ~0.9 against the modulator: a celesta, not a church bell.
+    envPluck(md.gain, t, f * 2.76 * 0.9, 0.004, dur * 0.12);
     car.connect(p.filt[i]);
     p.filt[i].type = 'lowpass';
     p.filt[i].Q.value = 0.5;

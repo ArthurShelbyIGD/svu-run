@@ -694,15 +694,33 @@ export default class Audio {
     }
     const dogpile = { peak: +dpeak.toFixed(3), clipped: dclip, voices: dr.sfx.voices };
 
+    // Sixth pass: a struck bell is bright at the strike and pure in the tail.
+    // That is the whole reason the modulator's envelope decays faster than the
+    // carrier's, and it is easy to lose — an FM depth expressed against the
+    // wrong operator once left these chimes duller at the strike than in the
+    // ring. Zero-crossing rate is a cheap, honest proxy for brightness and
+    // needs no transform: count sign changes, early versus late.
+    const br = await this.renderOffline(2, (sfx6) => sfx6.star(0.05, 0), roomy);
+    const BL = br.buf.getChannelData(0);
+    const zcr = (t0, t1) => {
+      const a = Math.floor(t0 * SR), b2 = Math.floor(t1 * SR);
+      let n = 0;
+      for (let s2 = a + 1; s2 < b2; s2++) if ((BL[s2] < 0) !== (BL[s2 - 1] < 0)) n++;
+      return Math.round(n / (t1 - t0));
+    };
+    const timbre = { strike: zcr(0.05, 0.10), ring: zcr(0.40, 0.55) };
+    timbre.brighter = timbre.strike > timbre.ring;
+
     const silent = sounds.filter((s) => s.peak < 0.01 || s.rise < 1.5).map((s) => s.name);
     return {
       ok: finite && silent.length === 0 && mpeak > 0.005 && peakAll <= 1.0 &&
         cap.started <= cap.pool && ladder.chimed === ladder.pickups &&
-        dogpile.clipped === 0,
+        dogpile.clipped === 0 && timbre.brighter,
       weakestRise: +weakest.toFixed(2),
       cap,
       ladder,
       dogpile,
+      timbre,
       preset: q === this._q ? this.ctx.config.presetName : 'default',
       sampleRate: SR,
       finite,

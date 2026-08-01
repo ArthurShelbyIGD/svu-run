@@ -422,6 +422,9 @@ try {
   check('the busiest moment never clips',
     st.dogpile.clipped === 0 && st.dogpile.peak < 1,
     `peak ${st.dogpile.peak} across ${st.dogpile.voices} voices`);
+  check('the chime is bright at the strike and pure in the tail',
+    st.timbre.brighter === true,
+    `${st.timbre.strike} zero-crossings/s striking vs ${st.timbre.ring} ringing`);
   check('a fast star run chimes on every pickup',
     st.ladder.chimed === st.ladder.pickups,
     `${st.ladder.chimed}/${st.ladder.pickups} rungs at 60ms apart`);
