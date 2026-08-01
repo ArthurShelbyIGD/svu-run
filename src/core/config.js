@@ -81,7 +81,7 @@ export const QUALITY = {
     shadows: false,
     shadowMapSize: 0,
     bloom: true,
-    bloomScale: 0.34,
+    bloomScale: 0.55,
     ssao: false,
     fxaa: true,
     envSize: 64,            // env cubemap face size
@@ -98,7 +98,7 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 1024,
     bloom: true,
-    bloomScale: 0.42,
+    bloomScale: 0.62,
     // AO is worth more than a second MSAA sample or a bigger shadow map: it is
     // what stops every object floating. Medium buys it at half resolution.
     ssao: true,
@@ -117,7 +117,7 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 2048,
     bloom: true,
-    bloomScale: 0.45,
+    bloomScale: 0.67,
     ssao: true,
     fxaa: true,
     envSize: 256,

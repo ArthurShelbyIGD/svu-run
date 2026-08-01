@@ -67,7 +67,7 @@ const LOOKS = {
     contrast: 1.45,
     vignetteWeight: 3.2,
     vignetteK: 0.52,
-    bloomThreshold: 0.88,
+    bloomThreshold: 1.60,
     bloomKernel: 64,
     bloomScale: 0.5,
     samples: 4,
@@ -75,7 +75,7 @@ const LOOKS = {
     sharpen: true,
     sharpenEdge: 0.40,
     grain: 2.4,
-    chromatic: 1.4,
+    chromatic: 0.9,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.15, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
@@ -83,7 +83,7 @@ const LOOKS = {
     contrast: 1.45,
     vignetteWeight: 3.0,
     vignetteK: 0.52,
-    bloomThreshold: 0.88,
+    bloomThreshold: 1.55,
     bloomKernel: 48,
     bloomScale: 0.5,
     samples: 1,
@@ -107,7 +107,7 @@ const LOOKS = {
     contrast: 1.36,
     vignetteWeight: 2.3,
     vignetteK: 0.52,
-    bloomThreshold: 0.90,
+    bloomThreshold: 1.50,
     bloomKernel: 32,
     bloomScale: 0.4,
     samples: 1,
@@ -216,11 +216,18 @@ export class Post {
     pipeline.fxaaEnabled = q.fxaa;
 
     // Bloom. The old settings (threshold 0.72, weight ~0.85, kernel 48) were
-    // a haze machine: 0.72 linear is only ~0.87 sRGB, so a large fraction of
-    // the frame qualified as a highlight and the whole image acquired a milky
-    // veil. Raising the threshold to 0.88 restricts bloom to genuine speculars
-    // and emissives — the gold rails, the light shafts, the gem glow — which
-    // is what reads as jewellery rather than as fog.
+    // a haze machine: the threshold is a LINEAR value and the character's white
+    // pavé sits around 1.0 linear, so the runner itself qualified as a
+    // highlight. Every close-up came back as a glowing white blob with all its
+    // surface detail eaten by its own bloom.
+    //
+    // MEASURED. At threshold 0.88 the char-face pose had 7.2% of pixels clipped
+    // at >90% luminance and the pavé speckle was invisible. At 1.60 the
+    // character drops out of the highlight pass entirely and the pavé, the
+    // boot stones and the hood rim all read, while the emissive light columns
+    // — which are far brighter than 1.6 — still bloom. Raising the threshold
+    // let the WEIGHT go up rather than down: selective bloom can afford to be
+    // strong in a way that indiscriminate bloom never can.
     pipeline.bloomEnabled = q.bloom;
     if (q.bloom) {
       pipeline.bloomThreshold = look.bloomThreshold;
