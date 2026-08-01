@@ -794,55 +794,125 @@ export default class Character {
 
   _buildCape(body, low, high) {
     const mat = this.ctx.get('mat');
-    const scallops = low ? 3 : 4;
-    const colsPerRib = low ? 2 : 4;
-    const cols = scallops * colsPerRib + 1;
-    const rows = low ? 10 : (high ? 18 : 15);
 
+    // ODD flute counts only — see the note on _lobe() in cape.js. A crease on
+    // the centre-back meridian would put a dark seam down the middle of the one
+    // view the player looks at all game.
+    const flutes = low ? 7 : (high ? 13 : 11);
+    const perFlute = low ? 2 : 3;
+    const rows = low ? 9 : (high ? 14 : 12);
+
+    // The yoke line. Everything below is measured off docs/reference-rear.png,
+    // scaled by head radius, which is the only proportion both the reference
+    // and this model agree on:
+    //
+    //   cape top      0.53 of figure height   -> y = 0.91, the shoulder line
+    //   hem lobe tip  0.11 of figure height   -> y = 0.26, just above the boots
+    //   hem half width  1.30 head radii       -> 0.53 m
+    //
+    // The version this replaces had a hem half-width of 0.95 m and a length of
+    // 0.92 m — nearly twice as wide and 40% longer than the reference — which
+    // is most of why it engulfed the character.
     const capeRoot = new TransformNode('capeRoot', this.ctx.scene);
     capeRoot.parent = body;
-    capeRoot.position.set(0, P.shoulderY + 0.070, -0.050);
+    capeRoot.position.set(0, P.shoulderY + 0.030, -0.030);
     this.parts.capeRoot = capeRoot;
 
-    this.cape = new Cape(cols, rows, {
-      iters: low ? 2 : 4,
-      // 0.92, not 1.14. The cape root sits at y = 0.95 and the centre of the
-      // hem is the longest point, so at 1.14 the tip hung 19cm BELOW the road
-      // and rendered as a thin gold wire trailing off the bottom of frame.
-      // Found by looking at a low-preset frame, where it was unmissable.
-      len: 0.92,
-      halfW0: 0.17,
-      halfW1: 0.95,
-      scallops,
-      colsPerRib,
-      hemCut: 0.34,
-      shoulderR: 0.205,
-      shoulderSpread: 2.30,
+    this.cape = new Cape({
+      flutes, perFlute, rows,
+      len: 0.650,
+      // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
+      // a circle of this radius sits INSIDE the torso at the sides, and at the
+      // hem a circle this wide would stand half a metre out behind in profile.
+      rx0: 0.260, rx1: 0.560,
+      rz0: 0.215, rz1: 0.410,
+      // Azimuth covered. Stops short of +/-90 degrees so the arms hang OUTSIDE
+      // the skirt and swing clear of it, which is what the reference shows.
+      spread0: 2.00,
+      spread1: 2.50,
+      flarePow: 1.25,
+      fluteAmp: 0.052,
+      hemCut: 0.17,
+      trimR: 0.0135,
+      rippleAmp: 0.022,
+      // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
+      // swings once through a corner and settles rather than flapping.
+      stiff: 88,
+      damp: 0.872,
     });
-    // POLISHED SILVER, not black.
+
+    // POLISHED SILVER — `polRhodium`, the same material as the boots and the
+    // gloves, which is exactly what the reference shows.
     //
-    // The membrane shipped in `clothCape` — a 0.34-albedo metal — against a
-    // dark world, and rendered as a solid black sheet with blown white streaks.
-    // A critic called it a garbage bag and they were right. The reference wing
-    // is silver: a bright top surface, ribs, and a dark cavity underneath. That
-    // contrast comes free from a polished double-sided sheet, because the two
-    // faces reflect opposite halves of the room.
+    // `clothCape` was the wrong answer twice over: it is a fabric normal map
+    // with a sheen lobe, and it is 0.42 albedo, so it rendered as grey cloth.
+    // The reason a mirror finish is safe HERE and was not on the track floor
+    // (see ARCHITECTURE §7) is the fluting: a smooth mirror sheet reflects one
+    // thing and blows out, but ten convex pleats each reflect a different part
+    // of the room, so the skirt reads as alternating bright and dark bands at
+    // any camera angle. The fluting is the material's readability, not decor.
     this.cape.init(
       this.ctx.scene,
-      mat.get('clothCape'),      // top surface: satin silver
-      mat.get('polGold'),        // ribs
-      capeRoot, 3, 3,
-      mat.get('marbleDark'),     // underside: the dark cavity
+      mat.get('polRhodium'),     // outside: polished silver
+      mat.get('polGold'),        // the hem wire
+      capeRoot, 3, 2,
+      mat.get('darkChrome'),     // inside: the dark cavity
     );
 
-    // Clasp: a gold collar plate over the cape's pinned edge, so the cape looks
-    // fastened rather than growing out of the character's back.
-    const c = new Geo();
-    c.at(0, 0.01, -0.02, Math.PI / 2, 0, 0, 1, 1, 0.7);
-    c.add(arc(0.235, 0.026, -1.28, 1.28, this.su, 6, (u) => 0.7 + 0.6 * Math.sin(Math.PI * u)));
-    c.at(0, 0.012, 0.10, 0.4);
-    c.add(gem(0.05, 6, 0.85));
-    c.toMesh('capeClasp', this.ctx.scene, mat.get('polGold'), capeRoot);
+    // The yoke: a pavé collar over the shoulders with a gold edge, which is
+    // what the cape hangs from in the reference. It also hides the seam where
+    // the skirt's pinned top row meets the torso.
+    this._buildYoke(capeRoot, mat);
+  }
+
+  /**
+   * Pavé yoke + gold edge. Sits on the cape root so it moves with the collar.
+   *
+   * Built from the SAME cone the skirt's collar row uses, pushed out slightly,
+   * so the gold edge lands exactly on the skirt's top row instead of near it.
+   */
+  _buildYoke(capeRoot, mat) {
+    const scene = this.ctx.scene;
+    const SPREAD = 2.62;          // wider than the skirt collar — it covers the
+                                  // shoulders, and from behind it is a bib
+    const yokeSurf = (u, v, out) => {
+      const th = (u - 0.5) * SPREAD;
+      // drops lower at the centre back and at the shoulder points, like the
+      // scalloped bib in the reference
+      const dip = 0.68 + 0.32 * Math.cos(th * 2.1);
+      const ax = 0.150 + 0.135 * v;
+      const az = 0.135 + 0.105 * v;
+      out[0] = ax * Math.sin(th);
+      out[1] = 0.052 - 0.185 * v * dip;
+      out[2] = -az * Math.cos(th);
+    };
+
+    const bed = new Geo();
+    bed.at(0, 0, 0, 0, 0, 0, 0.985, 1, 0.985);
+    bed.add(surface(yokeSurf, this.su, this.sd, 2, 1));
+    bed.toMesh('yokeBed', scene, mat.get('darkChrome'), capeRoot);
+
+    const st = new Geo();
+    st.at(0, 0, 0);
+    // uOpen: the yoke is an ARC, not a closed ring — without this the stone
+    // field wraps u around and lays a row of stones across the open front.
+    this._stones(st, yokeSurf, {
+      v0: 0.06, v1: 0.93, uOpen: true, uPad: 0.035, pitch: this.pitch * 0.86,
+    });
+    st.toMesh('yokeStones', scene, mat.get('whiteGold'), capeRoot);
+
+    // gold edge, swept along the yoke's lower rim
+    const rim = [];
+    const rn = this.lowQ ? 20 : 30;
+    const p = [0, 0, 0];
+    for (let i = 0; i <= rn; i++) {
+      yokeSurf(i / rn, 1.0, p);
+      rim.push([p[0] * 1.02, p[1] - 0.004, p[2] * 1.02]);
+    }
+    const g = new Geo();
+    g.at(0, 0, 0);
+    g.add(pipe(rim, () => 0.016, 6));
+    g.toMesh('yokeEdge', scene, mat.get('polGold'), capeRoot);
   }
 
   // ---- simulation ------------------------------------------------------
