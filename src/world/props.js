@@ -38,6 +38,11 @@ const AHEAD = 210;               // metres of architecture kept ahead
 const BEHIND = 34;
 const BAY_SLOTS = Math.ceil((AHEAD + BEHIND) / BAY_LEN) + 2;
 const ACCENT_SLOTS = 14;
+const COL_STEP = 8;              // metres between columns, matching the track
+const COL_SLOTS = Math.ceil((AHEAD + BEHIND) / COL_STEP) * 2 + 4;
+// The track suppresses its own columns within 16m of a junction. Mine must
+// use the SAME number or the two disagree and a bare cylinder shows through.
+const COL_JUNCTION_SPAN = 16.5;
 const ACCENT_X = 7.7;
 
 export default class Props {
@@ -45,7 +50,10 @@ export default class Props {
     this.ctx = ctx;
     this.meshes = [];
     this.bayBufs = [];
+    this.colBufs = [];
     this.accentBufs = [];
+    this._nextColS = 0;
+    this._colSlot = 0;
     this._m = new Matrix();
     this._q = new Quaternion();
     this._s = new Vector3(1, 1, 1);
@@ -68,6 +76,7 @@ export default class Props {
     this._rngSeed = this._rng.seed;
 
     this._buildBay(scene, mat, q);
+    this._buildColumn(scene, mat, q);
     this._buildAccents(scene, mat, q);
     this._buildShafts(scene, q);
     this.reset();
@@ -82,39 +91,37 @@ export default class Props {
     const D = [];   // marbleDark   — plinths and parapet, the darkest accents
     const G = [];   // goldTrim     — rings, abaci, keystones, dentils, chains
     const M = [];   // emissive     — lantern gems
+    const F = [];   // marbleDark   — the hall floor, placed on its own rules
 
-    // --- columns, three per bay per side ---
-    for (const cz of COL_Z) {
-      for (const sx of [-COL_X, COL_X]) {
-        // plinth and base mouldings
-        box(scene, D, 1.42, 0.42, 1.42, sx, 0.21, cz);
-        box(scene, G, 1.30, 0.08, 1.30, sx, 0.46, cz);
-        cyl(scene, L, 1.06, 1.26, 0.28, sx, 0.64, cz, tess);
-        // the shaft itself
-        flutedShaft(scene, L, {
-          rBottom: 0.52, rTop: 0.44, height: 3.68,
-          flutes: low ? 8 : 14, depth: 0.15,
-          radial: low ? 16 : 30, rings: 3,
-          x: sx, y: 0.78, z: cz,
-        });
-        // necking, echinus, abacus
-        cyl(scene, G, 0.98, 0.98, 0.12, sx, 4.52, cz, tess);
-        cyl(scene, L, 1.26, 0.92, 0.36, sx, 4.76, cz, tess);
-        box(scene, G, 1.36, 0.32, 1.36, sx, 5.10, cz);
-        // corner volutes: four small blocks that break the capital's silhouette
-        if (!low) {
-          for (const [ox, oz] of [[-0.58, -0.58], [0.58, -0.58], [-0.58, 0.58], [0.58, 0.58]]) {
-            box(scene, G, 0.30, 0.18, 0.30, sx + ox, 4.80, cz + oz, 0.785);
-          }
-        }
+    // --- the floor of the hall ---
+    // Without this the colonnade stands on nothing: the wide shot showed the
+    // whole arcade floating over a black void, because the only floor in the
+    // game is the 7.2m track itself. It sits below the track surface so the
+    // two never fight, and it is a separate prototype because unlike the rest
+    // of a bay it must NOT be suppressed at junctions — a hole in the ground
+    // at every corner would be far worse than architecture in the way.
+    box(scene, F, 62, 0.26, BAY_LEN, 0, -0.21, 0);
+    for (const sx of [-1, 1]) {
+      box(scene, F, 0.5, 0.34, BAY_LEN, sx * 30.6, -0.10, 0);   // outer kerb
+      box(scene, F, 0.36, 0.12, BAY_LEN, sx * 4.30, -0.02, 0);  // track verge
+      // Inlaid strips running with the path. A bare slab this size reads as a
+      // car park; two lines of gold turn it into a floor that was designed,
+      // and they stream past at speed, which the eye reads as velocity.
+      box(scene, G, 0.16, 0.06, BAY_LEN, sx * 8.60, -0.05, 0);
+      box(scene, G, 0.10, 0.06, BAY_LEN, sx * 17.4, -0.05, 0);
+      // ...and cross-bands, so the slab reads as paving rather than as one
+      // enormous matt panel. This is the same complaint as the cornice: area
+      // without incident is what makes a surface look untextured.
+      for (const cz of COL_Z) {
+        box(scene, F, 22.0, 0.05, 0.34, sx * 15.6, -0.06, cz);
       }
-
-      // Nothing spans the corridor at the flanking columns. An earlier pass
-      // put a full arch on every column and the result was a ribcage that
-      // sealed the corridor completely; a slimmer tie rod instead read as a
-      // horizontal bar at eye level, which in a runner looks like an obstacle.
-      // One vault per bay, and open air over the other two.
     }
+
+    // Columns are NOT part of the bay — see _buildColumn. Nothing spans the
+    // corridor except the single vault below: an earlier pass put a full arch
+    // on every column and the result was a ribcage that sealed the corridor
+    // completely; a slimmer tie rod instead read as a horizontal bar at eye
+    // level, which in a runner looks like an obstacle.
 
     // --- the one transverse arch that vaults the track, at the bay centre ---
     arch(scene, L, G, {
@@ -215,6 +222,60 @@ export default class Props {
 
     for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
+    }
+
+    // Dielectric, not metallic. A rough metal floor was tried here and read
+    // fine in capture — which is exactly the trap ARCHITECTURE section 7
+    // documents: the last mirror-ish floor this project shipped looked correct
+    // in every screenshot and rendered near-white on real hardware. A surface
+    // this large does not get to depend on what it is reflecting.
+    this.bayFloor = mergeBucket(scene, 'bayFloor', F, mat.get('marbleDark'));
+    this.floorBuf = this._alloc(this.bayFloor, BAY_SLOTS);
+  }
+
+  /**
+   * One column, placed individually rather than baked into the bay.
+   *
+   * WHY IT IS NOT PART OF THE BAY. The bay is 24m long and gets suppressed
+   * wholesale near a junction so the arcade never hides the corner exit. The
+   * track suppresses ITS columns on a different, tighter rule — so at every
+   * corner there was a band where my bay was gone but the track's plain
+   * cylinder was not, and a bare pink tube stood in the middle of an otherwise
+   * carved colonnade. That is visible in exactly one place, twenty metres
+   * before every corner, and no test can see it.
+   *
+   * Placing columns one at a time lets them use the same junction rule the
+   * track uses, so the fluted shaft is present wherever the cylinder it hides
+   * is present. Three extra draw calls; the defect goes away completely.
+   */
+  _buildColumn(scene, mat, q) {
+    const low = q.name === 'low';
+    const tess = low ? 8 : 16;
+    const L = [], D = [], G = [];
+
+    box(scene, D, 1.42, 0.42, 1.42, 0, 0.21, 0);
+    box(scene, G, 1.30, 0.08, 1.30, 0, 0.46, 0);
+    cyl(scene, L, 1.06, 1.26, 0.28, 0, 0.64, 0, tess);
+    flutedShaft(scene, L, {
+      rBottom: 0.52, rTop: 0.44, height: 3.68,
+      flutes: low ? 8 : 14, depth: 0.15,
+      radial: low ? 16 : 30, rings: 3,
+      x: 0, y: 0.78, z: 0,
+    });
+    cyl(scene, G, 0.98, 0.98, 0.12, 0, 4.52, 0, tess);
+    cyl(scene, L, 1.26, 0.92, 0.36, 0, 4.76, 0, tess);
+    box(scene, G, 1.36, 0.32, 1.36, 0, 5.10, 0);
+    if (!low) {
+      for (const [ox, oz] of [[-0.58, -0.58], [0.58, -0.58], [-0.58, 0.58], [0.58, 0.58]]) {
+        box(scene, G, 0.30, 0.18, 0.30, ox, 4.80, oz, 0.785);
+      }
+    }
+
+    this.colLight = mergeBucket(scene, 'colLight', L, mat.get('marbleLight'));
+    this.colDark = mergeBucket(scene, 'colDark', D, mat.get('marbleDark'));
+    this.colGold = mergeBucket(scene, 'colGold', G, mat.get('goldTrim'));
+    for (const m of [this.colLight, this.colDark, this.colGold]) {
+      if (m) this.colBufs.push(this._alloc(m, COL_SLOTS));
     }
   }
 
@@ -329,9 +390,13 @@ export default class Props {
     this._baySlot = 0;
     this._accentSlot = 0;
     this._nextBayS = -BAY_LEN;
+    this._nextColS = -BAY_LEN + 4;
+    this._colSlot = 0;
     this._nextAccentS = 40;
     for (const b of this.bayBufs) b.fill(0);
+    for (const b of this.colBufs) b.fill(0);
     for (const b of this.accentBufs) b.fill(0);
+    if (this.floorBuf) this.floorBuf.fill(0);
     if (this.shaftBuf) this.shaftBuf.fill(0);
     this._flush();
   }
@@ -355,6 +420,12 @@ export default class Props {
       dirty = true;
     }
 
+    while (this._nextColS < limit) {
+      this._placeColumnPair(this._nextColS, path, track);
+      this._nextColS += COL_STEP;
+      dirty = true;
+    }
+
     while (this._nextAccentS < limit) {
       this._placeAccent(this._accentSlot % ACCENT_SLOTS, this._nextAccentS, path, track);
       this._accentSlot++;
@@ -363,6 +434,23 @@ export default class Props {
     }
 
     if (dirty) this._flush();
+  }
+
+  _placeColumnPair(s, path, track) {
+    const hidden = this._nearJunction(s, COL_JUNCTION_SPAN, track);
+    const yaw = hidden ? 0 : path.yawExactAt(s);
+    for (let side = 0; side < 2; side++) {
+      const slot = (this._colSlot++) % COL_SLOTS;
+      const o = slot * 16;
+      if (hidden) {
+        for (const b of this.colBufs) b.fill(0, o, o + 16);
+        continue;
+      }
+      path.toWorldExact(s, side === 0 ? -COL_X : COL_X, 0, this._w);
+      Matrix.RotationYToRef(yaw, this._m);
+      this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
+      for (const b of this.colBufs) this._m.copyToArray(b, o);
+    }
   }
 
   _nearJunction(s, span, track) {
@@ -379,14 +467,25 @@ export default class Props {
     // a junction are simply left empty; the backstop wall reads as the corner.
     const hidden = this._nearJunction(mid, 13, track);
     const o = slot * 16;
+    const yaw = path.yawExactAt(mid);
+    path.toWorldExact(mid, 0, 0, this._w);
+
+    // The floor first, and always — including over junctions, where the two
+    // perpendicular corridors' floors overlap. Coplanar overlapping slabs
+    // z-fight, so each slab is nudged a few millimetres by its heading and by
+    // its parity along the run. Both are far below anything the eye can
+    // resolve and both guarantee a unique winner in every overlap.
+    const dir = path.segmentAt(mid).dir;
+    const lift = -0.21 + dir * 0.006 + (this._baySlot & 1) * 0.003;
+    Matrix.RotationYToRef(yaw, this._m);
+    this._m.setTranslationFromFloats(this._w[0], lift, this._w[2]);
+    this._m.copyToArray(this.floorBuf, o);
+
     if (hidden) {
       for (const b of this.bayBufs) b.fill(0, o, o + 16);
       if (this.shaftBuf) this.shaftBuf.fill(0, o, o + 16);
       return;
     }
-    const yaw = path.yawExactAt(mid);
-    path.toWorldExact(mid, 0, 0, this._w);
-    Matrix.RotationYToRef(yaw, this._m);
     this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
     for (const b of this.bayBufs) this._m.copyToArray(b, o);
     if (this.shaftBuf) {
@@ -444,7 +543,7 @@ export default class Props {
 
   /** Every mesh that should cast a shadow. */
   casters() {
-    return [this.bayLight, this.bayDark, this.accentStone];
+    return [this.colLight, this.bayLight, this.bayDark, this.accentStone];
   }
 
   dispose() {
