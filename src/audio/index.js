@@ -618,13 +618,40 @@ export default class Audio {
     }
     const ladder = { pickups: RUN_N, chimed: rungs, voices: lr.sfx.voices };
 
+    // Fifth pass: the worst moment the game can actually produce. A top-speed
+    // star run, footfalls, two lane changes, a jump into a hard landing, a
+    // corner and its flourish, then a hit and a death — with the bed playing
+    // underneath. Nothing here may reach the converter above 1.0. This is the
+    // check that caught the mix clipping in the first place.
+    const dr = await this.renderOffline(4, (sfx5, music5) => {
+      music5.start(0);
+      for (let k = 0; k < 45; k++) music5.update(k * 0.1, 1);
+      for (let k = 0; k < 24; k++) sfx5.star(0.5 + k * 0.06, k);
+      for (let k = 0; k < 14; k++) sfx5.foot(0.3 + k * 0.22, k & 1);
+      sfx5.lane(0.7, 1); sfx5.lane(1.3, -1);
+      sfx5.jump(1.0); sfx5.land(1.55, true);
+      sfx5.turn(1.8, 1); sfx5.flourish(2.4);
+      sfx5.impact(3.0); sfx5.death(3.05);
+    });
+    const DL = dr.buf.getChannelData(0), DR = dr.buf.getChannelData(1);
+    let dpeak = 0, dclip = 0;
+    for (let s2 = 0; s2 < DL.length; s2++) {
+      const m = Math.abs(DL[s2]) > Math.abs(DR[s2]) ? Math.abs(DL[s2]) : Math.abs(DR[s2]);
+      if (m > dpeak) dpeak = m;
+      if (m >= 0.999) dclip++;
+      if (!Number.isFinite(m)) finite = false;
+    }
+    const dogpile = { peak: +dpeak.toFixed(3), clipped: dclip, voices: dr.sfx.voices };
+
     const silent = sounds.filter((s) => s.peak < 0.01 || s.rise < 1.5).map((s) => s.name);
     return {
       ok: finite && silent.length === 0 && mpeak > 0.005 && peakAll <= 1.0 &&
-        cap.started <= cap.pool && ladder.chimed === ladder.pickups,
+        cap.started <= cap.pool && ladder.chimed === ladder.pickups &&
+        dogpile.clipped === 0,
       weakestRise: +weakest.toFixed(2),
       cap,
       ladder,
+      dogpile,
       preset: q === this._q ? this.ctx.config.presetName : 'default',
       sampleRate: SR,
       finite,

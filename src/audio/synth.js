@@ -78,6 +78,33 @@ export function makeImpulseResponse(ac, rng, seconds, channels, decay) {
 }
 
 /**
+ * Transfer curve for the final soft clipper.
+ *
+ * A DynamicsCompressorNode is not a limiter. Its detector follows level, not
+ * peaks, so a dense passage of bells — RMS around -16 dB, crests near 0 dB —
+ * reads as quiet to it and sails past the threshold into the converter.
+ * Measured, before this existed: a top-speed star run with the bed underneath
+ * peaked at 1.009 and clipped four samples.
+ *
+ * A waveshaper is sample-accurate and cannot be fooled. This curve is exactly
+ * linear below `knee`, so nothing in normal play is coloured by it at all, and
+ * bends to an asymptote at 1.0 above it, so the loudest imaginable pile-up
+ * saturates gently instead of clipping. A waveshaper's input domain is [-1,1],
+ * so the bus halves the signal on the way in and the curve maps it back out.
+ */
+export function makeSoftClipCurve(n, knee) {
+  const c = new Float32Array(n);
+  const span = 1 - knee;
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 4 - 2;          // input domain, pre-scaled by 0.5
+    const a = Math.abs(x);
+    const y = a <= knee ? a : knee + span * Math.tanh((a - knee) / span);
+    c[i] = x < 0 ? -y : y;
+  }
+  return c;
+}
+
+/**
  * Percussive envelope: near-instant attack, exponential decay to silence.
  * This is the shape of every struck object — bell, chime, glass, thud.
  */

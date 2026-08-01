@@ -1,21 +1,25 @@
 // audio/bus.js — the master bus.
 //
 //   voices ──► sfx ────┐
-//     │                ├──► master ──► limiter ──► destination
+//     │                ├──► master ──► limiter ──► clipper ──► destination
 //   music ─────────────┤
 //     │                │
 //     └─► verbIn ──► convolver ──► verbOut ──┘
 //
-// One limiter across the whole mix, not per sound. A runner fires a chime, a
-// footstep, a swish and a pad note inside the same 100ms often enough that
-// without a limiter the sum clips on the loud moments and the game sounds
-// cheap. A single DynamicsCompressor with a fast attack and a high ratio is
-// effectively free and makes the mix survive a dogpile.
+// Two stages of protection across the whole mix, not per sound. A runner fires
+// a chime, a footstep, a swish and a pad note inside the same 100ms often
+// enough that without them the sum clips on exactly the best moments.
+//
+// The compressor rides sustained density: it is level-following, so it pulls
+// down a busy passage as a whole. The waveshaper is the actual ceiling: it is
+// sample-accurate, transparent below its knee, and mathematically incapable of
+// letting anything past 1.0. Compressors alone do not do that, which is a
+// mistake worth not making twice — see makeSoftClipCurve.
 //
 // Constructed against any BaseAudioContext, so the offline self-test builds
 // exactly the same graph the player hears.
 
-import { makeImpulseResponse, makeNoiseBuffer } from './synth.js';
+import { makeImpulseResponse, makeNoiseBuffer, makeSoftClipCurve } from './synth.js';
 
 export class Bus {
   /**
@@ -31,14 +35,24 @@ export class Bus {
     this.master.gain.value = p.master;
 
     this.limiter = ac.createDynamicsCompressor();
-    this.limiter.threshold.value = -7;
-    this.limiter.knee.value = 6;
-    this.limiter.ratio.value = 14;
-    this.limiter.attack.value = 0.003;
-    this.limiter.release.value = 0.18;
+    this.limiter.threshold.value = -9;
+    this.limiter.knee.value = 8;
+    this.limiter.ratio.value = 9;
+    this.limiter.attack.value = 0.004;
+    this.limiter.release.value = 0.22;
+
+    // Halve on the way in because a WaveShaper's input domain is [-1,1]; the
+    // curve is built over [-2,2] and maps straight back out at unity.
+    this.preClip = ac.createGain();
+    this.preClip.gain.value = 0.5;
+    this.clipper = ac.createWaveShaper();
+    this.clipper.curve = makeSoftClipCurve(2048, 0.72);
+    this.clipper.oversample = '2x';
 
     this.master.connect(this.limiter);
-    this.limiter.connect(ac.destination);
+    this.limiter.connect(this.preClip);
+    this.preClip.connect(this.clipper);
+    this.clipper.connect(ac.destination);
 
     this.sfx = ac.createGain();
     this.sfx.gain.value = p.sfxLevel;
@@ -63,7 +77,7 @@ export class Bus {
     // every hit, so noise sounds never phase-lock into an obvious loop.
     this.noise = makeNoiseBuffer(ac, rng, 1.5);
 
-    this.nodes = 7;
+    this.nodes = 9;
     this._musicLevel = p.musicLevel;
     this._masterLevel = p.master;
   }
@@ -99,6 +113,9 @@ export class Bus {
   dispose() {
     this.master.disconnect();
     this.limiter.disconnect();
+    this.preClip.disconnect();
+    this.clipper.disconnect();
+    this.clipper.curve = null;
     this.sfx.disconnect();
     this.music.disconnect();
     this.verbIn.disconnect();

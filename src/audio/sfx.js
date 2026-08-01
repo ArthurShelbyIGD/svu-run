@@ -45,6 +45,10 @@ export class Sfx {
     this.q = q;
     /** Incremented on every voice actually started. Read by the self-test. */
     this.voices = 0;
+    // Rolling estimate of how many chimes are currently overlapping, used to
+    // keep a star run from ballooning. See star().
+    this._density = 0;
+    this._lastStar = -99;
   }
 
   // ---- primitives ------------------------------------------------------
@@ -171,16 +175,30 @@ export class Sfx {
     // what keeps a long star run from eating the whole voice pool: at top speed
     // stars arrive about every 60ms, so the chime has to get out of its own way.
     const dur = 0.80 - s * 0.022;
-    this.bell(t, f, 0.46, dur, 3.03, 1.55, 0.34, pan);
+
+    // Level-normalise against how fast stars are arriving.
+    //
+    // At top speed a run delivers a pickup every 60ms, so eight chimes overlap
+    // and their sum is roughly sqrt(8) times one of them — which is how the mix
+    // reached 1.009 and clipped the converter. Backing each chime off by the
+    // rate keeps the RUN at a constant loudness while a single lonely pickup
+    // stays full-blooded, which is what a mix engineer would do by hand. The
+    // exponent is below a half deliberately: a dense run should still be a
+    // little louder, just not four times louder.
+    this._density = this._density * Math.exp(-(t - this._lastStar) / 0.45) + 1;
+    this._lastStar = t;
+    const amp = 0.46 / Math.pow(this._density, 0.35);
+
+    this.bell(t, f, amp, dur, 3.03, 1.55, 0.34, pan);
     if (this.q.extras) {
       // A quiet octave above, struck a hair late — the glassy top that says
       // "cut stone" rather than "sine wave".
-      this.bell(t + 0.006, f * 2.005, 0.13, dur * 0.55, 2.01, 0.85, 0.45, pan * -1);
+      this.bell(t + 0.006, f * 2.005, amp * 0.28, dur * 0.55, 2.01, 0.85, 0.45, pan * -1);
     }
     // High rungs get a tick of dust on the strike so the ladder keeps growing
     // in excitement after it stops growing in pitch.
     if (this.q.extras && s >= LADDER_MAX - 2) {
-      this.noise(t, 0.09, 0.10, 'highpass', 5200, 8200, 0.7, 0.4, pan, 0.001);
+      this.noise(t, 0.09, amp * 0.22, 'highpass', 5200, 8200, 0.7, 0.4, pan, 0.001);
     }
   }
 
