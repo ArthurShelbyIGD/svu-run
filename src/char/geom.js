@@ -161,6 +161,37 @@ export function ellipsoid(o) {
 }
 
 /**
+ * Grid mesh from an arbitrary parametric point function.
+ *
+ * This exists so that a surface and the pavé stones set INTO it can be built
+ * from one shared definition. The previous build computed the hood shell from a
+ * superellipsoid and its seams from a plain sphere, and the seams floated off
+ * the fabric in places and sank into it in others. One function, one surface.
+ *
+ * Winding matches `ellipsoid`: quad (a = u,v), (b = u+1,v), (c = u,v+1).
+ */
+export function surface(fn, su, sv, uRep = 1, vRep = 1) {
+  const pos = [], uv = [], idx = [];
+  const p = [0, 0, 0];
+  for (let i = 0; i <= sv; i++) {
+    const v = i / sv;
+    for (let j = 0; j <= su; j++) {
+      const u = j / su;
+      fn(u, v, p);
+      pos.push(p[0], p[1], p[2]);
+      uv.push(u * uRep, v * vRep);
+    }
+  }
+  for (let i = 0; i < sv; i++) {
+    for (let j = 0; j < su; j++) {
+      const a = i * (su + 1) + j, b = a + 1, c = a + su + 1, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  return { pos, uv, idx };
+}
+
+/**
  * A generalised tube through a list of rings. Limbs, fingers, piping, the zip.
  *
  *   rings: [ [cx, cy, cz, rx, rz] , ... ]  ordered along the tube

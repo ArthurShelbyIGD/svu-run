@@ -5,53 +5,69 @@
 //
 // THE CAMERA IS BEHIND THE CHARACTER FOR THE ENTIRE GAME.
 // Everything here is ordered by that fact. The face is seen on the results
-// screen and nowhere else; it is deliberately cheap. What players actually
-// look at for an hour is the back of a hooded onesie with a cape on it.
+// screen and nowhere else. What players look at for an hour is the back of a
+// hooded onesie with a cape on it.
 //
-// Priorities, in the order the budget is spent:
-//   1. THE CAPE. Simulated cloth — see cape.js. It is the largest moving thing
-//      in frame and the only part that reacts to how you are playing.
-//   2. The onesie as real garment geometry: a hood with folds and a seam over
-//      the crown, ears that grow out of the hood rather than sitting on it, a
-//      collar, cuffs, a zip, shoulder caps. Built with warped parametric
-//      surfaces (geom.js), not primitives.
-//   3. Gloves with separate fingers. Silhouette, not anatomy.
-//   4. Chibi proportion — the head is over half the standing height. Get that
-//      wrong and no amount of detail rescues it.
+// THE DECISION THAT DEFINES THIS FILE
+//
+// Pavé used to be a tiled normal map. A critic looking only at rendered frames
+// called the result "a grey knitted sponge ball with a black bin-bag stuck to
+// it". Both halves of that were correct and both were geometric problems
+// wearing material costumes:
+//
+//   * A normal-mapped stone two pixels across averages to flat matte grey, and
+//     leaves the silhouette a perfectly smooth arc. Real pavé crenellates the
+//     outline. So the stones are now REAL GEOMETRY — see pave.js — laid at a
+//     constant physical pitch over every part, sitting proud of a dark setting
+//     bed that shows through the gaps.
+//   * The cape was dark chrome against a dark world, so it rendered as a hole
+//     cut in the screen. It is now polished silver with ribs, which is what the
+//     reference wing actually is.
 //
 // Parts are MERGED per material (geom.js), so the whole character is about a
-// dozen draw calls despite having roughly twenty times the detail of the
-// primitive blockout it replaces.
+// dozen draw calls despite carrying ~600 individually cut stones.
 
 import { TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
-import { Geo, ellipsoid, lathe, tube, torus, arc, pipe, gem } from './geom.js';
+import { Geo, ellipsoid, surface, tube, torus, arc, pipe, gem } from './geom.js';
+import { stoneField } from './pave.js';
 import { Cape } from './cape.js';
 
 // Proportions in metres. These numbers ARE the character.
+//
+// Head-to-body was 1 : 0.79 and the reference is close to 1 : 1. From directly
+// behind — the view that is on screen all game — the head was so much wider
+// than the torso that it eclipsed the entire body and the character read as a
+// ball with boots. The torso is longer and the head sits higher for that
+// reason, while the head stays over half the standing height because oversized
+// head is the recognisable part of the collection.
 const P = {
-  standH: 1.62,
+  standH: 1.66,
   headR: 0.425,
-  headY: 1.10,
-  faceR: 0.352,
-  faceZ: 0.140,          // how far the face protrudes through the hood
-  hoodRimR: 0.400,
-  earR: 0.170,
-  earSpread: 0.312,
+  headY: 1.205,
+  faceR: 0.345,
+  faceZ: 0.168,          // how far the face centre sits forward of the head
+  earR: 0.168,
+  earSpread: 0.318,
   earY: 0.80,            // fraction of headR above centre
-  bodyW: 0.300, bodyH: 0.222, bodyD: 0.250,
-  bodyY: 0.615,
-  armR: 0.086, armLen: 0.290,
-  handR: 0.108,
-  shoulderX: 0.288, shoulderY: 0.752,
-  legR: 0.102, legLen: 0.200,
-  bootR: 0.140,
-  hipX: 0.145, hipY: 0.438,
-  antennaLen: 0.36, orbR: 0.098,
-  eyeR: 0.079, eyeX: 0.132, eyeY: 0.020,
+  bodyW: 0.288, bodyH: 0.352, bodyD: 0.244,
+  bodyY: 0.640,
+  upperLen: 0.205, foreLen: 0.195, armR: 0.088,
+  handR: 0.104,
+  shoulderX: 0.276, shoulderY: 0.880,
+  legR: 0.104, legLen: 0.205,
+  bootR: 0.142,
+  hipX: 0.147, hipY: 0.452,
+  antennaLen: 0.40, orbR: 0.104,
+  eyeR: 0.082, eyeX: 0.130, eyeY: 0.005,
 };
 
 const TWO_PI = Math.PI * 2;
+
+/** Signed power. Squares off a circular cross-section toward a rounded box. */
+function sgp(v, e) {
+  return (v < 0 ? -1 : 1) * Math.pow(Math.abs(v), e);
+}
 
 export default class Character {
   constructor(ctx) {
@@ -76,6 +92,7 @@ export default class Character {
     this._aY = 0;
     this._bobV = 0;
     this._warm = false;
+    this.stoneCount = 0;
   }
 
   init() {
@@ -84,16 +101,27 @@ export default class Character {
     const low = q.name === 'low';
     const high = q.name === 'high';
 
-    // Tessellation budget. `low` must hold 60fps on a mid-range phone, so it
-    // gets roughly half the vertices — the same shapes, coarser.
-    // su is a MULTIPLE OF THE GORE COUNT (8), deliberately. At 28 samples for
-    // 8 gores the surface is sampled 3.5 times per fold, which beats against
-    // the fold frequency and averages the whole thing back into a smooth ball —
-    // the folds were in the mesh and invisible on screen.
-    this.su = low ? 16 : (high ? 32 : 24);
-    this.sv = low ? 10 : (high ? 18 : 14);
+    this.su = low ? 18 : (high ? 30 : 24);
+    this.sv = low ? 11 : (high ? 18 : 14);
     this.sd = low ? 7 : (high ? 12 : 9);     // detail parts: cuffs, fingers
     this.lowQ = low;
+
+    // ONE pitch for the whole character. Stones that change size between the
+    // head, the torso and the boots is the fastest way to break the illusion,
+    // and the previous build's did.
+    //
+    // 0.072m on a 0.85m-wide hood puts roughly 12 stones across the visible
+    // crown, which is what the reference shows. The old normal map ran at more
+    // than 70, which is why it dissolved into fabric texture.
+    this.pitch = low ? 0.090 : (high ? 0.072 : 0.080);
+    this.facets = low ? 5 : 6;
+
+    // A private deterministic stream. Stone rotations and micro-jitter are
+    // procedural geometry, not gameplay, but they still must be identical
+    // between runs or the capture harness is worthless — hence a fork of
+    // ctx.rng rather than Math.random. ARCHITECTURE §4.3.
+    const fork = this.ctx.rng.fork();
+    this.rand = () => fork.next();
 
     this.root = new TransformNode('charRoot', scene);
     const body = new TransformNode('charBody', scene);
@@ -115,89 +143,118 @@ export default class Character {
     }
   }
 
+  /** Emit one stone field, accumulating the total for the perf budget. */
+  _stones(geo, surf, opts) {
+    opts.pitch = opts.pitch === undefined ? this.pitch : opts.pitch;
+    opts.facets = this.facets;
+    opts.rng = this.rand;
+    const f = stoneField(surf, opts);
+    geo.at(0, 0, 0);
+    geo.add(f);
+    this.stoneCount += f.count;
+    return f;
+  }
+
   // ---- the onesie ------------------------------------------------------
 
   /**
    * Torso, shoulders, hips and the garment details that sell it as clothing.
    *
-   * The previous version was one sphere scaled on three axes. A sphere has no
-   * shoulders, so the arms read as balls stuck to a ball. A superellipsoid with
-   * a waist warp has a shoulder line and a hip line, which is the whole
-   * difference between "a character in a onesie" and "a snowman".
+   * The body is one parametric surface rather than a scaled sphere, and the
+   * SAME function is handed to the stone field, so every stone sits exactly on
+   * the fabric instead of on a nominal sphere near it.
    */
   _buildTorso(body) {
     const mat = this.ctx.get('mat');
-    const su = this.su, sv = this.sv;
 
+    // v = 0 at the neck opening, 1 at the hem. Deliberately not a full sphere:
+    // the top is cut off because the hood's cowl covers it, and the bottom is
+    // flat-ish because the onesie ends in a hem band.
+    const bodySurf = (u, v, out) => {
+      const a = (0.10 + 0.86 * v) * Math.PI;
+      const s = Math.sin(a), c = Math.cos(a);
+      // squarer than a sphere -> a shoulder line and a hip line
+      const prof = Math.pow(Math.max(0, s), 0.60);
+      // waist pinch, hip flare
+      const t = Math.min(1, Math.max(0, (v - 0.10) / 0.72));
+      const waist = 1 - 0.105 * Math.sin(Math.PI * t) + 0.055 * t * t;
+      // soft vertical fabric creases
+      const crease = 0.016 * Math.cos(u * TWO_PI * 6) * Math.min(1, v * 2.4);
+      const k = prof * waist + crease;
+      const ph = u * TWO_PI;
+      out[0] = P.bodyW * k * sgp(Math.sin(ph), 0.86);
+      out[1] = P.bodyH * c;
+      out[2] = P.bodyD * k * sgp(Math.cos(ph), 0.86);
+    };
+    this._bodySurf = bodySurf;
+
+    // --- the setting: a dark bed that the stones sit proud of ---
+    // Slightly shrunk so the stones genuinely overhang it. The gaps between
+    // stones are where the contrast comes from; if the bed sits flush with the
+    // girdles there are no gaps and it goes back to reading as one grey mass.
+    const bed = new Geo();
+    bed.at(0, P.bodyY, 0, 0, 0, 0, 0.982, 0.99, 0.982);
+    bed.add(surface(bodySurf, this.su, this.sv, 2, 1));
+    bed.toMesh('onesieBed', this.ctx.scene, mat.get('darkChrome'), body);
+
+    // Front placket: the zip runs down the chest, so no stones there.
     const g = new Geo();
-
-    // Main body. e1/e2 below 1 square it off toward a rounded box; the warp
-    // pulls in a waist and flares the hips, and adds soft vertical fabric
-    // creases that catch the light.
     g.at(0, P.bodyY, 0);
-    g.add(ellipsoid({
-      rx: P.bodyW, ry: P.bodyH * 1.32, rz: P.bodyD, e1: 0.86, e2: 0.74,
-      su, sv,
-      warp: (u, v) => {
-        const waist = 1 - 0.085 * Math.sin(Math.PI * Math.min(1, Math.max(0, (v - 0.18) / 0.62)));
-        const crease = 0.014 * Math.cos(u * TWO_PI * 6) * Math.min(1, v * 2.2);
-        return waist + crease;
-      },
-      uRep: 3, vRep: 1.4,
-    }));
+    this._stones(g, bodySurf, {
+      v0: 0.02, v1: 0.985,
+      omit: (x, y, z) => Math.abs(x) < 0.050 && z > P.bodyD * 0.55,
+    });
+    g.toMesh('onesieStones', this.ctx.scene, mat.get('whiteGold'), body);
 
-    // Shoulder caps: small pavé masses where the sleeves meet the body. They
-    // close the gap that made the arms look detached.
-    for (const s of [-1, 1]) {
-      g.at(s * P.shoulderX * 0.86, P.shoulderY - 0.012, 0, 0, 0, s * -0.34);
-      g.add(ellipsoid({ rx: 0.108, ry: 0.098, rz: 0.104, e1: 0.85, su: this.sd + 4, sv: this.sd }));
-    }
-
-    // The nape: hood fabric bunching where the hood meets the back. Pure rear
-    // silhouette detail, invisible from the front, and one of the strongest
-    // reads in the chase camera.
-    g.at(0, P.shoulderY + 0.052, -P.bodyD * 0.52, -0.26);
-    g.add(ellipsoid({
-      rx: 0.238, ry: 0.108, rz: 0.132, e1: 0.8, e2: 0.7, su: su, sv: this.sd,
-      warp: (u) => 1 + 0.05 * Math.cos(u * TWO_PI * 5),
-    }));
-
-    // Back yoke seam — a raised piping line across the shoulder blades.
-    g.at(0, P.shoulderY - 0.055, -P.bodyD * 0.60, Math.PI / 2, 0, 0);
-    g.add(arc(0.215, 0.017, -1.15, 1.15, this.sd + 6, 6));
-
-    // Hip hem: the onesie ends in a thicker band above the legs.
-    g.at(0, P.bodyY - P.bodyH * 1.16, 0, Math.PI / 2);
-    g.add(torus(P.bodyW * 0.80, 0.034, su, this.sd, null, 0.7));
-
-    g.toMesh('onesie', this.ctx.scene, mat.get('paveWhite'), body);
-
-    // --- metal garment furniture, merged into one rhodium mesh ---
+    // --- metal garment furniture ---
     const t = new Geo();
-    // collar ring at the neck
-    t.at(0, P.shoulderY + 0.088, -0.005, Math.PI / 2);
-    t.add(torus(0.176, 0.030, su, this.sd, (u) => 1 + 0.35 * Math.max(0, Math.cos(u * TWO_PI)), 0.8));
+    // shoulder caps: small masses where the sleeves meet the body
+    for (const s of [-1, 1]) {
+      t.at(s * P.shoulderX * 0.90, P.shoulderY - 0.010, 0, 0, 0, s * -0.30);
+      t.add(ellipsoid({ rx: 0.104, ry: 0.092, rz: 0.100, e1: 0.85, su: this.sd + 4, sv: this.sd }));
+    }
+    // hem band at the bottom of the onesie
+    t.at(0, P.bodyY - P.bodyH * 0.965, 0, Math.PI / 2, 0, 0, 1.0, 1.0, 0.90);
+    t.add(torus(P.bodyW * 0.845, 0.030, this.su, this.sd, null, 0.75));
     t.toMesh('onesieTrim', this.ctx.scene, mat.get('polRhodium'), body);
 
-    // --- gold: the zip, and its pull ---
+    // --- gold: the zip with real teeth, and its pull ---
+    //
+    // The gold used to be a ribbon tied over the crown of the hood, which read
+    // as gift wrap around a ball. In the reference the gold is the hood OPENING
+    // and a front placket zip, and nothing else. It has been moved to both.
     const z = new Geo();
-    const zTop = P.shoulderY + 0.02, zBot = P.bodyY - P.bodyH * 1.05;
+    const zTop = P.shoulderY - 0.015, zBot = P.bodyY - P.bodyH * 0.90;
     const rings = [];
-    const zn = 8;
+    const zn = 10;
+    const zAt = (f) => {
+      const v = 0.055 + 0.86 * f;
+      const p = [0, 0, 0];
+      this._bodySurf(0, v, p);
+      return [0, P.bodyY + p[1], p[2] * 1.005];
+    };
     for (let i = 0; i <= zn; i++) {
-      const f = i / zn;
-      const y = zTop + (zBot - zTop) * f;
-      // follow the curve of the chest so the zip lies ON the body
-      const dz = P.bodyD * (0.97 - 0.16 * f * f);
-      rings.push([0, y, dz, 0.017, 0.013]);
+      const p = zAt(i / zn);
+      rings.push([0, p[1], p[2], 0.014, 0.011]);
     }
     z.at(0, 0, 0);
     z.add(tube(rings, 6, true, true, 1, 6));
-    // zip pull: a small faceted gem, exactly the jewellery detail the
-    // reference is full of
-    z.at(0, zBot + 0.012, P.bodyD * 0.86, 0.5);
-    z.add(gem(0.036, 6, 0.9));
+    // teeth — individually modelled, alternating sides. At gameplay distance
+    // this is a dotted gold line down the chest, which is exactly what the
+    // reference shows and what a smooth tube does not give you.
+    const teeth = this.lowQ ? 12 : 20;
+    for (let i = 0; i < teeth; i++) {
+      const p = zAt(0.03 + 0.94 * (i / (teeth - 1)));
+      const side = (i & 1) ? 1 : -1;
+      z.at(side * 0.017, p[1], p[2], 0, 0, 0, 0.7, 0.5, 0.7);
+      z.add(gem(0.020, 4, 0.9));
+    }
+    // zip pull
+    const pull = zAt(0.99);
+    z.at(0, pull[1] - 0.010, pull[2] + 0.020, 0.5);
+    z.add(gem(0.034, 6, 0.9));
     z.toMesh('zip', this.ctx.scene, mat.get('polGold'), body);
+    void zTop; void zBot;
   }
 
   // ---- the hood --------------------------------------------------------
@@ -205,256 +262,230 @@ export default class Character {
   _buildHead(body) {
     const mat = this.ctx.get('mat');
     const scene = this.ctx.scene;
-    const su = this.su, sv = this.sv;
 
     const head = new TransformNode('head', scene);
     head.parent = body;
     head.position.y = P.headY;
     this.parts.head = head;
 
-    // --- hood shell (pavé) ---
+    // ONE hood surface, used for the setting bed, the stones and the aperture
+    // rim. v = 0 at the crown, 1 at the bottom edge of the cowl.
     //
-    // Not a sphere. A dome that flares into a COWL over the shoulders, because
-    // that is what a hood is and because a sphere in this material is a mirror:
-    // it reflects the studio horizon as a clean bright ring at ~80% of its
-    // silhouette radius, and on the back of the head — the one part of the
-    // character a player looks at all game — that artefact was the single
-    // strongest feature. See ARCHITECTURE §7.
-    //
-    // The warp is shared between the shell, the cowl and the gold piping so
-    // every one of them follows the same fabric. A ring at a fixed radius on a
-    // gored surface floats off it in places and sinks into it in others, which
-    // read on screen as a wire hoop hovering beside the head.
-    const hoodWarp = (u, v) => {
-      const gather = Math.min(1, Math.max(0, (v - 0.12) / 0.88));
-      // GORES. A hood is sewn from panels, and panels are what break up a
-      // mirror. The first pass used a shallow sine and the specular hotspot
-      // swallowed it whole. Seven gores with a sharpened profile give seven
-      // distinct ridges, each catching light at its own angle.
-      // EIGHT gores, not seven. With an odd count the back meridian u = 0.5
-      // lands in a trough, which cancelled the raised back seam exactly and
-      // left the centre of the head a smooth mirror — the one place it must
-      // not be. Even count, ridge on the seam.
-      const gore = Math.cos(u * TWO_PI * 8);
-      const folds = 0.070 * Math.sign(gore) * Math.pow(Math.abs(gore), 0.55) * (0.40 + 0.60 * gather);
-      // A raised ridge along the BACK meridian, u = 0.5 — dead centre of frame
-      // for the whole game, and what turns a ball into a garment.
-      const d = Math.abs(u - 0.5);
-      const seam = 0.060 * Math.exp(-(d * d) / 0.0022);
-      return 1 + folds + seam + 0.055 * gather * gather;
-    };
-    this._hoodWarp = hoodWarp;
-    // A point ON the hood surface, warp and all. Seams computed from this ride
-    // the fabric; seams computed from a plain sphere float off it.
-    const hoodPt = (u, v, out) => {
-      const th = (0.5 - v) * Math.PI;
-      const ct = Math.sign(Math.cos(th)) * Math.pow(Math.abs(Math.cos(th)), 0.93);
-      const st = Math.sign(Math.sin(th)) * Math.pow(Math.abs(Math.sin(th)), 0.93);
-      const ph = u * TWO_PI;
-      const k = hoodWarp(u, v) * out;
-      const sx = Math.sign(Math.sin(ph)) * Math.pow(Math.abs(Math.sin(ph)), 0.95);
-      const cz = Math.sign(Math.cos(ph)) * Math.pow(Math.abs(Math.cos(ph)), 0.95);
-      return [
-        P.headR * ct * sx * k,
-        P.headR * 0.995 * st + 0.035 * Math.cos(v * Math.PI) - 0.02,
-        P.headR * 1.025 * ct * cz * k - 0.022,
-      ];
-    };
-    this._hoodPt = hoodPt;
-
-    const g = new Geo();
-    g.at(0, 0, -0.022);
-    g.add(ellipsoid({
-      rx: P.headR, ry: P.headR * 0.995, rz: P.headR * 1.025,
-      e1: 0.93, e2: 0.95, su, sv,
-      v0: 0, v1: 0.74,
-      warp: hoodWarp,
-      // the crown sits a little higher than a sphere, which is the profile of
-      // fabric draped over a head rather than a ball
-      yWarp: (v) => 0.035 * Math.cos(v * Math.PI) - 0.02,
-      uRep: 3, vRep: 1.2,
-    }));
-
-    // The cowl: from the dome's lower edge, flaring OUT and down onto the
-    // shoulders, then tucking back under. This is the silhouette break.
-    const cowl = [];
-    const cn = Math.max(6, Math.round(sv * 0.7));
-    for (let i = 0; i <= cn; i++) {
-      const t = i / cn;
-      const a = (0.74 + 0.26 * t) * Math.PI;              // continue the sphere's latitude
-      const base = Math.sin(a) * P.headR;
-      // flare: widest a third of the way down the cowl, then drawn back in
-      const f = 1 + 0.30 * Math.sin(Math.PI * Math.min(1, t * 1.35));
-      const y = -Math.cos(a) * P.headR * 0.995 - 0.02 - t * 0.075;
-      cowl.push([base * f * 1.02, y]);
-    }
-    g.at(0, 0, -0.022);
-    g.add(lathe(cowl, su, (u, v) => hoodWarp(u, 0.74 + 0.26 * v), 3, 0.8));
-    // --- bear ears, built as part of the hood ---
-    // Each ear is a flattened pavé mass with a piped rim around its outer
-    // edge — the same detail the reference has, and what makes them read as
-    // sewn hood panels rather than balls balanced on top.
-    //
-    // The first attempt put a horizontal seam RING at the base of each ear.
-    // From the chase camera those two rings read unmistakably as a pair of
-    // spectacles. Deleted. Rear-view detail has to be checked from the rear.
-    for (const s of [-1, 1]) {
-      const ex = s * P.earSpread, ey = P.headR * P.earY, ez = -0.052;
-      g.at(ex, ey, ez, 0, 0, s * -0.20);
-      g.add(ellipsoid({
-        rx: P.earR, ry: P.earR * 1.06, rz: P.earR * 0.74, e1: 0.9,
-        su: this.sd + 6, sv: this.sd + 2,
-        warp: (u, v) => 1 + 0.03 * Math.cos(u * TWO_PI * 5) * v,
-      }));
-      // piped rim around the top two-thirds of the ear
-      g.at(ex, ey, ez - 0.010, Math.PI / 2, 0, s * -0.20);
-      g.add(arc(P.earR * 0.99, 0.019, 0.85, TWO_PI - 0.85, this.sd + 8, 6));
-    }
-    g.toMesh('hood', scene, mat.get('paveWhite'), head);
-
-    // --- hood brim: the rim that frames the face ---
-    // Radius matters. The first attempt at this sat INSIDE the face sphere's
-    // silhouette and was completely invisible; it has to ride proud of the
-    // face or it does nothing at all. Thicker at the top than at the chin,
-    // like an actual hood opening.
-    //
-    // It is an ARC, not a ring. The first version was a full torus, and its
-    // outer radius was larger than the hood's, so it poked straight through the
-    // BACK of the head and rendered as a bright band across the one part of the
-    // character players actually look at. Found by looking at a true rear
-    // frame; invisible in the front and profile poses.
-    const b = new Geo();
-    const brimPts = [];
-    const bn = Math.max(12, su);
-    for (let i = 0; i <= bn; i++) {
-      // Sweeps the FRONT only, and its ends are drawn in and forward. The
-      // first version ran too far round and its outer radius exceeded the
-      // hood's, so the two tips punched out through the sides of the head and
-      // read as a bar laid across it.
-      const a = -1.62 + (3.24 * i) / bn;
-      const pull = 1 - 0.13 * Math.pow(Math.abs(a) / 1.62, 2);
-      brimPts.push([
-        Math.sin(a) * P.hoodRimR * 0.98 * pull,
-        -Math.cos(a) * P.hoodRimR * 0.95 * pull + 0.010,
-        0.105 + (1 - Math.cos(a)) * 0.055,
-      ]);
-    }
-    b.at(0, 0, 0);
-    b.add(pipe(brimPts, (t) => 0.030 + 0.036 * Math.sin(Math.PI * t), this.sd + 2));
-    b.toMesh('hoodBrim', scene, mat.get('paveWhiteFine'), head);
-
-    const inner = new Geo();
-    for (const s of [-1, 1]) {
-      inner.at(s * P.earSpread, P.headR * P.earY, 0.048, 0, 0, s * -0.20);
-      inner.add(ellipsoid({
-        rx: P.earR * 0.58, ry: P.earR * 0.62, rz: P.earR * 0.34,
-        su: this.sd + 4, sv: this.sd,
-      }));
-    }
-    inner.toMesh('earInner', scene, mat.get('earInner'), head);
-
-    // --- face (cheap, on purpose) ---
-    // The BACK of the face is pulled in hard. That is not an aesthetic choice.
-    // The face is warm rose gold and the hood is white pavé, and at full radius
-    // the face's silhouette grazed through the hood's gore troughs and rendered
-    // as a bright rose RING across the back of the head — on the one part of
-    // the character that is on screen for the entire game. It was invisible in
-    // the front, profile and three-quarter poses and obvious the moment a true
-    // rear frame existed. Hiding one mesh at a time in a rendered frame found
-    // it in one pass; no amount of staring at the numbers had.
-    const f = new Geo();
-    f.at(0, 0, P.faceZ + 0.028);
-    f.add(ellipsoid({
-      rx: P.faceR * 0.97, ry: P.faceR * 0.99, rz: P.faceR * 0.96, e1: 0.95, su, sv,
-      warp: (u) => {
-        const d = Math.abs(u - 0.5);
-        return 1 - 0.26 * Math.exp(-(d * d) / 0.052);
-      },
-    }));
-    // fringe peeking out under the brim — must sit PROUD of the face sphere or
-    // it is swallowed by it
-    f.at(0, P.faceR * 0.60, P.faceZ + 0.10, -0.12, 0, 0, 1.02, 0.42, 0.44);
-    f.add(ellipsoid({
-      rx: P.faceR * 0.76, su: this.sd + 6, sv: this.sd,
-      warp: (u) => 1 + 0.06 * Math.cos(u * TWO_PI * 7),
-    }));
-    f.toMesh('face', scene, mat.get('polRose'), head);
-
-    // eyes: one merged mesh per material instead of nine little spheres
-    const dark = new Geo();
-    const iris = new Geo();
-    const shine = new Geo();
-    for (const s of [-1, 1]) {
-      dark.at(s * P.eyeX, P.eyeY, P.faceZ + P.faceR * 0.80, 0, 0, 0, 0.92, 1.22, 0.62);
-      dark.add(ellipsoid({ rx: P.eyeR, su: this.sd + 4, sv: this.sd }));
-      iris.at(s * P.eyeX, P.eyeY - 0.012, P.faceZ + P.faceR * 0.86, 0, 0, 0, 1, 1.1, 0.4);
-      iris.add(ellipsoid({ rx: P.eyeR * 0.52, su: this.sd + 2, sv: this.sd }));
-      shine.at(s * P.eyeX + 0.026, P.eyeY + 0.036, P.faceZ + P.faceR * 0.90, 0, 0, 0, 1, 1, 0.6);
-      shine.add(ellipsoid({ rx: P.eyeR * 0.30, su: this.sd, sv: this.sd }));
-    }
-    // mouth rides with the dark group
-    dark.at(0, -0.135, P.faceZ + P.faceR * 0.84, 0, 0, 0, 1.5, 0.55, 0.5);
-    dark.add(ellipsoid({ rx: 0.052, su: this.sd, sv: this.sd }));
-    dark.toMesh('eyes', scene, mat.get('eyeDark'), head);
-    iris.toMesh('iris', scene, mat.get('eyeIris'), head);
-    shine.toMesh('catchlight', scene, mat.get('catchlight'), head);
-
-    // --- gold piping over the crown ---
-    // The rear silhouette was white pavé, silver and black, and nothing else.
-    // The reference is full of yellow gold. A single piped seam running over
-    // the crown and down the back of the hood puts a warm line down the middle
-    // of the frame, and gives the eye something to read the head's FORM by —
-    // a sphere with a line over it is not a sphere any more.
-    // a = 0 is the front of the crown, pi/2 the top, pi the back of the nape
-    const p = new Geo();
-    const seamPts = [];
-    const sn = Math.max(14, this.sv);
-    const seamR = P.headR * 1.055;
-    for (let i = 0; i <= sn; i++) {
-      const a = 0.62 + (2.20 * i) / sn;
-      seamPts.push([0, Math.sin(a) * seamR * 0.99 - 0.02, -Math.cos(a) * seamR - 0.022]);
-    }
-    p.at(0, 0, 0);
-    p.add(pipe(seamPts, (t) => 0.016 + 0.010 * Math.sin(Math.PI * t), 7));
-
-    // PANEL SEAMS. Four gold lines running from the crown down the gore ridges.
-    //
-    // The gores themselves are in the mesh and measurably deep, and at gameplay
-    // distance they still read as nothing: a 3cm corrugation on a 42cm sphere
-    // loses to the pavé normal map and a bright key light. Soft form does not
-    // survive this material. Hard geometry does, and a raised gold line survives
-    // anything — it is also exactly how the reference piece is built, where
-    // every panel meets at a setting rather than a shading gradient.
-    const panelN = Math.max(10, Math.round(sv * 0.8));
-    for (const pu of (this.lowQ ? [0.25, 0.75] : [0.125, 0.375, 0.625, 0.875])) {
-      const pts = [];
-      for (let i = 0; i <= panelN; i++) {
-        const v = 0.055 + (0.665 * i) / panelN;
-        pts.push(this._hoodPt(pu, v, 1.022));
+    // The previous version built the dome from a superellipsoid and the cowl
+    // from a lathe whose profile ran the wrong way, so the "cowl over the
+    // shoulders" was in fact a second cap sitting on top of the crown. That is
+    // the sort of thing you only find by rebuilding from one definition.
+    const R = P.headR;
+    const hoodSurf = (u, v, out) => {
+      let r, y;
+      if (v <= 0.70) {
+        const a = (v / 0.70) * 0.80 * Math.PI;
+        r = Math.sin(a) * R;
+        y = Math.cos(a) * R * 1.00;
+      } else {
+        const s = (v - 0.70) / 0.30;
+        const a = 0.80 * Math.PI;
+        r = Math.sin(a) * R * (1 + 0.50 * Math.sin(Math.PI * Math.min(1, s * 1.12)));
+        y = Math.cos(a) * R - s * 0.20;
       }
-      p.at(0, 0, 0);
-      p.add(pipe(pts, (t) => 0.013 + 0.007 * Math.sin(Math.PI * t), 6));
+      // Eight gores. A hood is sewn from panels, and panels are what break up
+      // the specular ring a smooth ball reflects. Even count so a ridge — not a
+      // trough — lands on the back meridian, which is dead centre of frame for
+      // the whole game.
+      const gore = Math.cos(u * TWO_PI * 8);
+      const k = 1 + 0.032 * Math.sign(gore) * Math.pow(Math.abs(gore), 0.6) * Math.min(1, v * 3);
+      const ph = u * TWO_PI;
+      out[0] = r * k * Math.sin(ph);
+      out[1] = y - 0.018;
+      out[2] = r * k * 1.02 * Math.cos(ph) - 0.020;
+    };
+    this._hoodSurf = hoodSurf;
+
+    // The face aperture is defined as "inside the face sphere", so the opening
+    // is shaped by the real intersection of the two forms.
+    const fcz = P.faceZ, fr = P.faceR;
+    const inFace = (x, y, z, pad) => {
+      const dz = z - fcz;
+      return (x * x + y * y + dz * dz) < (fr + pad) * (fr + pad);
+    };
+
+    const bed = new Geo();
+    bed.at(0, 0, 0, 0, 0, 0, 0.985, 0.985, 0.985);
+    bed.add(surface(hoodSurf, this.su, this.sv, 2, 1));
+    // ears: the setting bed, flattened ovals growing out of the hood
+    const earSurf = [];
+    for (const s of [-1, 1]) {
+      const ex = s * P.earSpread, ey = R * P.earY, ez = -0.048;
+      const tiltZ = s * -0.20;
+      const cs = Math.cos(tiltZ), sn = Math.sin(tiltZ);
+      const f = (u, v, out) => {
+        const a = v * Math.PI;
+        const rr = Math.sin(a) * P.earR;
+        const yy = Math.cos(a) * P.earR * 1.06;
+        const ph = u * TWO_PI;
+        const lx = rr * Math.sin(ph), ly = yy, lz = rr * 0.70 * Math.cos(ph);
+        out[0] = ex + lx * cs - ly * sn;
+        out[1] = ey + lx * sn + ly * cs;
+        out[2] = ez + lz;
+      };
+      f.cx = ex; f.cy = ey; f.cz = ez;
+      earSurf.push(f);
+      bed.at(0, 0, 0);
+      bed.add(surface(f, this.sd + 8, this.sd + 4, 2, 1));
     }
-    // Drawstring casing: a gold ring around the hood, low down.
-    //
-    // It is here for a reason the reference does not show. A large smooth
-    // sphere in a mirror-finish material reflects the studio horizon as a clean
-    // bright RING at about 80% of its silhouette radius — see ARCHITECTURE §7
-    // on reflective materials. That ring was the strongest feature on the back
-    // of the head and it was an artefact. Vertical gores broke it up one way;
-    // this breaks it the other, and puts more gold in the rear silhouette.
-    const ringPts = [];
-    const rn = Math.max(24, su);
-    const rv = 0.695;
-    for (let i = 0; i <= rn; i++) ringPts.push(this._hoodPt(i / rn, rv, 1.030));
+    bed.toMesh('hoodBed', scene, mat.get('darkChrome'), head);
+
+    const st = new Geo();
+    this._stones(st, hoodSurf, {
+      v0: 0.015, v1: 0.99,
+      omit: (x, y, z) => inFace(x, y, z, 0.030),
+    });
+    for (const f of earSurf) {
+      this._stones(st, f, {
+        v0: 0.05, v1: 0.92, cx: f.cx, cy: f.cy, cz: f.cz,
+        // no stones inside the ear cup
+        omit: (x, y, z) => (z - f.cz) > 0.005
+          && ((x - f.cx) * (x - f.cx) + (y - f.cy) * (y - f.cy)) < P.earR * P.earR * 0.42,
+      });
+    }
+    st.toMesh('hoodStones', scene, mat.get('whiteGold'), head);
+
+    // --- ear cups: an inset opening in darker polished metal ---
+    const ic = new Geo();
+    for (const s of [-1, 1]) {
+      ic.at(s * P.earSpread, R * P.earY, -0.048 + P.earR * 0.44, 0, 0, s * -0.20,
+        1, 1, 0.55);
+      ic.add(ellipsoid({
+        rx: P.earR * 0.60, ry: P.earR * 0.64, su: this.sd + 6, sv: this.sd,
+      }));
+    }
+    ic.toMesh('earInner', scene, mat.get('earInner'), head);
+
+    // --- gold: the hood aperture rim, and a raised gold ring inside each ear
+    const p = new Geo();
+    // The rim is the CIRCLE WHERE THE TWO SPHERES MEET — the hood shell and the
+    // face — solved rather than guessed. Two spheres of radii Rh and Rf whose
+    // centres are d apart intersect in a circle at
+    //     z = (Rh^2 + d^2 - Rf^2) / 2d,   radius = sqrt(Rh^2 - z^2)
+    // which puts the gold exactly on the hood opening. The previous piping was
+    // a ring at a guessed radius and it floated off the fabric in places and
+    // sank into it in others.
+    const pad = 0.026;
+    const Rh = R * 1.012;
+    const Rf = fr + pad;
+    const zc = (Rh * Rh + fcz * fcz - Rf * Rf) / (2 * fcz);
+    const rc = Math.sqrt(Math.max(0.0001, Rh * Rh - zc * zc));
+    const rimPts = [];
+    const rn = this.lowQ ? 22 : 34;
+    for (let i = 0; i <= rn; i++) {
+      const a = (i / rn) * TWO_PI;
+      // slight downward pull at the chin, like a real hood opening
+      const droop = 0.030 * Math.max(0, -Math.cos(a));
+      rimPts.push([rc * Math.sin(a), rc * Math.cos(a) - 0.018 - droop, zc - 0.020 + droop * 0.6]);
+    }
     p.at(0, 0, 0);
-    p.add(pipe(ringPts, () => 0.017, 6));
-    // toggle at the nape
-    p.at(0, this._hoodPt(0.5, rv, 1.0)[1] - 0.012, -P.headR * 1.06, 0.35);
-    p.add(gem(0.040, 6, 0.9));
+    // thicker over the brow, thinner at the chin — a hood opening is a rolled
+    // edge, not a wire hoop
+    p.add(pipe(rimPts, (t) => {
+      const a = t * TWO_PI;
+      return 0.020 + 0.013 * Math.max(0, Math.cos(a));
+    }, 6));
+    for (const s of [-1, 1]) {
+      p.at(s * P.earSpread, R * P.earY, -0.048 + P.earR * 0.50, Math.PI / 2, 0, s * -0.20);
+      p.add(torus(P.earR * 0.66, 0.016, this.sd + 8, 6, null, 0.9));
+    }
     p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
 
+    this._buildFace(head, mat, scene);
     this._buildAntenna(head, mat, scene);
+  }
+
+  /**
+   * The face. Cheap, but no longer a chrome egg with two slits cut in it.
+   *
+   * It is seen on the results screen and in the front poses only, so it gets
+   * primitives — but a chibi face needs sclera, iris, pupil and a hard
+   * catchlight or it reads as dead, and it needs a nose and a mouth or it reads
+   * as a mask. That is five extra merged parts, not a modelling project.
+   */
+  _buildFace(head, mat, scene) {
+    const f = new Geo();
+    f.at(0, 0, P.faceZ);
+    f.add(ellipsoid({
+      rx: P.faceR * 0.98, ry: P.faceR * 1.00, rz: P.faceR * 0.96, e1: 0.95,
+      su: this.su, sv: this.sv,
+      warp: (u) => {
+        const d = Math.abs(u - 0.5);
+        return 1 - 0.24 * Math.exp(-(d * d) / 0.055);
+      },
+    }));
+    // nose: a small raised bump, which is what stops the profile reading as an
+    // egg. Tiny. It only has to exist.
+    f.at(0, -0.048, P.faceZ + P.faceR * 0.93, 0, 0, 0, 1, 0.9, 0.8);
+    f.add(ellipsoid({ rx: 0.036, su: this.sd, sv: this.sd }));
+    // upper lip / chin break: a shallow ridge under the mouth line
+    f.at(0, -0.145, P.faceZ + P.faceR * 0.84, Math.PI / 2, 0, 0, 1, 1, 0.35);
+    f.add(torus(0.062, 0.016, this.sd + 6, 6, (u) => 0.4 + 0.9 * Math.sin(Math.PI * u), 0.7));
+    f.toMesh('face', scene, mat.get('polRose'), head);
+
+    // --- eyes: sclera, iris, pupil, two catchlights ---
+    const sclera = new Geo();
+    const iris = new Geo();
+    const dark = new Geo();
+    const shine = new Geo();
+    for (const s of [-1, 1]) {
+      sclera.at(s * P.eyeX, P.eyeY, P.faceZ + P.faceR * 0.76, 0, 0, s * 0.10, 0.94, 1.20, 0.60);
+      sclera.add(ellipsoid({ rx: P.eyeR, su: this.sd + 4, sv: this.sd }));
+      iris.at(s * P.eyeX, P.eyeY - 0.014, P.faceZ + P.faceR * 0.83, 0, 0, 0, 1, 1.02, 0.42);
+      iris.add(ellipsoid({ rx: P.eyeR * 0.68, su: this.sd + 2, sv: this.sd }));
+      dark.at(s * P.eyeX, P.eyeY - 0.018, P.faceZ + P.faceR * 0.87, 0, 0, 0, 1, 1, 0.34);
+      dark.add(ellipsoid({ rx: P.eyeR * 0.33, su: this.sd, sv: this.sd }));
+      // brow: a thin dark arc above the eye. Chibi faces live or die on brows.
+      dark.at(s * P.eyeX, P.eyeY + P.eyeR * 1.28, P.faceZ + P.faceR * 0.80,
+        Math.PI / 2, 0, s * 0.22, 1, 1, 0.35);
+      dark.add(arc(P.eyeR * 0.86, 0.011, -0.9, 0.9, this.sd + 4, 5));
+      // catchlights: one big upper-left, one small lower-right. Two, at
+      // different sizes, is the difference between "glossy" and "alive".
+      shine.at(s * P.eyeX - 0.026, P.eyeY + 0.034, P.faceZ + P.faceR * 0.90, 0, 0, 0, 1, 1, 0.5);
+      shine.add(ellipsoid({ rx: P.eyeR * 0.30, su: this.sd, sv: this.sd }));
+      shine.at(s * P.eyeX + 0.028, P.eyeY - 0.036, P.faceZ + P.faceR * 0.88, 0, 0, 0, 1, 1, 0.5);
+      shine.add(ellipsoid({ rx: P.eyeR * 0.14, su: this.sd, sv: this.sd }));
+    }
+    // mouth: a cut line with a lower lip, not a black bean
+    dark.at(0, -0.128, P.faceZ + P.faceR * 0.86, Math.PI / 2, 0, 0, 1, 1, 0.30);
+    dark.add(arc(0.070, 0.012, -0.72, 0.72, this.sd + 6, 5));
+    sclera.toMesh('sclera', scene, mat.get('marbleLight'), head);
+    iris.toMesh('iris', scene, mat.get('eyeIris'), head);
+    dark.toMesh('eyes', scene, mat.get('eyeDark'), head);
+    shine.toMesh('catchlight', scene, mat.get('catchlight'), head);
+
+    // --- gold fringe: swept blades spilling from under the hood edge ---
+    // The reference's single most characterful detail after the ears. Blades,
+    // not a cap: each one is a flattened tapered tube swept across the brow, so
+    // the fringe has points and gaps instead of being a helmet.
+    const h = new Geo();
+    const blades = this.lowQ ? 5 : 8;
+    for (let i = 0; i < blades; i++) {
+      const t = blades === 1 ? 0.5 : i / (blades - 1);
+      const a = (t - 0.5) * 2.05;                 // across the forehead
+      const sweep = 0.55 + 0.45 * Math.sin(Math.PI * t);
+      const len = 0.135 * (0.72 + 0.5 * Math.sin(Math.PI * (0.15 + t * 0.8)));
+      const rings = [];
+      const n = 4;
+      for (let k = 0; k <= n; k++) {
+        const fq = k / n;
+        rings.push([
+          Math.sin(a) * P.faceR * 0.93 + fq * len * 0.85 * sweep,
+          P.faceR * 0.58 - fq * len * 1.25,
+          P.faceZ + Math.cos(a) * P.faceR * 0.88 + fq * len * 0.10,
+          0.030 * (1 - 0.85 * fq),
+          0.018 * (1 - 0.85 * fq),
+        ]);
+      }
+      h.at(0, 0, 0);
+      h.add(tube(rings, this.sd, true, true, 1, 2));
+    }
+    h.toMesh('fringe', scene, mat.get('polGold'), head);
   }
 
   _buildAntenna(head, mat, scene) {
@@ -466,6 +497,13 @@ export default class Character {
     stalkRoot.position.set(0.045, P.headR * 0.86, -0.10);
     this.parts.stalk = stalkRoot;
 
+    // gold cap where the stem enters the hood — the stem used to sprout
+    // straight out of the pavé like a pin stuck in a ball
+    const cap = new Geo();
+    cap.at(0.045, P.headR * 0.86, -0.10, 0.30, 0, -0.16, 1, 0.7, 1);
+    cap.add(ellipsoid({ rx: 0.052, ry: 0.040, rz: 0.052, e1: 0.7, su: this.sd + 4, sv: this.sd }));
+    cap.toMesh('stalkCap', scene, mat.get('polGold'), head);
+
     this.parts.stalkSegs = [];
     let prev = stalkRoot;
     const segs = 4;
@@ -474,9 +512,11 @@ export default class Character {
       const node = new TransformNode(`stalkSeg${i}`, scene);
       node.parent = prev;
       node.position.y = i === 0 ? 0 : segLen;
-      node.rotation.z = -0.14;
+      // A real BEND, increasing along the stem, so it arcs over the head like
+      // the reference instead of standing up like an aerial.
+      node.rotation.z = -0.10 - i * 0.09;
       const g = new Geo();
-      const r0 = 0.019 * (1 - i * 0.10), r1 = 0.019 * (1 - (i + 1) * 0.10);
+      const r0 = 0.019 * (1 - i * 0.09), r1 = 0.019 * (1 - (i + 1) * 0.09);
       g.at(0, 0, 0);
       g.add(tube([[0, 0, 0, r0, r0], [0, segLen, 0, r1, r1]], 6, false, false, 1, 2));
       g.toMesh(`stalkBit${i}`, scene, mat.get('polGold'), node);
@@ -484,57 +524,107 @@ export default class Character {
       prev = node;
     }
 
-    const o = new Geo();
-    o.at(0, segLen, 0);
-    o.add(ellipsoid({ rx: P.orbR, su: this.su, sv: this.sv, uRep: 3 }));
-    o.toMesh('orb', scene, mat.get('paveRuby'), prev);
-    const oc = new Geo();
-    oc.at(0, segLen, 0);
-    oc.add(ellipsoid({ rx: P.orbR * 0.52, su: this.sd + 4, sv: this.sd }));
-    oc.toMesh('orbCore', scene, mat.get('rubyGlow'), prev);
+    // --- the ruby: pavé-set, on its own coarser stone map ---
+    const orbSurf = (u, v, out) => {
+      const a = v * Math.PI;
+      const r = Math.sin(a) * P.orbR;
+      const ph = u * TWO_PI;
+      out[0] = r * Math.sin(ph);
+      out[1] = segLen + Math.cos(a) * P.orbR;
+      out[2] = r * Math.cos(ph);
+    };
+    const ob = new Geo();
+    ob.at(0, 0, 0);
+    ob.add(surface(orbSurf, this.su, this.sv, 2, 1));
+    ob.toMesh('orb', scene, mat.get('glassGem'), prev);
+
+    const os = new Geo();
+    this._stones(os, orbSurf, {
+      pitch: P.orbR * 0.30, v0: 0.03, v1: 0.97,
+      cy: segLen, jitter: 0.10, tilt: 0.14,
+    });
+    os.toMesh('orbStones', scene, mat.get('ruby'), prev);
+
+    // gold bezel collar where the stem enters the ruby
+    const bz = new Geo();
+    bz.at(0, segLen - P.orbR * 0.82, 0, Math.PI / 2, 0, 0, 1, 1, 0.8);
+    bz.add(torus(P.orbR * 0.50, 0.022, this.sd + 8, 6, null, 0.9));
+    bz.toMesh('orbBezel', scene, mat.get('polGold'), prev);
   }
 
   // ---- arms and gloves -------------------------------------------------
 
+  /**
+   * Two segments and an elbow.
+   *
+   * From behind and in front the old single-stub arms read, in a critic's
+   * words, as "chrome grape-clusters with rake-tine fingers hanging at the
+   * hem" — because there was no upper arm, no elbow and no forearm, just a
+   * short cone with a hand on it. An arm needs three masses to read as an arm.
+   */
   _buildArms(body) {
     const mat = this.ctx.get('mat');
     const scene = this.ctx.scene;
     this.parts.arms = [];
+    this.parts.elbows = [];
     for (const s of [-1, 1]) {
       const pivot = new TransformNode(`armPivot${s}`, scene);
       pivot.parent = body;
       pivot.position.set(s * P.shoulderX, P.shoulderY, 0);
 
-      // --- sleeve: a tapered tube with an elbow, not a capsule ---
-      const g = new Geo();
-      const rings = [];
-      const n = 7;
-      for (let i = 0; i <= n; i++) {
-        const f = i / n;
-        const y = -P.armLen * f;
-        // slight forward bend at the elbow so the arm has an inside and an
-        // outside instead of being a rod
-        const z = Math.sin(f * Math.PI) * 0.018;
-        const r = P.armR * (1.05 - 0.30 * f + 0.06 * Math.sin(f * Math.PI * 2));
-        rings.push([0, y, z, r, r * 0.95]);
-      }
-      g.at(0, 0, 0);
-      g.add(tube(rings, this.sd + 5, true, false, 2, 3));
-      g.toMesh(`sleeve${s}`, scene, mat.get('paveWhiteFine'), pivot);
+      const upperSurf = (u, v, out) => {
+        const y = -P.upperLen * v;
+        const r = P.armR * (1.06 - 0.20 * v);
+        const ph = u * TWO_PI;
+        out[0] = r * Math.sin(ph);
+        out[1] = y;
+        out[2] = r * 0.94 * Math.cos(ph) + Math.sin(v * Math.PI) * 0.012;
+      };
+      const ub = new Geo();
+      ub.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
+      ub.add(surface(upperSurf, this.sd + 8, this.sd + 2, 2, 1));
+      ub.toMesh(`upperBed${s}`, scene, mat.get('darkChrome'), pivot);
+      const us = new Geo();
+      this._stones(us, upperSurf, { v0: 0.10, v1: 0.94, cy: -P.upperLen * 0.5 });
+      us.toMesh(`upperStones${s}`, scene, mat.get('whiteGold'), pivot);
 
-      // --- cuff: pavé band at the wrist, where sleeve meets glove ---
+      // elbow joint
+      const elbow = new TransformNode(`elbow${s}`, scene);
+      elbow.parent = pivot;
+      elbow.position.set(0, -P.upperLen, 0);
+
+      const foreSurf = (u, v, out) => {
+        const y = -P.foreLen * v;
+        const r = P.armR * (0.94 - 0.24 * v);
+        const ph = u * TWO_PI;
+        out[0] = r * Math.sin(ph);
+        out[1] = y;
+        out[2] = r * 0.94 * Math.cos(ph);
+      };
+      const fb = new Geo();
+      fb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
+      fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
+      fb.toMesh(`foreBed${s}`, scene, mat.get('darkChrome'), elbow);
+      const fs = new Geo();
+      this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 });
+      fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
+
+      // elbow cap + wrist cuff, in silver so the joint reads
       const c = new Geo();
-      c.at(0, -P.armLen + 0.012, 0.012, Math.PI / 2);
-      c.add(torus(P.armR * 0.80, 0.028, this.sd + 6, 6, null, 0.85));
-      c.toMesh(`cuff${s}`, scene, mat.get('paveWhite'), pivot);
+      c.at(0, 0.004, 0.004, Math.PI / 2);
+      c.add(torus(P.armR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
+      c.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
+      c.add(torus(P.armR * 0.66, 0.026, this.sd + 6, 6, null, 0.85));
+      c.toMesh(`cuff${s}`, scene, mat.get('polRhodium'), elbow);
 
       // --- glove ---
       const wrist = new TransformNode(`wrist${s}`, scene);
-      wrist.parent = pivot;
-      wrist.position.set(0, -P.armLen - 0.012, 0.012);
+      wrist.parent = elbow;
+      wrist.position.set(0, -P.foreLen - 0.010, 0.010);
       this._buildGlove(wrist, s, mat, scene);
 
       this.parts.arms.push(pivot);
+      this.parts.elbows.push(elbow);
     }
   }
 
@@ -542,32 +632,25 @@ export default class Character {
    * A silver glove with fingers.
    *
    * The owner asked for this specifically: "the hands have fingers wearing
-   * silver gloves". Mitten spheres are what the previous build had and they
-   * are the reason the hands read as afterthoughts.
-   *
-   * Anatomy is not the point — silhouette is. Four fingers plus a thumb, each
-   * a two-segment tapered tube with a curl, splayed slightly so gaps of
-   * background show between them. Those gaps are what the eye reads as
-   * "fingers" at gameplay distance. The whole hand is one merged mesh: one
-   * draw call for five digits and a palm.
+   * silver gloves". Anatomy is not the point — silhouette is. Four fingers plus
+   * a separated thumb, each a tapered tube with a curl, splayed so gaps of
+   * background show between them. One merged mesh: one draw call per hand.
    */
   _buildGlove(wrist, s, mat, scene) {
     const g = new Geo();
     const R = P.handR;
 
-    // palm — a rounded slab, wider than deep, angled to the forearm
-    g.at(0, -R * 0.62, 0.004, 0, 0, 0, 1.0, 1.06, 0.72);
+    // palm — a rounded slab, wider than deep
+    g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
     g.add(ellipsoid({ rx: R, e1: 0.72, e2: 0.66, su: this.sd + 6, sv: this.sd + 2 }));
 
-    // fingers
-    const fl = R * 0.92;
+    const fl = R * 0.95;
     for (let i = 0; i < 4; i++) {
       const t = i / 3;
-      const fx = (t - 0.5) * R * 1.24;
-      // outer fingers are shorter and splay further, exactly as a real hand
+      const fx = (t - 0.5) * R * 1.20;
       const len = fl * (0.80 + 0.30 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.46;
-      const curl = 0.42;
+      const splay = (t - 0.5) * 0.42;
+      const curl = 0.46;
       const rings = [];
       const n = 5;
       for (let k = 0; k <= n; k++) {
@@ -577,31 +660,27 @@ export default class Character {
           0,
           -len * f,
           Math.sin(ang) * len * 0.55,
-          R * 0.215 * (1 - 0.28 * f),
-          R * 0.215 * (1 - 0.28 * f),
+          R * 0.225 * (1 - 0.26 * f),
+          R * 0.225 * (1 - 0.26 * f),
         ]);
       }
-      g.at(fx * s, -R * 1.32, 0.012, 0, 0, splay * s);
+      g.at(fx * s, -R * 1.36, 0.012, 0, 0, splay * s);
       g.add(tube(rings, this.sd, true, true, 1, 3));
-      // knuckle bead — catches a highlight and separates the finger from the
-      // palm, which is what stops four tubes reading as a fork. Dropped on
-      // `low`: at that budget it is 200 vertices per hand for a detail two
-      // pixels across on a phone.
       if (!this.lowQ) {
-        g.at(fx * s, -R * 1.30, 0.014, Math.PI / 2, 0, splay * s);
-        g.add(torus(R * 0.20, 0.013, this.sd, 5, null, 0.8));
+        g.at(fx * s, -R * 1.34, 0.014, Math.PI / 2, 0, splay * s);
+        g.add(torus(R * 0.21, 0.013, this.sd, 5, null, 0.8));
       }
     }
 
     // thumb — shorter, thicker, swung out and forward
     const trings = [];
-    const tn = 4, tl = R * 0.72;
+    const tn = 4, tl = R * 0.76;
     for (let k = 0; k <= tn; k++) {
       const f = k / tn;
       trings.push([0, -tl * f, Math.sin(0.5 * f * f) * tl * 0.5,
-        R * 0.26 * (1 - 0.25 * f), R * 0.26 * (1 - 0.25 * f)]);
+        R * 0.27 * (1 - 0.24 * f), R * 0.27 * (1 - 0.24 * f)]);
     }
-    g.at(s * R * 0.74, -R * 0.86, 0.030, -0.30, 0, s * 1.05);
+    g.at(s * R * 0.76, -R * 0.88, 0.030, -0.30, 0, s * 1.05);
     g.add(tube(trings, this.sd, true, true, 1, 3));
 
     g.toMesh(`glove${s}`, scene, mat.get('polRhodium'), wrist);
@@ -618,36 +697,36 @@ export default class Character {
       pivot.parent = body;
       pivot.position.set(s * P.hipX, P.hipY, 0);
 
-      const g = new Geo();
-      const rings = [];
-      const n = 6;
-      for (let i = 0; i <= n; i++) {
-        const f = i / n;
-        const r = P.legR * (1.12 - 0.34 * f);
-        rings.push([0, -P.legLen * f, 0, r, r]);
-      }
-      g.at(0, 0, 0);
-      g.add(tube(rings, this.sd + 5, true, false, 2, 3));
-      // ankle cuff
-      g.at(0, -P.legLen + 0.008, 0, Math.PI / 2);
-      g.add(torus(P.legR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
-      g.toMesh(`leg${s}`, scene, mat.get('paveWhiteFine'), pivot);
+      const legSurf = (u, v, out) => {
+        const r = P.legR * (1.14 - 0.30 * v);
+        const ph = u * TWO_PI;
+        out[0] = r * Math.sin(ph);
+        out[1] = -P.legLen * v;
+        out[2] = r * Math.cos(ph);
+      };
+      const lb = new Geo();
+      lb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
+      lb.add(surface(legSurf, this.sd + 8, this.sd + 2, 2, 1));
+      lb.toMesh(`legBed${s}`, scene, mat.get('darkChrome'), pivot);
+      const ls = new Geo();
+      this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 });
+      ls.toMesh(`legStones${s}`, scene, mat.get('whiteGold'), pivot);
 
       // --- boot ---
-      // A shaped last with a toe box, an instep and a heel, instead of a
-      // squashed ball. From behind you see heels, so the heel gets a form.
+      // A shaped last with a toe box, an instep and a heel. From behind you see
+      // heels, so the heel gets a form.
       const b = new Geo();
-      b.at(0, -P.legLen - P.bootR * 0.44, 0.048, 0, 0, 0, 0.96, 0.74, 1.30);
+      b.at(0, -P.legLen - P.bootR * 0.40, 0.048, 0, 0, 0, 0.96, 0.74, 1.30);
       b.add(ellipsoid({ rx: P.bootR, e1: 0.72, e2: 0.70, su: this.sd + 8, sv: this.sd + 3 }));
-      // toe cap
-      b.at(0, -P.legLen - P.bootR * 0.50, 0.048 + P.bootR * 0.92, 0, 0, 0, 0.80, 0.62, 0.72);
+      b.at(0, -P.legLen - P.bootR * 0.46, 0.048 + P.bootR * 0.92, 0, 0, 0, 0.80, 0.62, 0.72);
       b.add(ellipsoid({ rx: P.bootR, e1: 0.8, su: this.sd + 4, sv: this.sd }));
-      // heel block
-      b.at(0, -P.legLen - P.bootR * 0.86, 0.048 - P.bootR * 0.78, 0, 0, 0, 0.74, 0.46, 0.56);
+      b.at(0, -P.legLen - P.bootR * 0.82, 0.048 - P.bootR * 0.78, 0, 0, 0, 0.74, 0.46, 0.56);
       b.add(ellipsoid({ rx: P.bootR, e1: 0.6, e2: 0.6, su: this.sd + 4, sv: this.sd }));
-      // sole welt: a raised rim right around the base, the detail that makes a
-      // boot look made rather than moulded
-      b.at(0, -P.legLen - P.bootR * 0.86, 0.055, Math.PI / 2, 0, 0, 1.0, 1.0, 1.42);
+      // ankle cuff, where the pavé leg meets the silver boot
+      b.at(0, -P.legLen + 0.006, 0, Math.PI / 2);
+      b.add(torus(P.legR * 0.86, 0.028, this.sd + 6, 6, null, 0.85));
+      // sole welt
+      b.at(0, -P.legLen - P.bootR * 0.82, 0.055, Math.PI / 2, 0, 0, 1.0, 1.0, 1.42);
       b.add(torus(P.bootR * 0.80, 0.023, this.sd + 8, 6, null, 0.7));
       b.toMesh(`boot${s}`, scene, mat.get('polRhodium'), pivot);
 
@@ -659,9 +738,6 @@ export default class Character {
 
   _buildCape(body, low, high) {
     const mat = this.ctx.get('mat');
-    // cols is locked to the scallop count: with cols = scallops*2 + 1 the hem
-    // points and the rib columns land on the same particles, so the silver ribs
-    // run exactly down the long points of the wing.
     const scallops = low ? 3 : 4;
     const colsPerRib = low ? 2 : 4;
     const cols = scallops * colsPerRib + 1;
@@ -669,30 +745,32 @@ export default class Character {
 
     const capeRoot = new TransformNode('capeRoot', this.ctx.scene);
     capeRoot.parent = body;
-    capeRoot.position.set(0, P.shoulderY + 0.075, -0.045);
+    capeRoot.position.set(0, P.shoulderY + 0.070, -0.050);
     this.parts.capeRoot = capeRoot;
 
     this.cape = new Cape(cols, rows, {
       iters: low ? 2 : 4,
-      len: 1.16,
+      len: 1.22,
       halfW0: 0.17,
-      halfW1: 1.02,
+      halfW1: 1.06,
       scallops,
       colsPerRib,
-      hemCut: 0.26,
+      hemCut: 0.30,
       shoulderR: 0.205,
       shoulderSpread: 2.30,
     });
-    // The ribs are PAVÉ, not polished metal, and that was a decision made by
-    // looking. Polished rhodium in this world is a mirror: in a dark zone it
-    // renders almost black and the ribs vanished into the cape they were
-    // supposed to be breaking up. Pavé has micro-normals pointing everywhere,
-    // so it catches light from any direction and reads bright and jewelled at
-    // any angle — which is the whole point of putting them there.
-    this.cape.init(this.ctx.scene, mat.get('clothCape'), mat.get('paveWhiteFine'), capeRoot, 3, 3);
+    // POLISHED SILVER, not black.
+    //
+    // The membrane shipped in `clothCape` — a 0.34-albedo metal — against a
+    // dark world, and rendered as a solid black sheet with blown white streaks.
+    // A critic called it a garbage bag and they were right. The reference wing
+    // is silver: a bright top surface, ribs, and a dark cavity underneath. That
+    // contrast comes free from a polished double-sided sheet, because the two
+    // faces reflect opposite halves of the room.
+    this.cape.init(this.ctx.scene, mat.get('wingChrome'), mat.get('polRhodium'), capeRoot, 3, 3);
 
-    // Clasp: a gold collar plate over the cape's pinned edge, so the cape
-    // looks fastened rather than growing out of the character's back.
+    // Clasp: a gold collar plate over the cape's pinned edge, so the cape looks
+    // fastened rather than growing out of the character's back.
     const c = new Geo();
     c.at(0, 0.01, -0.02, Math.PI / 2, 0, 0, 1, 1, 0.7);
     c.add(arc(0.235, 0.026, -1.28, 1.28, this.su, 6, (u) => 0.7 + 0.6 * Math.sin(Math.PI * u)));
@@ -707,10 +785,7 @@ export default class Character {
    * The cape simulates here rather than in renderUpdate for two reasons: it is
    * deterministic at a fixed 60Hz, and the capture harness fast-forwards
    * through fixedUpdate ONLY. A cape driven from renderUpdate would be frozen
-   * at its rest pose in every screenshot — which is exactly the class of defect
-   * this project keeps finding by looking at frames.
-   *
-   * The stride phase moved here for the same reason.
+   * at its rest pose in every screenshot.
    */
   fixedUpdate(dt) {
     const play = this.ctx.get('play');
@@ -746,15 +821,11 @@ export default class Character {
       ax += (dy / dt) * play.speed * 0.55;
     }
 
-    // The launch frame of a jump is a single-step velocity step change, which
-    // differentiates to an enormous number. Clamp rather than special-case.
     if (ax > 45) ax = 45; else if (ax < -45) ax = -45;
     if (ay > 45) ay = 45; else if (ay < -45) ay = -45;
     this._aX += (ax - this._aX) * 0.35;
     this._aY += (ay - this._aY) * 0.35;
 
-    // the run-cycle bob is applied to the body node in renderUpdate; the cape
-    // hangs off that node, so it needs to know about it
     this._bob = play.state === STATE.RUN ? Math.abs(Math.sin(this.phase)) * 0.055 : 0;
     this._bobV = (this._bob - this._lastBob) / dt;
     this._lastBob = this._bob;
@@ -762,8 +833,6 @@ export default class Character {
     const speed = play.state === STATE.DEAD ? 0 : play.speed;
     this.cape.step(dt, speed, this._aX, this._aY, 0, this._bobV);
 
-    // On the very first frames the cape falls from its flat rest pose, which
-    // looks like a dropped towel. Settle it before anyone sees it.
     if (!this._warm) {
       this._warm = true;
       for (let i = 0; i < 60; i++) this.cape.step(dt, speed, 0, 0, 0, 0);
@@ -789,17 +858,20 @@ export default class Character {
     const swAlt = Math.sin(this.phase + Math.PI);
 
     let wantStretch = 1;
+    let bendA = 0, bendB = 0;
 
     switch (play.state) {
       case STATE.RUN: {
         this.parts.legs[0].rotation.x = sw * 0.92;
         this.parts.legs[1].rotation.x = swAlt * 0.92;
-        this.parts.arms[0].rotation.x = swAlt * 0.68;
-        this.parts.arms[1].rotation.x = sw * 0.68;
-        // arms swing slightly outward as they come forward — stops them
-        // reading as pendulums bolted to a box
-        this.parts.arms[0].rotation.z = -0.16 + swAlt * 0.10;
-        this.parts.arms[1].rotation.z = 0.16 - swAlt * 0.10;
+        this.parts.arms[0].rotation.x = swAlt * 0.62;
+        this.parts.arms[1].rotation.x = sw * 0.62;
+        this.parts.arms[0].rotation.z = -0.18 + swAlt * 0.10;
+        this.parts.arms[1].rotation.z = 0.18 - swAlt * 0.10;
+        // The elbow is the whole point of the two-segment arm: a runner's arm
+        // is held bent, and a straight one reads as a stick.
+        bendA = -0.95 - swAlt * 0.35;
+        bendB = -0.95 - sw * 0.35;
         body.position.y = this._bob;
         body.rotation.x = 0.11;
         wantStretch = 1 + Math.abs(sw) * 0.03;
@@ -809,13 +881,13 @@ export default class Character {
         const rise = play.vy > 0;
         this.parts.legs[0].rotation.x = rise ? -0.62 : 0.40;
         this.parts.legs[1].rotation.x = rise ? -0.28 : 0.66;
-        this.parts.arms[0].rotation.x = rise ? -1.45 : -0.50;
-        this.parts.arms[1].rotation.x = rise ? -1.45 : -0.50;
-        this.parts.arms[0].rotation.z = -0.42;
-        this.parts.arms[1].rotation.z = 0.42;
+        this.parts.arms[0].rotation.x = rise ? -1.35 : -0.50;
+        this.parts.arms[1].rotation.x = rise ? -1.35 : -0.50;
+        this.parts.arms[0].rotation.z = -0.46;
+        this.parts.arms[1].rotation.z = 0.46;
+        bendA = bendB = rise ? -0.55 : -1.10;
         body.position.y = 0;
         body.rotation.x = rise ? -0.16 : 0.22;
-        // stretch going up, squash coming down — the oldest trick there is
         wantStretch = rise ? 1.10 : 0.94;
         break;
       }
@@ -826,16 +898,20 @@ export default class Character {
         this.parts.arms[1].rotation.x = -0.8;
         this.parts.arms[0].rotation.z = -0.5;
         this.parts.arms[1].rotation.z = 0.5;
+        bendA = bendB = -1.30;
         body.position.y = -0.32;
         body.rotation.x = 1.02;
         wantStretch = 0.86;
         break;
       }
       default: {
+        bendA = bendB = -0.6;
         body.rotation.x = 0.1;
         break;
       }
     }
+    this.parts.elbows[0].rotation.x = bendA;
+    this.parts.elbows[1].rotation.x = bendB;
 
     // Squash and stretch, eased so landings pop rather than snap.
     this._stretch += (wantStretch - this._stretch) * Math.min(1, dtReal * 14);
@@ -846,8 +922,6 @@ export default class Character {
     this._lean += (wantLean - this._lean) * Math.min(1, dtReal * 12);
     body.rotation.z = this._lean;
 
-    // Head counter-rotates slightly against the lean, so it looks like the
-    // character is holding its line rather than being tipped over.
     this.parts.head.rotation.z = -this._lean * 0.45;
     this.parts.head.rotation.x = -body.rotation.x * 0.55 + Math.sin(this.phase * 2) * 0.02;
 
@@ -856,7 +930,7 @@ export default class Character {
     const whip = Math.sin(this.phase * 0.8) * 0.06 - this._lean * 0.35;
     for (let i = 0; i < this.parts.stalkSegs.length; i++) {
       const seg = this.parts.stalkSegs[i];
-      seg.rotation.z = -0.14 + whip * (i + 1) * 0.6;
+      seg.rotation.z = -0.10 - i * 0.09 + whip * (i + 1) * 0.6;
       seg.rotation.x = Math.sin(this._flutter * 0.7 + i) * 0.03 * (i + 1);
     }
 
