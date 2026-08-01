@@ -170,9 +170,9 @@ export class Cape {
     // reference has instead.
     const e = Math.abs(u - 0.5) * 2;
     const edge = e * e * e * e;
-    const k = 1 - 0.075 * edge;
+    const k = 1 - 0.055 * edge;
     out[0] = (ax * k + amp) * Math.sin(th);
-    out[1] = -this.len * v * (1 - 0.13 * edge) + hem;
+    out[1] = -this.len * v * (1 - 0.09 * edge) + hem;
     out[2] = -(az * k + amp) * Math.cos(th);
   }
 
@@ -280,10 +280,16 @@ export class Cape {
     driveX += -ay * 0.0055 - bobV * 0.020;
     // Lateral swing. Negative because the skirt LAGS the body: accelerate right
     // and the hem is left behind on the left.
-    let driveZ = -ax * 0.0125;
+    //
+    // The gain looks large next to the lift gain and has to be. The chain takes
+    // about half a second to reach a steady angle, and a lane change is over in
+    // a third of one, so the hem only ever sees the leading edge of the
+    // response: at 0.0125 a full lane change moved the hem by 1.5 degrees, which
+    // is invisible. Measured, not guessed — see the swingHem trace.
+    let driveZ = -ax * 0.050;
 
     if (driveX > 0.62) driveX = 0.62; else if (driveX < -0.34) driveX = -0.34;
-    if (driveZ > 0.42) driveZ = 0.42; else if (driveZ < -0.42) driveZ = -0.42;
+    if (driveZ > 0.50) driveZ = 0.50; else if (driveZ < -0.50) driveZ = -0.50;
 
     // The chain. Each row chases the row above plus its share of the drive, so
     // the total bend at the hem is `drive` and the swing travels down the skirt
