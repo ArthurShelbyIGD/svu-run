@@ -22,6 +22,28 @@
 
 import { Matrix, Vector3, VertexData, Mesh } from '../core/bjs.js';
 
+// WINDING, and why it is written down here.
+//
+// Babylon culls back faces and `VertexData.ComputeNormals` derives normals from
+// the same triangle order, so getting the order wrong does NOT produce an
+// obviously broken mesh. It produces a mesh that renders its FAR interior
+// surface with an inward normal pointing at the camera — which looks like a
+// plausible, if oddly smooth, convex object, and which lets anything inside it
+// show straight through. The character shipped a whole build like that: the
+// hood looked like a chrome ball and the rose-gold face was visible through the
+// back of the head.
+//
+// The rule that fixes it, derived once and applied everywhere below:
+//
+//     for a triangle (i0, i1, i2), the outward normal is
+//        (p2 - p0) x (p1 - p0)
+//
+// So a quad on a (u, v) grid winds (a, c, b), (b, c, d) when v runs along the
+// UP direction, and (a, b, c), (b, d, c) when v runs DOWN. `ellipsoid` and
+// `lathe` go top-to-bottom; `tube` goes bottom-to-top. That single difference is
+// why they do not share a winding.
+
+
 const _v = new Vector3();
 const _n = new Vector3();
 
@@ -139,7 +161,7 @@ export function ellipsoid(o) {
   for (let i = 0; i < sv; i++) {
     for (let j = 0; j < su; j++) {
       const a = i * (su + 1) + j, b = a + 1, c = a + su + 1, d = c + 1;
-      idx.push(a, c, b, b, c, d);
+      idx.push(a, b, c, b, d, c);
     }
   }
   return { pos, uv, idx };
@@ -235,6 +257,101 @@ export function arc(R, r, a0, a1, su = 20, sv = 8, taper = null) {
   return { pos, uv, idx };
 }
 
+/**
+ * Surface of revolution from a profile, with the same warp hook as `ellipsoid`.
+ *
+ *   profile  [[radius, y], ...] from top to bottom
+ *   warp     (u, v) => radial multiplier
+ *
+ * This exists because a hood is not a sphere. It is a dome that flares into a
+ * cowl over the shoulders, and that flare is what stops the back of the head
+ * reading as a ball.
+ */
+export function lathe(profile, su, warp, uRep = 3, vRep = 1, capTop = false) {
+  const pos = [], uv = [], idx = [];
+  const n = profile.length;
+  for (let i = 0; i < n; i++) {
+    const tv = i / (n - 1);
+    const [r, y] = profile[i];
+    for (let j = 0; j <= su; j++) {
+      const tu = j / su, ph = tu * Math.PI * 2;
+      const k = warp ? warp(tu, tv) : 1;
+      pos.push(r * Math.sin(ph) * k, y, r * Math.cos(ph) * k);
+      uv.push(tu * uRep, tv * vRep);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < su; j++) {
+      const a = i * (su + 1) + j, b = a + 1, c = a + su + 1, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  if (capTop) {
+    const ci = pos.length / 3;
+    pos.push(0, profile[0][1], 0);
+    uv.push(0.5, 0);
+    for (let j = 0; j < su; j++) idx.push(ci, j, j + 1);
+  }
+  return { pos, uv, idx };
+}
+
+/**
+ * Sweep a circle along an arbitrary 3D polyline. Piping, seams, welts, wires.
+ *
+ * Rotating a flat `arc` into place works for rings but not for a seam that
+ * climbs over a curved surface, and guessing at Euler orders to get one there
+ * is how you spend an hour on a detail worth five minutes. This takes the path
+ * directly.
+ *
+ *   pts    [[x,y,z], ...]
+ *   radAt  (t) => radius, t in 0..1 along the path
+ */
+export function pipe(pts, radAt, su = 7) {
+  const pos = [], uv = [], idx = [];
+  const n = pts.length;
+  let ux = 0, uy = 1, uz = 0;   // carried up-reference: parallel transport, cheaply
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)], c = pts[i];
+    let tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+    // remove the tangent component from the carried up-vector
+    const d = ux * tx + uy * ty + uz * tz;
+    let nx = ux - tx * d, ny = uy - ty * d, nz = uz - tz * d;
+    let nl = Math.hypot(nx, ny, nz);
+    if (nl < 1e-4) { nx = 1 - tx * tx; ny = -tx * ty; nz = -tx * tz; nl = Math.hypot(nx, ny, nz) || 1; }
+    nx /= nl; ny /= nl; nz /= nl;
+    ux = nx; uy = ny; uz = nz;
+    const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
+    const t = i / (n - 1);
+    const r = radAt(t);
+    for (let j = 0; j <= su; j++) {
+      const ang = (j / su) * Math.PI * 2;
+      const ca = Math.cos(ang) * r, sa = Math.sin(ang) * r;
+      pos.push(c[0] + nx * ca + bx * sa, c[1] + ny * ca + by * sa, c[2] + nz * ca + bz * sa);
+      uv.push(j / su, t * 4);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < su; j++) {
+      const a = i * (su + 1) + j, b = a + 1, c = a + su + 1, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+  }
+  // caps
+  for (const [ci, rev] of [[0, false], [n - 1, true]]) {
+    const centre = pos.length / 3;
+    pos.push(pts[ci][0], pts[ci][1], pts[ci][2]);
+    uv.push(0.5, 0.5);
+    const off = ci * (su + 1);
+    for (let j = 0; j < su; j++) {
+      if (rev) idx.push(centre, off + j + 1, off + j);
+      else idx.push(centre, off + j, off + j + 1);
+    }
+  }
+  return { pos, uv, idx };
+}
+
 /** Faceted gem — stars, toggles, the zip pull. Cheap sparkle. */
 export function gem(r, facets = 8, h = 0.6) {
   const pos = [0, r * h, 0], uv = [0.5, 0], idx = [];
@@ -248,7 +365,7 @@ export function gem(r, facets = 8, h = 0.6) {
   const bi = facets + 1;
   for (let j = 0; j < facets; j++) {
     const a = 1 + j, b = 1 + ((j + 1) % facets);
-    idx.push(0, a, b, bi, b, a);
+    idx.push(0, b, a, bi, a, b);
   }
   return { pos, uv, idx };
 }

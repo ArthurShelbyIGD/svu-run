@@ -25,7 +25,7 @@
 
 import { MeshBuilder, TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
-import { Geo, ellipsoid, tube, torus, arc, gem } from './geom.js';
+import { Geo, ellipsoid, lathe, tube, torus, arc, pipe, gem } from './geom.js';
 import { Cape } from './cape.js';
 
 // Proportions in metres. These numbers ARE the character.
@@ -208,39 +208,66 @@ export default class Character {
     this.parts.head = head;
 
     // --- hood shell (pavé) ---
+    //
+    // Not a sphere. A dome that flares into a COWL over the shoulders, because
+    // that is what a hood is and because a sphere in this material is a mirror:
+    // it reflects the studio horizon as a clean bright ring at ~80% of its
+    // silhouette radius, and on the back of the head — the one part of the
+    // character a player looks at all game — that artefact was the single
+    // strongest feature. See ARCHITECTURE §7.
+    //
+    // The warp is shared between the shell, the cowl and the gold piping so
+    // every one of them follows the same fabric. A ring at a fixed radius on a
+    // gored surface floats off it in places and sinks into it in others, which
+    // read on screen as a wire hoop hovering beside the head.
+    const hoodWarp = (u, v) => {
+      const gather = Math.min(1, Math.max(0, (v - 0.12) / 0.88));
+      // GORES. A hood is sewn from panels, and panels are what break up a
+      // mirror. The first pass used a shallow sine and the specular hotspot
+      // swallowed it whole. Seven gores with a sharpened profile give seven
+      // distinct ridges, each catching light at its own angle.
+      // EIGHT gores, not seven. With an odd count the back meridian u = 0.5
+      // lands in a trough, which cancelled the raised back seam exactly and
+      // left the centre of the head a smooth mirror — the one place it must
+      // not be. Even count, ridge on the seam.
+      const gore = Math.cos(u * TWO_PI * 8);
+      const folds = 0.052 * Math.sign(gore) * Math.pow(Math.abs(gore), 0.5) * (0.34 + 0.66 * gather);
+      // A raised ridge along the BACK meridian, u = 0.5 — dead centre of frame
+      // for the whole game, and what turns a ball into a garment.
+      const d = Math.abs(u - 0.5);
+      const seam = 0.048 * Math.exp(-(d * d) / 0.0018);
+      return 1 + folds + seam + 0.055 * gather * gather;
+    };
+    this._hoodWarp = hoodWarp;
+
     const g = new Geo();
     g.at(0, 0, -0.022);
     g.add(ellipsoid({
       rx: P.headR, ry: P.headR * 0.995, rz: P.headR * 1.025,
       e1: 0.93, e2: 0.95, su, sv,
-      // Three warps do all the work here. The amplitudes look large written
-      // down and they need to be: the first pass used 2cm on a 42cm sphere and
-      // the specular blowout from the portrait rig ate every one of them. If a
-      // form is not visible through a highlight it is not visible.
-      //
-      //   seam    — a raised ridge along the BACK meridian, u = 0.5. This is
-      //             the single highest-value line on the character: it sits
-      //             dead centre of frame for the whole game and it is what
-      //             turns a ball into a garment.
-      //   folds   — vertical creases, strongest low down where fabric gathers
-      //   volume  — the hood is not a head. It bulges BEHIND the skull, where
-      //             an empty hood has slack, and flares at the neck.
-      warp: (u, v) => {
-        const gather = Math.min(1, Math.max(0, (v - 0.26) / 0.74));
-        const folds = 0.038 * Math.cos(u * TWO_PI * 6) * gather;
-        const d = Math.abs(u - 0.5);
-        const seam = 0.055 * Math.exp(-(d * d) / 0.0016);
-        const bell = Math.sin(Math.PI * Math.min(1, v * 1.25));
-        const volume = 0.075 * Math.exp(-(d * d) / 0.030) * bell;
-        const flare = 0.075 * gather * gather;
-        return 1 + folds + seam + volume + flare;
-      },
-      // the crown sits a little higher than a sphere and the nape hangs lower,
-      // which is the profile of fabric draped over a head rather than a ball
+      v0: 0, v1: 0.74,
+      warp: hoodWarp,
+      // the crown sits a little higher than a sphere, which is the profile of
+      // fabric draped over a head rather than a ball
       yWarp: (v) => 0.035 * Math.cos(v * Math.PI) - 0.02,
-      uRep: 3, vRep: 1.5,
+      uRep: 3, vRep: 1.2,
     }));
 
+    // The cowl: from the dome's lower edge, flaring OUT and down onto the
+    // shoulders, then tucking back under. This is the silhouette break.
+    const cowl = [];
+    const cn = Math.max(6, Math.round(sv * 0.7));
+    for (let i = 0; i <= cn; i++) {
+      const t = i / cn;
+      const a = (0.74 + 0.26 * t) * Math.PI;              // continue the sphere's latitude
+      const base = Math.sin(a) * P.headR;
+      // flare: widest a third of the way down the cowl, then drawn back in
+      const f = 1 + 0.30 * Math.sin(Math.PI * Math.min(1, t * 1.35));
+      const y = -Math.cos(a) * P.headR * 0.995 - 0.02 - t * 0.075;
+      cowl.push([base * f * 1.02, y]);
+    }
+    g.at(0, 0, -0.022);
+    g.add(lathe(cowl, su, (u, v) => hoodWarp(u, 0.74 + 0.26 * v), 3, 0.8));
     // --- bear ears, built as part of the hood ---
     // Each ear is a flattened pavé mass with a piped rim around its outer
     // edge — the same detail the reference has, and what makes them read as
@@ -268,12 +295,30 @@ export default class Character {
     // silhouette and was completely invisible; it has to ride proud of the
     // face or it does nothing at all. Thicker at the top than at the chin,
     // like an actual hood opening.
+    //
+    // It is an ARC, not a ring. The first version was a full torus, and its
+    // outer radius was larger than the hood's, so it poked straight through the
+    // BACK of the head and rendered as a bright band across the one part of the
+    // character players actually look at. Found by looking at a true rear
+    // frame; invisible in the front and profile poses.
     const b = new Geo();
-    b.at(0, 0.012, 0.088, Math.PI / 2, 0, 0, 1.03, 1.0, 0.80);
-    b.add(torus(P.hoodRimR, 0.052, su, this.sd + 2,
-      (u) => 0.62 + 0.62 * (0.5 - 0.5 * Math.cos(u * TWO_PI))));
-    // Inner ear cups, same mesh group is not possible (different material), so
-    // they go with the brim's sibling below.
+    const brimPts = [];
+    const bn = Math.max(12, su);
+    for (let i = 0; i <= bn; i++) {
+      // Sweeps the FRONT only, and its ends are drawn in and forward. The
+      // first version ran too far round and its outer radius exceeded the
+      // hood's, so the two tips punched out through the sides of the head and
+      // read as a bar laid across it.
+      const a = -1.62 + (3.24 * i) / bn;
+      const pull = 1 - 0.13 * Math.pow(Math.abs(a) / 1.62, 2);
+      brimPts.push([
+        Math.sin(a) * P.hoodRimR * 0.98 * pull,
+        -Math.cos(a) * P.hoodRimR * 0.95 * pull + 0.010,
+        0.105 + (1 - Math.cos(a)) * 0.055,
+      ]);
+    }
+    b.at(0, 0, 0);
+    b.add(pipe(brimPts, (t) => 0.030 + 0.036 * Math.sin(Math.PI * t), this.sd + 2));
     b.toMesh('hoodBrim', scene, mat.get('paveWhiteFine'), head);
 
     const inner = new Geo();
@@ -287,9 +332,23 @@ export default class Character {
     inner.toMesh('earInner', scene, mat.get('earInner'), head);
 
     // --- face (cheap, on purpose) ---
+    // The BACK of the face is pulled in hard. That is not an aesthetic choice.
+    // The face is warm rose gold and the hood is white pavé, and at full radius
+    // the face's silhouette grazed through the hood's gore troughs and rendered
+    // as a bright rose RING across the back of the head — on the one part of
+    // the character that is on screen for the entire game. It was invisible in
+    // the front, profile and three-quarter poses and obvious the moment a true
+    // rear frame existed. Hiding one mesh at a time in a rendered frame found
+    // it in one pass; no amount of staring at the numbers had.
     const f = new Geo();
-    f.at(0, 0, P.faceZ);
-    f.add(ellipsoid({ rx: P.faceR, ry: P.faceR * 1.02, rz: P.faceR * 0.98, e1: 0.95, su, sv }));
+    f.at(0, 0, P.faceZ + 0.028);
+    f.add(ellipsoid({
+      rx: P.faceR * 0.97, ry: P.faceR * 0.99, rz: P.faceR * 0.96, e1: 0.95, su, sv,
+      warp: (u) => {
+        const d = Math.abs(u - 0.5);
+        return 1 - 0.26 * Math.exp(-(d * d) / 0.052);
+      },
+    }));
     // fringe peeking out under the brim — must sit PROUD of the face sphere or
     // it is swallowed by it
     f.at(0, P.faceR * 0.60, P.faceZ + 0.10, -0.12, 0, 0, 1.02, 0.42, 0.44);
@@ -317,6 +376,49 @@ export default class Character {
     dark.toMesh('eyes', scene, mat.get('eyeDark'), head);
     iris.toMesh('iris', scene, mat.get('eyeIris'), head);
     shine.toMesh('catchlight', scene, mat.get('catchlight'), head);
+
+    // --- gold piping over the crown ---
+    // The rear silhouette was white pavé, silver and black, and nothing else.
+    // The reference is full of yellow gold. A single piped seam running over
+    // the crown and down the back of the hood puts a warm line down the middle
+    // of the frame, and gives the eye something to read the head's FORM by —
+    // a sphere with a line over it is not a sphere any more.
+    // a = 0 is the front of the crown, pi/2 the top, pi the back of the nape
+    const p = new Geo();
+    const seamPts = [];
+    const sn = Math.max(14, this.sv);
+    const seamR = P.headR * 1.055;
+    for (let i = 0; i <= sn; i++) {
+      const a = 0.62 + (2.20 * i) / sn;
+      seamPts.push([0, Math.sin(a) * seamR * 0.99 - 0.02, -Math.cos(a) * seamR - 0.022]);
+    }
+    p.at(0, 0, 0);
+    p.add(pipe(seamPts, (t) => 0.016 + 0.010 * Math.sin(Math.PI * t), 7));
+    // Drawstring casing: a gold ring around the hood, low down.
+    //
+    // It is here for a reason the reference does not show. A large smooth
+    // sphere in a mirror-finish material reflects the studio horizon as a clean
+    // bright RING at about 80% of its silhouette radius — see ARCHITECTURE §7
+    // on reflective materials. That ring was the strongest feature on the back
+    // of the head and it was an artefact. Vertical gores broke it up one way;
+    // this breaks it the other, and puts more gold in the rear silhouette.
+    const ringPts = [];
+    const rn = Math.max(20, su);
+    const rv = 0.70;
+    // y on the shell at latitude rv:  ry*sin((0.5-v)pi) + yWarp(v)
+    const ringY = P.headR * 0.995 * Math.cos(rv * Math.PI) + 0.035 * Math.cos(rv * Math.PI) - 0.02;
+    for (let i = 0; i <= rn; i++) {
+      const u = i / rn;
+      const R = P.headR * Math.sin(rv * Math.PI) * this._hoodWarp(u, rv) * 1.015;
+      const ph = u * TWO_PI;
+      ringPts.push([R * Math.sin(ph), ringY, R * Math.cos(ph) - 0.022]);
+    }
+    p.at(0, 0, 0);
+    p.add(pipe(ringPts, () => 0.017, 6));
+    // toggle at the nape
+    p.at(0, ringY - 0.012, -P.headR * 1.02, 0.35);
+    p.add(gem(0.040, 6, 0.9));
+    p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
 
     this._buildAntenna(head, mat, scene);
   }
@@ -534,16 +636,22 @@ export default class Character {
 
     this.cape = new Cape(cols, rows, {
       iters: low ? 2 : 3,
-      len: 0.96,
-      halfW0: 0.22,
-      halfW1: 0.80,
+      len: 0.88,
+      halfW0: 0.17,
+      halfW1: 0.72,
       scallops,
       colsPerRib,
       hemCut: 0.30,
-      shoulderR: 0.268,
-      shoulderSpread: 2.75,
+      shoulderR: 0.185,
+      shoulderSpread: 2.05,
     });
-    this.cape.init(this.ctx.scene, mat.get('clothCape'), mat.get('polRhodium'), capeRoot, 3, 3);
+    // The ribs are PAVÉ, not polished metal, and that was a decision made by
+    // looking. Polished rhodium in this world is a mirror: in a dark zone it
+    // renders almost black and the ribs vanished into the cape they were
+    // supposed to be breaking up. Pavé has micro-normals pointing everywhere,
+    // so it catches light from any direction and reads bright and jewelled at
+    // any angle — which is the whole point of putting them there.
+    this.cape.init(this.ctx.scene, mat.get('clothCape'), mat.get('paveWhiteFine'), capeRoot, 3, 3);
 
     // Clasp: a gold collar plate over the cape's pinned edge, so the cape
     // looks fastened rather than growing out of the character's back.

@@ -59,6 +59,8 @@ export class Cape {
     this.rx = new Float32Array(n); this.ry = new Float32Array(n); this.rz = new Float32Array(n);
     this.pin = new Uint8Array(n);
     this.turb = new Float32Array(n);
+    this.side = new Float32Array(n);   // -1 .. +1 across the width
+    this.down = new Float32Array(n);   // 0 .. 1 down the length
 
     // constraints, flat arrays: [a, b] and rest length
     const ca = [], cb = [], cl = [];
@@ -143,6 +145,8 @@ export class Cape {
         this.pz[i] = this.oz[i] = tmp[2];
         this.pin[i] = r === 0 ? 1 : 0;
         this.turb[i] = (c * 0.62 + r * 0.34) % 6.28318;
+        this.side[i] = this.cols > 1 ? (c / (this.cols - 1) - 0.5) * 2 : 0;
+        this.down[i] = this.rows > 1 ? r / (this.rows - 1) : 0;
         const k = i * 2;
         this.uvs[k] = (c / (this.cols - 1)) * uRep;
         this.uvs[k + 1] = (r / (this.rows - 1)) * vRep;
@@ -183,7 +187,7 @@ export class Cape {
       const rad = new Float32Array(this.rows);
       for (let r = 0; r < this.rows; r++) {
         idx[r] = r * this.cols + c;
-        rad[r] = 0.036 * (1 - 0.58 * (r / (this.rows - 1)));
+        rad[r] = 0.048 * (1 - 0.62 * (r / (this.rows - 1)));
       }
       strands.push({ idx, rad });
     }
@@ -191,7 +195,7 @@ export class Cape {
       const idx = new Int32Array(this.cols);
       const rad = new Float32Array(this.cols);
       const base = (this.rows - 1) * this.cols;
-      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.019; }
+      for (let c = 0; c < this.cols; c++) { idx[c] = base + c; rad[c] = 0.022; }
       strands.push({ idx, rad });
     }
     this.strands = strands;
@@ -224,8 +228,8 @@ export class Cape {
     // and then keep going. The constants are tuned by LOOKING: at the start
     // speed the cape should trail at roughly 40 degrees off vertical, and at
     // top speed it should be streaming almost horizontally behind.
-    const w = speed * 1.35;
-    this.wind = w / (1 + w * 0.011);
+    const w = speed * 1.75;
+    this.wind = w / (1 + w * 0.010);
 
     const dt2 = dt * dt;
     const gx = -ax;
@@ -239,19 +243,28 @@ export class Cape {
         this.ox[i] = this.rx[i]; this.oy[i] = this.ry[i]; this.oz[i] = this.rz[i];
         continue;
       }
+      // Turbulence. A cape driven only along -Z stays dead flat, which is what
+      // the first pass looked like: a sheet of vinyl.
+      //
+      // The lateral term is multiplied by `side`, which runs -1 to +1 across
+      // the width. That matters: an unsigned lateral force sums to a NET push
+      // and the whole cape drifts off-axis, which read on screen as the cape
+      // being blown sideways for no reason a player could see. Signed, it sums
+      // to zero and produces a twist — the two halves fight, the sheet ripples,
+      // and nothing drifts.
       const ph = tt * 5.2 + this.turb[i];
-      // Cross-wind. A cape driven only along -Z stays dead flat, which is what
-      // the first build looked like: a sheet of vinyl. Rippling the lateral
-      // component across the width is what makes it BILLOW.
-      const flutter = (Math.sin(ph) + 0.5 * Math.sin(ph * 2.1)) * this.wind * 0.26;
-      const gust = 0.80 + 0.20 * Math.sin(ph * 0.7);
+      const flutter = Math.sin(ph) * this.wind * 0.55 * this.side[i];
+      // and a travelling wave running down the length, which is what the eye
+      // actually recognises as cloth in the wind
+      const wave = Math.sin(tt * 6.4 - this.down[i] * 7.5) * this.wind * 0.22;
+      const gust = 0.86 + 0.14 * Math.sin(ph * 0.7);
 
       const vx = (this.px[i] - this.ox[i]) * DAMP;
       const vy = (this.py[i] - this.oy[i]) * DAMP;
       const vz = (this.pz[i] - this.oz[i]) * DAMP;
       this.ox[i] = this.px[i]; this.oy[i] = this.py[i]; this.oz[i] = this.pz[i];
       this.px[i] += vx + (gx + flutter) * dt2;
-      this.py[i] += vy + (gy + this.wind * 0.42) * dt2;
+      this.py[i] += vy + (gy + this.wind * 0.42 + wave) * dt2;
       this.pz[i] += vz + (gz - this.wind * gust) * dt2;
     }
 
@@ -336,7 +349,7 @@ export class Cape {
    * draw call, updatable, sized once at init.
    */
   _buildStrandMesh(scene, mat, parent) {
-    const su = 5;
+    const su = 6;
     this._strandSu = su;
     let vcount = 0, ring = su + 1;
     const idx = [];
@@ -346,7 +359,7 @@ export class Cape {
       for (let i = 0; i < n - 1; i++) {
         for (let j = 0; j < su; j++) {
           const a = vcount + i * ring + j, b = a + 1, c = a + ring, d = c + 1;
-          idx.push(a, b, c, b, d, c);
+          idx.push(a, c, b, b, c, d);
         }
       }
       vcount += n * ring;
@@ -354,9 +367,9 @@ export class Cape {
       const capA = vcount, capB = vcount + 1;
       vcount += 2;
       for (let j = 0; j < su; j++) {
-        idx.push(capA, st.base + j, st.base + j + 1);
+        idx.push(capA, st.base + j + 1, st.base + j);
         const off = st.base + (n - 1) * ring;
-        idx.push(capB, off + j + 1, off + j);
+        idx.push(capB, off + j, off + j + 1);
       }
       st.capA = capA; st.capB = capB;
     }

@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "char-rear",
-      "file": "char-rear.png",
+      "name": "char-front",
+      "file": "char-front.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "rear three-quarter — what players ACTUALLY see for 99% of a run",
+      "note": "front three-quarter — the silhouette check",
       "errors": []
     }
   ]
