@@ -320,8 +320,8 @@ export class Cape {
     // stood bare below it. The cape was not too short — it was folded away from
     // the camera. Halving the gain and capping at 0.34 rad keeps the skirt
     // clearly streaming behind a runner while the drop survives the projection.
-    const w = speed * 0.030;
-    let driveX = w / (1 + w * 1.05);
+    const w = speed * 0.022;
+    let driveX = w / (1 + w * 1.30);
     // falling floats it up, landing slams it down, the run cycle taps it
     driveX += -ay * 0.0055 - bobV * 0.020;
     // Lateral swing. Negative because the skirt LAGS the body: accelerate right
@@ -334,7 +334,7 @@ export class Cape {
     // is invisible. Measured, not guessed — see the swingHem trace.
     let driveZ = -ax * 0.050;
 
-    if (driveX > 0.34) driveX = 0.34; else if (driveX < -0.24) driveX = -0.24;
+    if (driveX > 0.20) driveX = 0.20; else if (driveX < -0.16) driveX = -0.16;
     if (driveZ > 0.50) driveZ = 0.50; else if (driveZ < -0.50) driveZ = -0.50;
 
     // The chain. Each row chases the row above plus its share of the drive, so

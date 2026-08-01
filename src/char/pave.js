@@ -143,7 +143,7 @@ export function stoneField(surf, o) {
   // random row stagger included. Returned separately so the caller can merge it
   // into a gold mesh it already has, which is why it costs no extra draw call.
   const beadEvery = o.beadEvery || 0;
-  const beadR = o.beadR === undefined ? pitch * 0.150 : o.beadR;
+  const beadR = o.beadR === undefined ? pitch * 0.130 : o.beadR;
   const bpos = [], buv = [], bidx = [];
   // (x, y, z) => true to leave this cell bare. The hood uses it to open a face
   // aperture: the test is "inside the face sphere", so the opening is shaped by

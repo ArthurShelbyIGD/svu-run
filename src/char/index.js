@@ -467,7 +467,7 @@ export default class Character {
       edge.push([ep[0] * 1.035, ep[1] - 0.004, ep[2] * 1.035]);
     }
     p.at(0, 0, 0);
-    p.add(pipe(edge, () => 0.019, 6));
+    p.add(pipe(edge, () => 0.0125, 6));
 
     p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
 
@@ -938,7 +938,7 @@ export default class Character {
       // stood clear underneath. 0.715 puts the hem trough at y = 0.195, over
       // the boot tops, and the ratio at 1.48: still stockier than the
       // reference, which this character is everywhere.
-      len: 0.760,
+      len: 0.705,
       // Plan half-axes, collar -> hem. Elliptical, not circular: at the collar
       // a circle of this radius sits INSIDE the torso at the sides, and at the
       // hem a circle this wide would stand half a metre out behind in profile.
@@ -996,7 +996,7 @@ export default class Character {
       // the 1.24 presentation scale multiplies whatever is modelled here, and
       // at the old weight the trim was the brightest object on the character,
       // so the eye landed on the hem before the hood.
-      trimR: 0.0068,
+      trimR: 0.0105,
       trimSu: low ? 4 : 5,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
@@ -1070,8 +1070,8 @@ export default class Character {
       // drops lower at the centre back and at the shoulder points, like the
       // scalloped bib in the reference
       const dip = 0.72 + 0.28 * Math.cos(th * 2.1);
-      const ax = 0.215 + 0.225 * v;
-      const az = 0.190 + 0.185 * v;
+      const ax = 0.215 + 0.270 * v;
+      const az = 0.190 + 0.205 * v;
       out[0] = ax * Math.sin(th);
       out[1] = 0.080 - 0.270 * v * dip;
       out[2] = -az * Math.cos(th);
