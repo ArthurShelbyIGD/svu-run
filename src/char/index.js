@@ -443,31 +443,58 @@ export default class Character {
     f.toMesh('face', scene, mat.get('polRose'), head);
 
     // --- eyes: sclera, iris, pupil, two catchlights ---
+    //
+    // Every feature is placed by SPHERICAL ANGLE on the face, not by a guessed
+    // (x, y, z). The previous version put the eyes at z = faceZ + faceR * 0.76,
+    // which is 3.7cm INSIDE a sphere of that radius at that x offset — so the
+    // whole eye assembly was buried in the head and the face rendered as a
+    // blank chrome egg. A critic reported exactly that. Angles cannot make this
+    // mistake: k = 1 is on the surface by construction.
+    const onFace = (az, el, k, out) => {
+      const ce = Math.cos(el);
+      out[0] = P.faceR * k * Math.sin(az) * ce;
+      out[1] = P.faceR * k * Math.sin(el);
+      out[2] = P.faceZ + P.faceR * 0.96 * k * Math.cos(az) * ce;
+      return out;
+    };
+    const q = [0, 0, 0];
+    const AZ = 0.415, EL = 0.02;
+
     const sclera = new Geo();
     const iris = new Geo();
     const dark = new Geo();
     const shine = new Geo();
     for (const s of [-1, 1]) {
-      sclera.at(s * P.eyeX, P.eyeY, P.faceZ + P.faceR * 0.76, 0, 0, s * 0.10, 0.94, 1.20, 0.60);
+      onFace(s * AZ, EL, 0.90, q);
+      sclera.at(q[0], q[1], q[2], 0, s * -AZ, s * 0.12, 0.94, 1.22, 0.66);
       sclera.add(ellipsoid({ rx: P.eyeR, su: this.sd + 4, sv: this.sd }));
-      iris.at(s * P.eyeX, P.eyeY - 0.014, P.faceZ + P.faceR * 0.83, 0, 0, 0, 1, 1.02, 0.42);
-      iris.add(ellipsoid({ rx: P.eyeR * 0.68, su: this.sd + 2, sv: this.sd }));
-      dark.at(s * P.eyeX, P.eyeY - 0.018, P.faceZ + P.faceR * 0.87, 0, 0, 0, 1, 1, 0.34);
-      dark.add(ellipsoid({ rx: P.eyeR * 0.33, su: this.sd, sv: this.sd }));
+
+      onFace(s * AZ, EL - 0.05, 0.985, q);
+      iris.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1.02, 0.40);
+      iris.add(ellipsoid({ rx: P.eyeR * 0.70, su: this.sd + 2, sv: this.sd }));
+
+      onFace(s * AZ, EL - 0.06, 1.030, q);
+      dark.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.34);
+      dark.add(ellipsoid({ rx: P.eyeR * 0.34, su: this.sd, sv: this.sd }));
+
       // brow: a thin dark arc above the eye. Chibi faces live or die on brows.
-      dark.at(s * P.eyeX, P.eyeY + P.eyeR * 1.28, P.faceZ + P.faceR * 0.80,
-        Math.PI / 2, 0, s * 0.22, 1, 1, 0.35);
-      dark.add(arc(P.eyeR * 0.86, 0.011, -0.9, 0.9, this.sd + 4, 5));
-      // catchlights: one big upper-left, one small lower-right. Two, at
+      onFace(s * AZ, EL + 0.30, 1.015, q);
+      dark.at(q[0], q[1], q[2], Math.PI / 2, s * -AZ, s * 0.26, 1, 1, 0.30);
+      dark.add(arc(P.eyeR * 0.92, 0.012, -0.95, 0.95, this.sd + 4, 5));
+
+      // catchlights: one big upper-outer, one small lower-inner. Two, at
       // different sizes, is the difference between "glossy" and "alive".
-      shine.at(s * P.eyeX - 0.026, P.eyeY + 0.034, P.faceZ + P.faceR * 0.90, 0, 0, 0, 1, 1, 0.5);
-      shine.add(ellipsoid({ rx: P.eyeR * 0.30, su: this.sd, sv: this.sd }));
-      shine.at(s * P.eyeX + 0.028, P.eyeY - 0.036, P.faceZ + P.faceR * 0.88, 0, 0, 0, 1, 1, 0.5);
-      shine.add(ellipsoid({ rx: P.eyeR * 0.14, su: this.sd, sv: this.sd }));
+      onFace(s * (AZ + 0.075), EL + 0.115, 1.055, q);
+      shine.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.5);
+      shine.add(ellipsoid({ rx: P.eyeR * 0.31, su: this.sd, sv: this.sd }));
+      onFace(s * (AZ - 0.085), EL - 0.125, 1.055, q);
+      shine.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.5);
+      shine.add(ellipsoid({ rx: P.eyeR * 0.145, su: this.sd, sv: this.sd }));
     }
-    // mouth: a cut line with a lower lip, not a black bean
-    dark.at(0, -0.128, P.faceZ + P.faceR * 0.86, Math.PI / 2, 0, 0, 1, 1, 0.30);
-    dark.add(arc(0.070, 0.012, -0.72, 0.72, this.sd + 6, 5));
+    // mouth: a cut line with a lifted corner, not a black bean
+    onFace(0, -0.44, 1.020, q);
+    dark.at(q[0], q[1], q[2], Math.PI / 2 - 0.44, 0, 0, 1, 1, 0.28);
+    dark.add(arc(0.072, 0.013, -0.78, 0.78, this.sd + 6, 5));
     sclera.toMesh('sclera', scene, mat.get('marbleLight'), head);
     iris.toMesh('iris', scene, mat.get('eyeIris'), head);
     dark.toMesh('eyes', scene, mat.get('eyeDark'), head);
@@ -476,29 +503,30 @@ export default class Character {
     // --- gold fringe: swept blades spilling from under the hood edge ---
     // The reference's single most characterful detail after the ears. Blades,
     // not a cap: each one is a flattened tapered tube swept across the brow, so
-    // the fringe has points and gaps instead of being a helmet.
+    // the fringe has points and gaps instead of being a helmet. Placed on the
+    // face surface by the same angular helper as the eyes.
     const h = new Geo();
     const blades = this.lowQ ? 5 : 8;
+    const a0 = [0, 0, 0], a1 = [0, 0, 0];
     for (let i = 0; i < blades; i++) {
       const t = blades === 1 ? 0.5 : i / (blades - 1);
-      const a = (t - 0.5) * 2.05;                 // across the forehead
-      const sweep = 0.55 + 0.45 * Math.sin(Math.PI * t);
-      const len = 0.135 * (0.72 + 0.5 * Math.sin(Math.PI * (0.15 + t * 0.8)));
+      const az = (t - 0.48) * 1.55;
+      // start high on the brow, sweep down and across
+      const drop = 0.46 + 0.30 * Math.sin(Math.PI * t);
+      onFace(az, 0.66, 1.045, a0);
+      onFace(az + 0.30 * (t - 0.45), 0.66 - drop, 1.045, a1);
       const rings = [];
       const n = 4;
       for (let k = 0; k <= n; k++) {
         const fq = k / n;
-        rings.push([
-          Math.sin(a) * P.faceR * 0.93 + fq * len * 0.85 * sweep,
-          P.faceR * 0.58 - fq * len * 1.25,
-          P.faceZ + Math.cos(a) * P.faceR * 0.88 + fq * len * 0.10,
-          0.030 * (1 - 0.85 * fq),
-          0.018 * (1 - 0.85 * fq),
-        ]);
+        const e = 0.66 - drop * fq;
+        onFace(az + 0.30 * (t - 0.45) * fq, e, 1.045 - 0.03 * fq * fq, q);
+        rings.push([q[0], q[1], q[2], 0.028 * (1 - 0.88 * fq), 0.016 * (1 - 0.88 * fq)]);
       }
       h.at(0, 0, 0);
       h.add(tube(rings, this.sd, true, true, 1, 2));
     }
+    void a0; void a1;
     h.toMesh('fringe', scene, mat.get('polGold'), head);
   }
 
@@ -661,12 +689,12 @@ export default class Character {
     g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
     g.add(ellipsoid({ rx: R, e1: 0.72, e2: 0.66, su: this.sd + 6, sv: this.sd + 2 }));
 
-    const fl = R * 0.95;
+    const fl = R * 0.72;
     for (let i = 0; i < 4; i++) {
       const t = i / 3;
-      const fx = (t - 0.5) * R * 1.20;
+      const fx = (t - 0.5) * R * 1.06;
       const len = fl * (0.80 + 0.30 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.42;
+      const splay = (t - 0.5) * 0.26;
       const curl = 0.46;
       const rings = [];
       const n = 5;
@@ -677,8 +705,8 @@ export default class Character {
           0,
           -len * f,
           Math.sin(ang) * len * 0.55,
-          R * 0.225 * (1 - 0.26 * f),
-          R * 0.225 * (1 - 0.26 * f),
+          R * 0.265 * (1 - 0.20 * f),
+          R * 0.265 * (1 - 0.20 * f),
         ]);
       }
       g.at(fx * s, -R * 1.36, 0.012, 0, 0, splay * s);

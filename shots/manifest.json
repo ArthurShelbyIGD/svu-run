@@ -2,11 +2,11 @@
   "preset": "high",
   "poses": [
     {
-      "name": "hero",
-      "file": "hero.png",
+      "name": "char-front",
+      "file": "char-front.png",
       "viewport": "desktop",
       "preset": "high",
-      "note": "default chase view, mid-run — the shot the whole game is judged on",
+      "note": "front three-quarter — the silhouette check",
       "errors": []
     }
   ]
