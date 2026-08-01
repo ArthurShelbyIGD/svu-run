@@ -664,12 +664,6 @@ export default class Character {
       this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 });
       fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
 
-      // Elbow cap in silver, so the joint reads.
-      const c = new Geo();
-      c.at(0, 0.004, 0.004, Math.PI / 2);
-      c.add(torus(P.armR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
-      c.toMesh(`elbowCap${s}`, scene, mat.get('polRhodium'), elbow);
-
       // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
       // each pavé sleeve meets the silver hand, and from behind it is one of
       // only three warm accents on the whole back of the piece — the others
@@ -702,6 +696,13 @@ export default class Character {
   _buildGlove(wrist, s, mat, scene) {
     const g = new Geo();
     const R = P.handR;
+
+    // The elbow cap rides here rather than on the elbow node. It is silver, the
+    // glove is silver, and the wrist node never moves relative to the elbow, so
+    // baking its offset in costs one matrix at build time and saves a draw call
+    // per arm at runtime.
+    g.at(0, P.foreLen + 0.014, -0.006, Math.PI / 2);
+    g.add(torus(P.armR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
 
     // palm — a rounded slab, wider than deep
     g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
@@ -767,13 +768,35 @@ export default class Character {
         out[1] = -P.legLen * v;
         out[2] = r * Math.cos(ph);
       };
+      // THE BOOT TOP IS A PAVÉ BAND, not a silver cuff. The reference boot is
+      // plain polished silver with one stone-set band around the opening, and
+      // from directly behind that band is the only thing separating the boot
+      // from the leg above it — in silver, leg and boot merged into a single
+      // pale sausage. Built as a torus SURFACE so the stones sit on the band the
+      // same way they sit on everything else, from one shared definition, and
+      // MERGED INTO THE LEG's two meshes so it costs no extra draw call.
+      const bR = P.legR * 0.87, bt = 0.030, bY = -P.legLen + 0.004;
+      const bandSurf = (u, v, out) => {
+        const a = u * TWO_PI;
+        const c2 = (v - 0.5) * Math.PI * 1.06;      // outer arc of the tube only
+        const rad = bR + bt * Math.cos(c2);
+        out[0] = rad * Math.sin(a);
+        out[1] = bY + bt * Math.sin(c2) * 0.88;
+        out[2] = rad * Math.cos(a);
+      };
+
       const lb = new Geo();
       lb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
       lb.add(surface(legSurf, this.sd + 8, this.sd + 2, 2, 1));
+      lb.at(0, 0, 0, 0, 0, 0, 0.97, 0.97, 0.97);
+      lb.add(surface(bandSurf, this.sd + 6, this.sd - 2, 3, 1));
       lb.toMesh(`legBed${s}`, scene, mat.get('darkChrome'), pivot);
+
       const ls = new Geo();
       ls.at(0, 0, 0);
       this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 });
+      ls.at(0, 0, 0);
+      this._stones(ls, bandSurf, { v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80 });
       ls.toMesh(`legStones${s}`, scene, mat.get('whiteGold'), pivot);
 
       // --- boot ---
@@ -791,31 +814,6 @@ export default class Character {
       b.add(torus(P.bootR * 0.80, 0.023, this.sd + 8, 6, null, 0.7));
       b.toMesh(`boot${s}`, scene, mat.get('polRhodium'), pivot);
 
-      // THE BOOT TOP IS A PAVÉ BAND, not a silver cuff. The reference boot is
-      // plain polished silver with one stone-set band around the opening, and
-      // from directly behind that band is the only thing separating the boot
-      // from the leg above it — in silver, leg and boot merged into a single
-      // pale sausage. Built as a torus SURFACE so the stones sit on the band the
-      // same way they sit on everything else, from one shared definition.
-      const bR = P.legR * 0.87, bt = 0.030, bY = -P.legLen + 0.004;
-      const bandSurf = (u, v, out) => {
-        const a = u * TWO_PI;
-        const c2 = (v - 0.5) * Math.PI * 1.06;      // outer arc of the tube only
-        const rad = bR + bt * Math.cos(c2);
-        out[0] = rad * Math.sin(a);
-        out[1] = bY + bt * Math.sin(c2) * 0.88;
-        out[2] = rad * Math.cos(a);
-      };
-      const bb = new Geo();
-      bb.at(0, 0, 0, 0, 0, 0, 0.97, 0.97, 0.97);
-      bb.add(surface(bandSurf, this.sd + 6, this.sd - 2, 3, 1));
-      bb.toMesh(`bootBandBed${s}`, scene, mat.get('darkChrome'), pivot);
-      const bs = new Geo();
-      bs.at(0, 0, 0);
-      this._stones(bs, bandSurf, {
-        v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80,
-      });
-      bs.toMesh(`bootBand${s}`, scene, mat.get('whiteGold'), pivot);
 
       this.parts.legs.push(pivot);
     }
