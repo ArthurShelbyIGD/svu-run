@@ -164,8 +164,15 @@ export class Cape {
     const f = Math.pow(v, this.flarePow);
     const ax = this.rx0 + (this.rx1 - this.rx0) * f;
     const az = this.rz0 + (this.rz1 - this.rz0) * f;
-    // fluting is present at the yoke and deepens as the skirt widens
-    const amp = this.fluteAmp * (0.32 + 0.68 * v) * lobe;
+    // fluting is present at the yoke and deepens as the skirt widens, and dies
+    // away at the two open ends. Without that last part the outermost half-rib
+    // stood proud right up to the cut edge and rendered as a small pointed TAB
+    // flicking out sideways at each corner — visible even at chase distance,
+    // because a bright horizontal spur is exactly the kind of thing the eye
+    // finds in a silhouette. Fading it lets the corner end as a plain sweep.
+    const e = Math.abs(u - 0.5) * 2;
+    const edge = e * e * e * e;
+    const amp = this.fluteAmp * (0.32 + 0.68 * v) * lobe * (1 - 0.72 * edge);
     // THE SCALLOP IS ITS OWN WAVE, SEVERAL FLUTES LONG. This is the correction
     // that finally kills the sawtooth, and it came from measuring the reference
     // hem rather than reasoning about it: the reference shows roughly nine ribs
@@ -199,8 +206,6 @@ export class Cape {
     // closed cone with no open end at all. Tucking the corner in by 14% of
     // radius and up by 16% of length turns that tongue into the curled corner
     // the reference does have at the sides of its hem.
-    const e = Math.abs(u - 0.5) * 2;
-    const edge = e * e * e * e;
     const k = 1 - 0.14 * edge;
     out[0] = (ax * k + amp) * Math.sin(th);
     out[1] = -this.len * v * (1 - 0.16 * edge) + hem;
