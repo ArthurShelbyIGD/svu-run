@@ -443,6 +443,34 @@ try {
   check('the first sound of a run is never rate-limited away',
     aFirst.after > aFirst.before, `${aFirst.before} -> ${aFirst.after} voices`);
 
+  // Audio is driven entirely from the event bus, so a throw inside one of its
+  // handlers does not make a wrong noise — it takes out whatever was mid-emit.
+  // Hammer every handler with malformed payloads and confirm it stays quiet
+  // about it. AudioParam methods throw on non-finite values, which is exactly
+  // what a NaN in a payload would become.
+  const aChaos = await g.page.evaluate(() => {
+    const A = window.SVU.ctx.get('audio');
+    const payloads = [null, undefined, {}, { hard: 1 }, { active: 'yes' },
+      { from: NaN, to: NaN }, { dir: NaN }, { dir: 'left' }, { preset: 'nope' },
+      { preset: 'high' }, { kind: undefined }, { to: Infinity, from: -Infinity }];
+    const calls = [
+      (p) => A._onStar(p), (p) => A._onLand(p), (p) => A._onLane(p),
+      (p) => A._onTurn(p), (p) => A._onDeath(p), () => A._onRunStart(),
+      (p) => A._onQuality(p), () => A._play0(1), () => A._play0(6),
+      () => A.fixedUpdate(1 / 60), () => A.renderUpdate(1 / 60, 0),
+    ];
+    let seed = 999, thrown = 0, first = '';
+    const nxt = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
+    for (let i = 0; i < 3000; i++) {
+      try { calls[(nxt() * calls.length) | 0](payloads[(nxt() * payloads.length) | 0]); }
+      catch (e) { thrown++; if (!first) first = String(e); }
+    }
+    return { thrown, first, alive: A.debug().ready };
+  });
+  check('audio survives malformed events without throwing',
+    aChaos.thrown === 0 && aChaos.alive === true,
+    aChaos.thrown ? `${aChaos.thrown} throws, first: ${aChaos.first}` : '3000 hostile calls');
+
   // Hiding the tab must silence it, and coming back must not leave it muted.
   const aMute = await g.page.evaluate(async () => {
     const A = window.SVU.ctx.get('audio');
