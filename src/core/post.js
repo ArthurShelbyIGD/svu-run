@@ -207,13 +207,26 @@ const LOOKS = {
     // that is the expensive pass here, a depth-aware sample kernel plus a
     // bilateral blur.
     //
-    // Sharpen is now ON at 'low', reversing the previous decision. The reason
-    // is a cost comparison rather than a taste one: Babylon's sharpen is a
-    // single full-screen quad with five texture taps, while FXAA — which
-    // 'low' already runs — is roughly a dozen. Sharpen is therefore about 40%
-    // of a pass 'low' has already bought, and it is the single control that
-    // makes the pavé read as set stones rather than as a smooth white ball.
-    // Trading it away was trading away the art direction to save very little.
+    // Sharpen is OFF at 'low' again, and this time the reason is a measurement
+    // rather than an argument. The note that turned it on said Babylon's
+    // sharpen is "a single full-screen quad with five texture taps, while FXAA
+    // is roughly a dozen — about 40% of a pass 'low' has already bought". That
+    // reasoning counts ALU and ignores bandwidth, and bandwidth is what a
+    // full-screen pass actually costs. Timed on the phone viewport at 'low' by
+    // rendering through requestAnimationFrame (which forces a real present —
+    // measuring scene.render() alone just queues work and reports 4ms for a
+    // frame that takes 450ms to appear):
+    //
+    //   all post on            447 ms/frame
+    //   sharpen off            341 ms/frame     <- one pass, 24% of the frame
+    //   sharpen + fxaa off     297 ms/frame     <- fxaa is 44ms, sharpen 106ms
+    //
+    // Sharpen is 2.4x the cost of FXAA here, not 0.4x. A quarter of the frame
+    // budget for a local-contrast effect is not a trade 'low' can make;
+    // ARCHITECTURE is explicit that performance beats diamonds. It also happens
+    // to be the largest remaining source of clipped pixels after the regrade
+    // (0.53% -> 0.22% of the frame at luma 255 on the hero pose), so 'low'
+    // loses the sparkle and gets a cleaner image for it.
     //
     // 'low' is where the phones are, and a phone is often held in daylight, so
     // it still runs a little brighter and less contrasty than the desktop
@@ -227,7 +240,7 @@ const LOOKS = {
     bloomScale: 0.4,
     samples: 1,
     dither: true,
-    sharpen: true,
+    sharpen: false,
     sharpenEdge: 0.62,
     ssao: null,
   },
