@@ -446,23 +446,19 @@ export default class Materials {
     // Gated on q.glint, which is false on the low preset.
     if (this.ctx.config.q.glint) {
       m.clearCoat.isEnabled = true;
-      m.clearCoat.intensity = 0.30;
-      m.clearCoat.roughness = 0.04;
+      m.clearCoat.intensity = 0.45;
+      m.clearCoat.roughness = 0.028;
       m.clearCoat.indexOfRefraction = 2.4;   // diamond
       m.clearCoat.bumpTexture = this._rawTex('pave_f', this._pave.facet, this._paveSize, false, tile, 0.85);
-      // Dispersion. A diamond's fire is coloured, and a thin-film term is the
-      // cheapest believable stand-in for it: the flash shifts hue with angle
-      // instead of being another white dot. Kept low — at any strength you can
-      // actually notice as iridescence it stops looking like a diamond and
-      // starts looking like an oil slick.
-      // Iridescence is a second full BRDF branch on top of the clear coat.
-      // Restricted to the top preset: it is the most expensive thing in the
-      // material and the least load-bearing.
-      m.iridescence.isEnabled = this.ctx.config.q.name === 'high';
-      m.iridescence.intensity = 0.16;
-      m.iridescence.indexOfRefraction = 1.5;
-      m.iridescence.minimumThickness = 260;
-      m.iridescence.maximumThickness = 520;
+      // DISPERSION WAS TRIED AND REMOVED. A thin-film iridescence term is the
+      // cheapest believable stand-in for a diamond's coloured fire, and at
+      // intensity 0.16 it looked good — but it is a second full BRDF branch on
+      // top of the clear coat, and with it enabled a single close-up frame of
+      // the character stopped rendering inside the capture harness's 30 s
+      // budget at the high preset. A material that breaks the screenshot tool
+      // is a material nobody can grade, and the effect was worth far less than
+      // the clear-coat glint above. If it comes back it needs a real device
+      // and a real frame-time measurement first, not a guess.
     }
 
     m.freeze();
@@ -562,7 +558,7 @@ export default class Materials {
 
     // --- polished, unset metal: face, hands, boots, trim ---
     this.brushed('polRose', PALETTE.roseGold, 3, 0.72);
-    this.brushed('polRhodium', PALETTE.rhodium, 3, 0.70);
+    this.brushed('polRhodium', PALETTE.rhodium, 3, 1.05);
     this.brushed('polGold', PALETTE.yellowGold, 3, 0.85);
 
     // --- the structural metals -------------------------------------------
@@ -634,7 +630,7 @@ export default class Materials {
     // Lighter than the structural dark chrome. The membrane is a thin sheet
     // catching light from one side; at darkChrome's value it rendered as a
     // black cut-out with no form at all.
-    this.brushed('wingChrome', PALETTE.wingChrome, 2, 0.55);
+    this.brushed('wingChrome', PALETTE.wingChrome, 2, 0.95);
     this.mutate('wingChrome', (m) => { m.backFaceCulling = false; });
 
     // enamel(name, colour, roughness)
