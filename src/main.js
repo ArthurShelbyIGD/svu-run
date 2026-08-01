@@ -9,13 +9,14 @@
 //   6. bind the loop and run
 
 import {
-  Engine, Scene, FreeCamera, Vector3, Color4, DefaultRenderingPipeline,
+  Engine, Scene, FreeCamera, Vector3, Color4,
 } from './core/bjs.js';
 import * as BJS from './core/bjs.js';
 import { Ctx, EV } from './core/ctx.js';
-import { Config, guessPreset, QUALITY } from './core/config.js';
+import { Config, guessPreset, QUALITY, setViewAspect } from './core/config.js';
 import { Rng } from './core/rng.js';
 import { Loop } from './core/loop.js';
+import { Post } from './core/post.js';
 
 import Materials from './mat/index.js';
 import World from './world/index.js';
@@ -75,8 +76,16 @@ export async function boot(opts = {}) {
 
   engine.setHardwareScalingLevel(1 / config.q.scale);
 
+  // The lens is aspect-compensated (see FOV_COVER in core/config.js), so the
+  // config needs to know the shape of the frame before anything reads a fov.
+  setViewAspect(engine.getRenderWidth() / engine.getRenderHeight());
+
   // --- camera ---
   const cam = new FreeCamera('cam', new Vector3(0, config.tune.camHeight, -config.tune.camDistance), scene);
+  // Left at 0.35 deliberately. Pushing the near plane out would buy depth
+  // precision, but the camera passes within a metre of the corner backstop wall
+  // on a tight junction and a clipped hole in a wall is a far worse defect than
+  // any precision it would win.
   cam.minZ = 0.35;
   cam.maxZ = 320;
   cam.fov = config.tune.camFovBase;
@@ -108,26 +117,12 @@ export async function boot(opts = {}) {
   ctx.emit(EV.RUN_START, null);
 
   // --- post-processing ---
-  const q = config.q;
-  const pipeline = new DefaultRenderingPipeline('post', true, scene, [cam]);
-  pipeline.samples = q.name === 'high' ? 4 : 1;
-  pipeline.fxaaEnabled = q.fxaa;
-  pipeline.bloomEnabled = q.bloom;
-  if (q.bloom) {
-    pipeline.bloomThreshold = 0.72;
-    pipeline.bloomWeight = q.bloomScale;
-    pipeline.bloomKernel = 48;
-    pipeline.bloomScale = 0.5;
-  }
-  pipeline.imageProcessingEnabled = true;
-  const ip = pipeline.imageProcessing;
-  ip.toneMappingEnabled = true;
-  ip.toneMappingType = 1; // ACES
-  ip.exposure = 1.05;
-  ip.contrast = 1.12;
-  ip.vignetteEnabled = true;
-  ip.vignetteWeight = 1.4;
-  ip.vignetteStretch = 0.4;
+  // The whole grade lives in core/post.js. `ctx.pipeline` stays pointed at the
+  // DefaultRenderingPipeline because world/ drives bloom weight through it per
+  // zone, and that is a contract.
+  const post = new Post(ctx, cam);
+  const pipeline = post.init();
+  ctx.post = post;
   ctx.pipeline = pipeline;
 
   // --- loop ---
@@ -143,7 +138,12 @@ export async function boot(opts = {}) {
 
   const onResize = () => {
     engine.resize();
-    ctx.emit(EV.RESIZE, { width: engine.getRenderWidth(), height: engine.getRenderHeight() });
+    const w = engine.getRenderWidth();
+    const h = engine.getRenderHeight();
+    // Before the event, so any listener that reads config.tune.camFovBase in
+    // response to a resize gets the new lens rather than the old one.
+    setViewAspect(w / h);
+    ctx.emit(EV.RESIZE, { width: w, height: h });
   };
   window.addEventListener('resize', onResize);
   document.addEventListener('visibilitychange', () => {
@@ -159,7 +159,7 @@ export async function boot(opts = {}) {
   }
 
   // Expose for the capture/perf harness and for console debugging.
-  window.SVU = { ctx, engine, scene, loop, config, pipeline };
+  window.SVU = { ctx, engine, scene, loop, config, pipeline, post };
   // Exposed for tools/world-mock.mjs, which patches the live scene to compare
   // art directions. Costs nothing and never runs in a shipped path.
   window.SVU.BJS = BJS;
@@ -184,10 +184,8 @@ function autoQuality(ctx) {
   ctx.config.setPreset(next);
   const q = QUALITY[next];
   ctx.engine.setHardwareScalingLevel(1 / q.scale);
-  if (ctx.pipeline) {
-    ctx.pipeline.samples = 1;
-    ctx.pipeline.bloomWeight = q.bloomScale;
-  }
+  if (ctx.post) ctx.post.setPreset(next);
+  if (ctx.pipeline) ctx.pipeline.bloomWeight = q.bloomScale;
   ctx.emit(EV.QUALITY_CHANGE, { preset: next });
   // Re-check once more after the change settles.
   ctx.loop.frameCount = 0;

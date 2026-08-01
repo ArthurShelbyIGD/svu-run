@@ -7,6 +7,42 @@
 // Subsystems read `ctx.config.q.*` for budgets. They must respect them: a
 // preset is a contract, not a suggestion.
 
+/**
+ * Render aspect ratio, pushed in from main.js on boot and on every resize.
+ * Module-scope rather than a field so `TUNE.camFovBase` can stay a plain
+ * number from every reader's point of view.
+ */
+let _aspect = 16 / 9;
+export function setViewAspect(a) { if (a > 0 && isFinite(a)) _aspect = a; }
+export function getViewAspect() { return _aspect; }
+
+// Reference vertical field of view, in radians, at the reference aspect.
+const FOV_REF = 0.79;
+const FOV_REF_ASPECT = 16 / 9;
+// 0 = vertical-fixed (Babylon's default), 1 = horizontal-fixed.
+//
+// WHY THIS IS NOT JUST A CONSTANT.
+// Babylon's FreeCamera defaults to FOVMODE_VERTICAL_FIXED, which holds the
+// vertical angle and lets the horizontal one collapse with the aspect ratio. On
+// a 390x844 phone that leaves a 27 degree horizontal field: the three lanes and
+// both rails were being squeezed into a slot, which is what "portrait puts the
+// character quite large in frame" actually was — the character was not large,
+// the corridor was narrow. Horizontal-fixed overcorrects the other way and
+// gives portrait a 96 degree vertical fisheye.
+//
+// Blending the two in TANGENT space (which is where field of view is linear in
+// screen size) gives a "cover" lens: portrait gains corridor width and loses a
+// little subject size, desktop gains subject size and loses a little periphery,
+// and neither ever goes near a fisheye.
+//
+// TUNED BY LOOKING, twice. 0.45 was the first guess and it was too much: the
+// desktop hero improved but the phone shot came back with the runner at about
+// a seventh of frame height, stranded in an empty foreground — portrait had
+// paid for desktop's gain. 0.20 keeps the phone within a few percent of where
+// it was (which was already the better-framed of the two) and lets the narrower
+// reference lens do the work on desktop, where the problem actually was.
+const FOV_COVER = 0.20;
+
 export const TUNE = {
   // --- track geometry ---
   laneWidth: 2.4,          // metres between lane centres
@@ -53,12 +89,26 @@ export const TUNE = {
   playerHeight: 1.5,
 
   // --- camera ---
-  camDistance: 6.4,
-  camHeight: 3.05,
+  // Framing, not gameplay. The runner sat at roughly a fifth of frame height,
+  // shot from dead astern and from high enough to be looking at the top of its
+  // own head — so the two things that carry the IP, the face and the wing, were
+  // both invisible and the silhouette read as a stack of spheres. Modern
+  // runners sit the character nearer a quarter of the frame and lower the eye
+  // line so the shape is seen side-on rather than from above.
+  camDistance: 6.0,
+  camHeight: 2.80,
   camLookAhead: 8.0,
   camLagPos: 0.12,         // smoothing factor, lower = tighter
   camLagRot: 0.16,
-  camFovBase: 0.95,        // radians
+  /**
+   * Vertical field of view in radians, aspect-compensated. See FOV_COVER.
+   * A getter rather than a constant because the right vertical angle depends
+   * on the shape of the frame, and play/ re-reads this every frame anyway.
+   */
+  get camFovBase() {
+    const t = Math.tan(FOV_REF / 2) * Math.pow(FOV_REF_ASPECT / _aspect, FOV_COVER);
+    return 2 * Math.atan(t);
+  },
   camFovSpeedGain: 0.12,   // extra fov at max speed, sells velocity
 
   // --- scoring ---
@@ -81,7 +131,7 @@ export const QUALITY = {
     shadows: false,
     shadowMapSize: 0,
     bloom: true,
-    bloomScale: 0.35,
+    bloomScale: 0.55,
     ssao: false,
     fxaa: true,
     envSize: 64,            // env cubemap face size
@@ -98,8 +148,10 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 1024,
     bloom: true,
-    bloomScale: 0.5,
-    ssao: false,
+    bloomScale: 0.62,
+    // AO is worth more than a second MSAA sample or a bigger shadow map: it is
+    // what stops every object floating. Medium buys it at half resolution.
+    ssao: true,
     fxaa: true,
     envSize: 128,
     maxParticles: 400,
@@ -115,7 +167,7 @@ export const QUALITY = {
     shadows: true,
     shadowMapSize: 2048,
     bloom: true,
-    bloomScale: 0.6,
+    bloomScale: 0.67,
     ssao: true,
     fxaa: true,
     envSize: 256,

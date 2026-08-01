@@ -52,6 +52,9 @@ export { PointLight } from '@babylonjs/core/Lights/pointLight';
 export { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
 
 export { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline';
+export { SSAO2RenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline';
+export { ColorCurves } from '@babylonjs/core/Materials/colorCurves';
+export { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
 
 export { Constants } from '@babylonjs/core/Engines/constants';
 export { Layer } from '@babylonjs/core/Layers/layer';
