@@ -210,6 +210,7 @@ adding polish.
 
 | # | Issue | Where | Planned |
 |---|---|---|---|
+| 18 | `npm run shots` (all poses) now intermittently trips Playwright's 30s `page.screenshot` timeout in SwiftShader — individual `--only <pose>` runs are reliable. The scene got heavier this sprint and pushed the harness over a limit that is hardcoded in `tools/capture.mjs` | `tools/` | raise with lead |
 | 14 | Sky is one painting per zone. The clerestory is the only band the chase camera can see, so the vault and the lower hall are mostly wasted paint | `world/` | polish |
 | 15 | Architecture has one bay design. Variation comes from the wayside accents only; a second and third bay variant would kill the last of the repetition | `world/` | next |
 | 16 | `world/` creates three of its own materials (sky dome, lantern gem, light shaft) because the `mat/` name contract has no entry for an unlit backdrop or an additive quad. Worth adding names for these | `mat/`, `world/` | raise |

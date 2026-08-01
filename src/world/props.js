@@ -34,8 +34,10 @@ export const BAY_LEN = 24;
 const COL_X = 4.95;              // matches the track's own column offset
 const COL_Z = [-8, 0, 8];
 const SPRING_Y = 5.26;           // top of the abacus: where arches spring
-const AHEAD = 210;               // metres of architecture kept ahead
-const BEHIND = 34;
+// Fog closes at 205m and the track only generates to 180m ahead, so anything
+// past this is paying full vertex cost to be invisible.
+const AHEAD = 184;               // metres of architecture kept ahead
+const BEHIND = 28;
 const BAY_SLOTS = Math.ceil((AHEAD + BEHIND) / BAY_LEN) + 2;
 const ACCENT_SLOTS = 14;
 const COL_STEP = 8;              // metres between columns, matching the track
@@ -320,7 +322,13 @@ export default class Props {
    * amount of extra masonry.
    */
   _buildShafts(scene, q) {
-    if (q.name === 'low') { this.shaftMesh = null; return; }
+    // High only, and small. These are large additive quads: every one of them
+    // is a full-screen blend when the camera gets close, and stacking a dozen
+    // down a corridor is the single most fill-rate-hungry thing in the game.
+    // At character-close camera distances it was enough to blow the capture
+    // harness past a thirty second screenshot timeout in software rendering,
+    // which is a fair warning about what it would cost a phone.
+    if (q.name !== 'high') { this.shaftMesh = null; return; }
     const size = 128;
     const tex = new DynamicTexture('lightShaft', { width: size, height: size }, scene, true);
     const c = tex.getContext();
@@ -361,8 +369,8 @@ export default class Props {
     m.disableDepthWrite = true;
     this.shaftMat = m;
 
-    const plane = MeshBuilder.CreatePlane('lightShaft', { width: 9.5, height: 13 }, scene);
-    plane.position.set(0, 6.6, 0);
+    const plane = MeshBuilder.CreatePlane('lightShaft', { width: 9.0, height: 7.5 }, scene);
+    plane.position.set(0, 9.2, 0);
     plane.bakeCurrentTransformIntoVertices();
     plane.material = m;
     plane.isPickable = false;
@@ -491,7 +499,7 @@ export default class Props {
     if (this.shaftBuf) {
       // Every third bay gets a shaft. Every bay is a fog machine; every third
       // is a cathedral.
-      if (this._baySlot % 3 === 0) this._m.copyToArray(this.shaftBuf, o);
+      if (this._baySlot % 4 === 0) this._m.copyToArray(this.shaftBuf, o);
       else this.shaftBuf.fill(0, o, o + 16);
     }
   }

@@ -41,7 +41,11 @@ export default class Sky {
     // A phone does not need a 2048-wide panorama to sell a dark room, and the
     // bake cost is linear in pixels — five zones at full size is the single
     // largest chunk of init time in the whole game.
-    const W = q.name === 'low' ? 640 : 1280;
+    // Five panoramas is five 2D canvases plus five mipped GPU textures, held
+    // for the whole session. 1024 is the point where the clerestory still
+    // resolves cleanly at gameplay distance and the bake stays under a frame
+    // budget you would be willing to spend at load.
+    const W = q.name === 'low' ? 512 : 1024;
     const H = W >> 1;
 
     this.textures = ZONES.map((zone, i) => {
