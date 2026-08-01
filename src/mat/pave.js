@@ -35,6 +35,15 @@ export function generatePaveMaps(size, cells) {
   // slides smoothly across a dome. Smooth highlights read as plastic; snapping
   // ones read as cut stone.
   const facet = new Uint8Array(size * size * 4);
+  // Fourth map: albedo. Added after a close-up showed the suit reading as
+  // white foam rather than as set stones. The stones are modelled as bright
+  // DIELECTRICS (see the metallic note below), so their diffuse term is the
+  // material's albedo colour at nearly full strength — a field of white
+  // diffuse domes, which is bubble wrap. A real diamond is transparent: it
+  // has almost no body colour and gets its value from what it reflects. So
+  // the stones are darkened here and the metal beading between them is left
+  // at full colour, which is also what gives the setting its structure.
+  const albedo = new Uint8Array(size * size * 4);
 
   const cellW = size / cells;
   const cellH = (cellW * Math.sqrt(3)) / 2;
@@ -175,10 +184,22 @@ export function generatePaveMaps(size, cells) {
       // The metal BETWEEN the stones stays fully metallic.
       orm[o + 2] = (d < stoneR) ? 22 : 255;
       orm[o + 3] = 255;
+
+      if (d < stoneR) {
+        // Darker in the middle of the table, edging brighter at the girdle
+        // where a real stone catches its neighbours' light. Per-stone
+        // variation again, because a uniform field reads as a printed pattern.
+        const t = d / stoneR;
+        const a = (0.50 + t * 0.20 + bestSeed * 0.10) * 255;
+        albedo[o] = a | 0; albedo[o + 1] = a | 0; albedo[o + 2] = a | 0;
+      } else {
+        albedo[o] = 255; albedo[o + 1] = 255; albedo[o + 2] = 255;
+      }
+      albedo[o + 3] = 255;
     }
   }
 
-  return { normal, orm, facet };
+  return { normal, orm, facet, albedo };
 }
 
 /**

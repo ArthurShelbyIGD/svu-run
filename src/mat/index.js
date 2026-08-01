@@ -126,7 +126,7 @@ export default class Materials {
       const a = (i / STRIPS) * Math.PI * 2 + 0.35;
       strips.push([
         Math.cos(a), Math.sin(a),                 // azimuth direction
-        i % 2 === 0 ? 5.0 : 2.4,                 // alternating intensity
+        i % 2 === 0 ? 2.6 : 1.3,                 // alternating intensity
         i % 3 === 0 ? 0.05 : -0.03,               // warmth
       ]);
     }
@@ -151,8 +151,8 @@ export default class Materials {
         r * Math.cos(theta),
         y * 0.92,
         r * Math.sin(theta),
-        0.085,
-        y > -0.15 ? 3.1 : 1.5,                        // softer from below
+        0.048,
+        y > -0.15 ? 7.5 : 3.4,                        // softer from below
         (i % 3 === 0) ? 0.05 : -0.02,
       ]);
     }
@@ -199,7 +199,7 @@ export default class Materials {
           r += down * 0.105; g += down * 0.076; b += down * 0.048;
           // tight bright horizon band — this is what draws the long specular
           // streak across a curved polished surface and sells "jewellery"
-          const horizon = Math.exp(-Math.abs(dy) * 16.0) * 0.42;
+          const horizon = Math.exp(-Math.abs(dy) * 16.0) * 0.26;
           r += horizon; g += horizon * 0.985; b += horizon * 0.95;
 
           // --- vertical strip lights ---
@@ -214,9 +214,9 @@ export default class Materials {
             for (let i = 0; i < strips.length; i++) {
               const S = strips[i];
               const c = ax * S[0] + az * S[1];
-              if (c < 0.985) continue;              // ~10 degrees wide
-              const t = (c - 0.985) / 0.015;
-              const s = t * t * S[2] * elev * hLen;
+              if (c < 0.972) continue;              // ~13 degrees wide
+              const t = (c - 0.972) / 0.028;
+              const s = t * t * (3 - 2 * t) * S[2] * elev * hLen;
               r += s * (1 + S[3]);
               g += s;
               b += s * (1 - S[3]);
@@ -226,7 +226,7 @@ export default class Materials {
           // --- overhead ring light ---
           // An annulus at about 35 degrees off vertical. Gives every dome in
           // the game a defined circular catchlight rather than a soft smear.
-          const ring = Math.exp(-Math.pow((dy - 0.815) / 0.045, 2)) * 6.0 * K;
+          const ring = Math.exp(-Math.pow((dy - 0.815) / 0.045, 2)) * 3.4 * K;
           r += ring * 1.02; g += ring; b += ring * 0.96;
 
           // --- softboxes ---
@@ -367,7 +367,8 @@ export default class Materials {
     m.bumpTexture = this._rawTex(`${mapKey}_n`, maps.normal, this._size, false, tile);
     m.bumpTexture.level = o.bump === undefined ? 1.0 : o.bump;
     m.invertNormalMapX = false;
-    m.invertNormalMapY = false;
+    m.invertNormalMapY = true;      // see the note in pave() — one convention
+
     m.metallicTexture = this._rawTex(`${mapKey}_orm`, maps.orm, this._size, false, tile);
     m.useRoughnessFromMetallicTextureGreen = true;
     m.useMetallnessFromMetallicTextureBlue = true;
@@ -396,21 +397,29 @@ export default class Materials {
     if (this.cache.has(name)) return this.cache.get(name);
     const m = new PBRMaterial(`p_${name}`, this.ctx.scene);
     m.albedoColor = new Color3(col.r, col.g, col.b);
+    m.albedoTexture = this._rawTex('pave_a', this._pave.albedo, this._paveSize, true, tile);
     m.metallic = 1.0;              // scaled per-pixel by the ORM blue channel
     m.roughness = 1.0;             // driven entirely by the ORM map
     // Set stones sit in a lit tent, not in the room's ambient. Lifting the
     // environment contribution for this material specifically is what keeps
     // the piece reading as jewellery when the zone around it is nearly black.
-    m.environmentIntensity = 1.25;
+    m.environmentIntensity = 1.05;
     m.usePhysicalLightFalloff = true;
 
     m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile);
     // Full-strength stone normals throw reflections so wide that most facets
     // sample the darkest part of the room. Softening keeps the sparkle while
     // holding the overall value up.
-    m.bumpTexture.level = 0.72;
+    m.bumpTexture.level = 0.88;
     m.invertNormalMapX = false;
-    m.invertNormalMapY = false;
+    // NORMAL MAP Y CONVENTION, found by looking rather than by reasoning.
+    // Every generator in mat/ writes ny = -dh/dpy with py measured DOWNWARD
+    // through the pixel array. Rendered against Babylon's tangent frame that
+    // comes out inverted: the pavé read as a golf ball — dimples where there
+    // should be domes — and had done since the material shipped. No test can
+    // see this; a single close-up makes it obvious. Flipped here for every
+    // map in the directory rather than negating four generators.
+    m.invertNormalMapY = true;
 
     m.metallicTexture = this._rawTex('pave_orm', this._pave.orm, this._paveSize, false, tile);
     m.useRoughnessFromMetallicTextureGreen = true;
@@ -443,7 +452,10 @@ export default class Materials {
       // instead of being another white dot. Kept low — at any strength you can
       // actually notice as iridescence it stops looking like a diamond and
       // starts looking like an oil slick.
-      m.iridescence.isEnabled = true;
+      // Iridescence is a second full BRDF branch on top of the clear coat.
+      // Restricted to the top preset: it is the most expensive thing in the
+      // material and the least load-bearing.
+      m.iridescence.isEnabled = this.ctx.config.q.name === 'high';
       m.iridescence.intensity = 0.16;
       m.iridescence.indexOfRefraction = 1.5;
       m.iridescence.minimumThickness = 260;
@@ -466,6 +478,7 @@ export default class Materials {
 
     m.bumpTexture = this._rawTex('brush_n', this._brush.normal, this._brushSize, false, tile);
     m.bumpTexture.level = 0.55;
+    m.invertNormalMapY = true;      // see the note in pave() — one convention
 
     m.metallicTexture = this._rawTex('brush_orm', this._brush.orm, this._brushSize, false, tile);
     m.useRoughnessFromMetallicTextureGreen = true;
@@ -482,9 +495,9 @@ export default class Materials {
     // Tiling chosen so stones are the same physical size everywhere and are
     // individually readable at gameplay distance. Too fine and pavé stops
     // being stones and becomes noise.
-    this.pave('paveWhite', PALETTE.whiteGold, 2.6);
-    this.pave('paveWhiteFine', PALETTE.whiteGold, 4.5);   // small parts
-    this.pave('paveRuby', PALETTE.ruby, 3.2);
+    this.pave('paveWhite', PALETTE.whiteGold, 1.9);
+    this.pave('paveWhiteFine', PALETTE.whiteGold, 3.0);   // small parts
+    this.pave('paveRuby', PALETTE.ruby, 2.3);
 
     // ---------------------------------------------------------------
     // MATERIAL NAME CONTRACT
@@ -546,9 +559,9 @@ export default class Materials {
     });
 
     // --- polished, unset metal: face, hands, boots, trim ---
-    this.brushed('polRose', PALETTE.roseGold, 3, 0.14);
-    this.brushed('polRhodium', PALETTE.rhodium, 3, 0.10);
-    this.brushed('polGold', PALETTE.yellowGold, 3, 0.13);
+    this.brushed('polRose', PALETTE.roseGold, 3, 0.95);
+    this.brushed('polRhodium', PALETTE.rhodium, 3, 0.70);
+    this.brushed('polGold', PALETTE.yellowGold, 3, 0.85);
 
     // --- the structural metals -------------------------------------------
     // These are the rails, the lane inlays, the columns, the obstacles, the
@@ -619,7 +632,7 @@ export default class Materials {
     // Lighter than the structural dark chrome. The membrane is a thin sheet
     // catching light from one side; at darkChrome's value it rendered as a
     // black cut-out with no form at all.
-    this.brushed('wingChrome', PALETTE.wingChrome, 2, 0.22);
+    this.brushed('wingChrome', PALETTE.wingChrome, 2, 0.55);
     this.mutate('wingChrome', (m) => { m.backFaceCulling = false; });
 
     // enamel(name, colour, roughness)
