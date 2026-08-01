@@ -52,52 +52,84 @@ export function buildTile(scene, mat, q, T, withEdges) {
 
   const a = new Assembly(scene);
   const stone = a.w(mat.get('trackStone'));
+  const pave = a.w(mat.get('stoneCarved'));
   const dark = a.w(mat.get('marbleDark'));
   const light = a.w(mat.get('marbleLight'));
   const gold = a.w(mat.get('trackInlay'));
 
   const outer = hw + (withEdges ? 0.74 : 0.0);
 
+  // THE VALUE SCHEME, AND WHY IT IS THE WAY ROUND IT IS.
+  //
+  // The running surface used to be `marbleDark`: albedo 0.22 at roughScale
+  // 0.34, which is a dark near-mirror. On the largest surface in every frame
+  // that is precisely the failure ARCHITECTURE section 7 records. The floor
+  // stopped owning its own value and borrowed the studio environment's
+  // instead, so the paving rendered as wet black patent with white reflection
+  // blobs sliding across it, and every piece of construction underneath —
+  // courses, joints, medallions, roundels — was invisible beneath the
+  // reflection. Captures are explicitly untrustworthy for exactly this class
+  // of surface, so guessing was not an option; the fix has to remove the
+  // dependence on the environment rather than tune it.
+  //
+  // The paving is therefore `stoneCarved`: pale cut stone, roughScale 1.0,
+  // metal 6/255. It is a diffuse dielectric, so its value is its albedo and
+  // nothing else, and it cannot go black in a dark hall or white against a
+  // bright horizon. It also inverts the floor's contrast: a PALE field with
+  // DARK inlaid courses is what a laid marble floor in a jewel-box hall
+  // actually is, it matches the cream-and-silver key of the reference, and it
+  // gives every obstacle on the track a light ground to be a dark silhouette
+  // against — which is the single biggest thing legibility at speed needs.
+  //
   // Base slab. Chamfered, so the tile joints every 8m read as cut grooves.
+  // trackStone keeps its authored joint-and-pinstripe map where it is still
+  // seen: the skirt below the kerb line, on the outside of every bend.
   stone.bevelBox(0, -0.215, 0, outer, 0.185, hl, 0.055);
 
-  // Lane panels — the running surface, laid as individual stones. Splitting
-  // them at the transverse courses is what turns a painted road into a floor:
-  // twelve stones per tile with real grooves between them, rather than three
-  // long strips with lines drawn on top.
-  const gj = 0.085;                                    // half-width of a joint
-  const bounds = [-hl + 0.16, -L * 0.25, L * 0.25, hl - 0.16];
+  // THE COURSE BED. A dark slab laid across the whole paved width, sitting
+  // 8mm below the paving. Every gap between two paving stones therefore shows
+  // as a dark inlaid course rather than an ambiguous seam, which is what turns
+  // nine separate slabs into ONE LAID FLOOR: border courses are the thing the
+  // eye reads as construction, and they only exist if they are a different
+  // value from the stones they frame.
+  //
+  // It also replaces the four hairline boxes that used to be inset in every
+  // stone — 36 boxes a tile, 864 vertices, and at 25 m they were sub-pixel.
+  // One slab reads better than thirty-six slivers and costs 36 vertices.
+  dark.box(0, -0.019, 0, hw, 0.011, hl);
+
+  // Paving stones — the running surface, laid as individual stones and set
+  // proud of the course bed. Splitting them at the transverse courses is what
+  // turns a painted road into a floor: nine stones per tile with real
+  // channels between them, rather than three long strips with lines on top.
+  const gj = 0.18;                                     // half-width of a course
+  const bounds = [-hl + 0.18, -L * 0.25, L * 0.25, hl - 0.18];
   for (let r = 0; r < 3; r++) {
     const z0 = bounds[r] + (r > 0 ? gj : 0);
     const z1 = bounds[r + 1] - (r < 2 ? gj : 0);
     const cz = (z0 + z1) * 0.5;
     const pz = (z1 - z0) * 0.5;
-    const px = lw * 0.5 - 0.15;
+    const px = lw * 0.5 - 0.18;
     for (let l = 0; l < T.laneCount; l++) {
       const x = (l - (T.laneCount - 1) / 2) * lw;
-      dark.bevelBox(x, -0.015, cz, px, 0.015, pz, 0.024);
-      // Hairline frame inset in each stone. Cheap, and it is what stops the
-      // paving reading as one flat dark field between the medallions.
-      if (detail) {
-        for (const sz of [-1, 1]) light.box(x, INLAY, cz + sz * (pz - 0.13), px - 0.13, 0.008, 0.017);
-        for (const sx of [-1, 1]) light.box(x + sx * (px - 0.13), INLAY, cz, 0.017, 0.008, pz - 0.13);
-      }
+      pave.bevelBox(x, -0.0075, cz, px, 0.0075, pz, 0.022);
     }
   }
 
-  // Gold inlay along every lane division, plus the outer border course.
+  // Gold inlay set into the middle of every course. A stripe laid on top of a
+  // slab is a painted line; a stripe running down the centre of a dark course
+  // that is itself sunk below the paving is inlay, and reads as inlay.
   for (let l = 0; l <= T.laneCount; l++) {
     const x = (l - T.laneCount / 2) * lw;
     const edge = (l === 0 || l === T.laneCount);
-    gold.box(x, -0.014, 0, edge ? 0.075 : 0.05, 0.016, hl - 0.17);
+    gold.box(x, -0.014, 0, edge ? 0.055 : 0.075, 0.014, hl - 0.18);
   }
 
   // Transverse courses at quarter points. These are the rhythm of the floor:
   // a 4m ladder streaming under the player is most of the sensation of speed,
   // and lane lines alone cannot supply it because they are parallel to travel.
   for (const cz of [-L * 0.25, L * 0.25]) {
-    light.box(0, -0.020, cz, hw - 0.10, 0.014, gj + 0.01);
-    gold.box(0, -0.012, cz, hw - 0.10, 0.014, 0.042);
+    gold.box(0, -0.014, cz, hw - 0.09, 0.014, 0.062);
     if (detail) {
       for (let l = 0; l <= T.laneCount; l++) {
         const x = (l - T.laneCount / 2) * lw;
@@ -119,9 +151,11 @@ export function buildTile(scene, mat, q, T, withEdges) {
   // They are ROUNDELS, not stars. The first version was an eight-point star
   // and at gameplay distance a bright star lying in a lane is the same visual
   // word as a collectible. Concentric rings cannot be misread that way.
+  // The outer ring is DARK now, not pale: the field it is inlaid into is pale
+  // cut stone, and a pale ring on pale stone is a ring nobody can see.
   if (detail) {
     for (const sx of [-1, 1]) {
-      light.collar(sx * lw, INLAY + 0.004, 0, 0.60, 0.72, 0.012, 20);
+      dark.collar(sx * lw, INLAY + 0.004, 0, 0.60, 0.72, 0.014, 20);
       gold.collar(sx * lw, INLAY + 0.004, 0, 0.31, 0.41, 0.012, 20);
       gold.star(sx * lw, INLAY, 0, 0.17, 0.075, 4, 0.010, 'y');
     }
@@ -312,12 +346,17 @@ export function buildCornerPad(scene, mat, q, w) {
   const light = a.w(mat.get('marbleLight'));
   const gold = a.w(mat.get('trackInlay'));
 
+  // Same three courses as buildTile, in the same order and the same materials.
+  // A corner paved differently from the straights reads as a different floor,
+  // which is the one thing a corner must not do.
   stone.bevelBox(0, -0.215, 0, half, 0.185, half, 0.055);
-  dark.bevelBox(0, -0.015, 0, w * 0.5 - 0.06, 0.015, w * 0.5 - 0.06, 0.03);
+  dark.box(0, -0.019, 0, w * 0.5, 0.011, w * 0.5);
+  a.w(mat.get('stoneCarved'))
+    .bevelBox(0, -0.0075, 0, w * 0.5 - 0.18, 0.0075, w * 0.5 - 0.18, 0.03);
   // border frame just inside the panel edge
   for (const s of [-1, 1]) {
-    gold.box(s * (w * 0.5 - 0.20), -0.012, 0, 0.06, 0.018, w * 0.5 - 0.06);
-    gold.box(0, -0.012, s * (w * 0.5 - 0.20), w * 0.5 - 0.06, 0.018, 0.06);
+    gold.box(s * (w * 0.5 - 0.09), -0.014, 0, 0.055, 0.014, w * 0.5 - 0.06);
+    gold.box(0, -0.014, s * (w * 0.5 - 0.09), w * 0.5 - 0.06, 0.014, 0.055);
   }
   if (detail) {
     // Concentric rings, raised a little more than the straight-run inlays.
@@ -325,7 +364,7 @@ export function buildCornerPad(scene, mat, q, w) {
     // goes here is always partly covered — rings still read as a rosette when
     // half of them is hidden, where a twelve-point star just read as debris
     // poking through the paving.
-    light.collar(0, 0.020, 0, 1.72, 1.96, 0.016, 28);
+    dark.collar(0, 0.020, 0, 1.72, 1.96, 0.018, 28);
     gold.collar(0, 0.020, 0, 1.18, 1.36, 0.016, 28);
     gold.collar(0, 0.020, 0, 0.44, 0.58, 0.016, 24);
     a.w(mat.get('ruby')).gem(0, 0.080, 0, 0.22, 0.085);
