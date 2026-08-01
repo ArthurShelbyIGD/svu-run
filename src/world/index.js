@@ -1,13 +1,23 @@
-// world/ — lighting, shadows, and environment decoration.
+// world/ — lighting, shadows, the sky, and the architecture.
 //
-// OWNERSHIP: this directory owns the lights, the shadow generator, and every
-// decorative (non-collidable) prop. The track surface itself belongs to track/.
+// OWNERSHIP: this directory owns the lights, the shadow generator, the
+// backdrop, and every decorative (non-collidable) prop. The track surface
+// itself belongs to track/.
+//
+// Two files do the heavy lifting:
+//   sky.js   — an equirectangular panorama on a camera-locked dome, so the
+//              room swings around the player instead of sitting still
+//   props.js — a 24m bay of procedural architecture, thin-instanced along the
+//              path and recycled behind the player
 
 import {
   DirectionalLight, HemisphericLight, PointLight, ShadowGenerator,
-  Vector3, Color3, Color4, DynamicTexture, Texture, Scene, Layer,
+  Vector3, Color3, Scene,
 } from '../core/bjs.js';
-import { ZONES, zoneAt, paintZone } from './zones.js';
+import { EV } from '../core/ctx.js';
+import { ZONES, zoneAt } from './zones.js';
+import Sky from './sky.js';
+import Props from './props.js';
 
 export default class World {
   constructor(ctx) {
@@ -15,13 +25,23 @@ export default class World {
     this.key = null;
     this.ambient = null;
     this.shadowGen = null;
+    this.sky = new Sky(ctx);
+    this.props = new Props(ctx);
+    this._fog = new Color3();
+    this._zoneIndex = -1;
+    this._offs = [];
   }
 
   init() {
     const scene = this.ctx.scene;
     const q = this.ctx.config.q;
 
-    this._buildBackdrop();
+    this.sky.init();
+
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogColor = this._fog;
+    scene.fogStart = 48;
+    scene.fogEnd = 205;
 
     // The environment cubemap does most of the lighting work. These two lights
     // exist mainly to produce a directional shadow and a little extra shaping.
@@ -46,145 +66,58 @@ export default class World {
       this.shadowGen.bias = 0.0016;
       this.shadowGen.normalBias = 0.012;
     }
-  }
 
-  /**
-   * A light tent that travels with the character.
-   *
-   * Set stones are bright because they sit in a box of light, not because of
-   * anything about the stone. In a dark zone the environment's diffuse
-   * contribution is nearly nothing, so pavé rendered as dark grey lumps no
-   * matter how the material was tuned. These lights are restricted to the
-   * character's own meshes, so the world stays dark and moody while the piece
-   * in front of the camera is lit like it is on a jeweller's bench.
-   *
-   * This is the same trick portrait photography uses, and it is the reason
-   * product shots look the way they do.
-   */
-  attachPortraitRig(node) {
-    const scene = this.ctx.scene;
-    const meshes = node.getChildMeshes ? node.getChildMeshes() : [node];
-    this.portraitLights = [];
-
-    const rig = [
-      // [x, y, z, intensity, r, g, b]  — positions are relative to the char
-      [1.5, 2.2, 2.4, 30, 1.00, 0.94, 0.86],   // key, high front
-      [-2.0, 1.2, 1.6, 16, 0.82, 0.88, 1.00],  // fill, cool, low left
-      [0.2, 2.4, -2.6, 22, 1.00, 0.90, 0.80],  // rim from behind
-      [0.0, -1.2, 1.2, 8, 1.00, 0.86, 0.70],   // bounce from below
-    ];
-
-    // Point lights are a shader permutation cost per lit mesh, so the low
-    // preset gets the key and rim only. Two lights still tent the piece; four
-    // is a luxury for machines that can afford it.
-    const count = this.ctx.config.q.name === 'low' ? 2 : rig.length;
-    for (let i = 0; i < count; i++) {
-      const [x, y, z, inten, r, g, b] = rig[i];
-      const L = new PointLight(`portrait${i}`, new Vector3(x, y, z), scene);
-      L.parent = node;
-      L.intensity = inten;
-      L.range = 14;
-      L.diffuse = new Color3(r, g, b);
-      L.specular = new Color3(r, g, b);
-      L.includedOnlyMeshes = meshes;
-      this.portraitLights.push(L);
-    }
-  }
-
-  /**
-   * Sky and atmosphere.
-   *
-   * A flat clear colour gives no horizon and no depth: the track simply stopped
-   * dead at the far clip plane against a uniform void. A vertical gradient plus
-   * linear fog costs almost nothing and does three jobs at once — it gives the
-   * scene a horizon, it hides the end of the generated track, and it stops
-   * distant geometry from reading as hard-edged clutter.
-   */
-  /**
-   * A light tent that travels with the character.
-   *
-   * Set stones are bright because they sit in a box of light, not because of
-   * anything about the stone. In a dark zone the environment's diffuse
-   * contribution is nearly nothing, so pavé rendered as dark grey lumps no
-   * matter how the material was tuned. These lights are restricted to the
-   * character's own meshes, so the world stays dark and moody while the piece
-   * in front of the camera is lit like it is on a jeweller's bench.
-   *
-   * This is the same trick portrait photography uses, and it is the reason
-   * product shots look the way they do.
-   */
-  attachPortraitRig(node) {
-    const scene = this.ctx.scene;
-    const meshes = node.getChildMeshes ? node.getChildMeshes() : [node];
-    this.portraitLights = [];
-
-    const rig = [
-      // [x, y, z, intensity, r, g, b]  — positions are relative to the char
-      [1.5, 2.2, 2.4, 30, 1.00, 0.94, 0.86],   // key, high front
-      [-2.0, 1.2, 1.6, 16, 0.82, 0.88, 1.00],  // fill, cool, low left
-      [0.2, 2.4, -2.6, 22, 1.00, 0.90, 0.80],  // rim from behind
-      [0.0, -1.2, 1.2, 8, 1.00, 0.86, 0.70],   // bounce from below
-    ];
-
-    // Point lights are a shader permutation cost per lit mesh, so the low
-    // preset gets the key and rim only. Two lights still tent the piece; four
-    // is a luxury for machines that can afford it.
-    const count = this.ctx.config.q.name === 'low' ? 2 : rig.length;
-    for (let i = 0; i < count; i++) {
-      const [x, y, z, inten, r, g, b] = rig[i];
-      const L = new PointLight(`portrait${i}`, new Vector3(x, y, z), scene);
-      L.parent = node;
-      L.intensity = inten;
-      L.range = 14;
-      L.diffuse = new Color3(r, g, b);
-      L.specular = new Color3(r, g, b);
-      L.includedOnlyMeshes = meshes;
-      this.portraitLights.push(L);
-    }
-  }
-
-  /**
-   * Sky and atmosphere.
-   *
-   * A background Layer, not a sky sphere. The sphere version was wrong twice
-   * over: its radius exceeded the camera far plane so it was clipped into a
-   * visible bubble, and a UV sphere bands along its seams at any usable
-   * segment count. A background layer is one screen-space quad — it cannot be
-   * clipped, cannot band, and costs a single draw.
-   *
-   * Two layers, not one, so zones can crossfade into each other. The top layer
-   * carries the incoming zone and its alpha is the blend.
-   */
-  _buildBackdrop() {
-    const scene = this.ctx.scene;
-    const W = 512;
-    const H = 512;
-
-    // Bake every zone once. Painting a 512x512 gradient is a few milliseconds;
-    // doing it per frame would not be.
-    this.zoneTextures = ZONES.map((zone, i) => {
-      const tex = new DynamicTexture(`zone${i}`, { width: W, height: H }, scene, true);
-      paintZone(tex.getContext(), zone, W, H);
-      tex.update(false);
-      tex.wrapU = Texture.CLAMP_ADDRESSMODE;
-      tex.wrapV = Texture.CLAMP_ADDRESSMODE;
-      return tex;
-    });
-
-    this.layerA = new Layer('zoneA', null, scene, true);
-    this.layerA.texture = this.zoneTextures[0];
-    this.layerB = new Layer('zoneB', null, scene, true);
-    this.layerB.texture = this.zoneTextures[1 % ZONES.length];
-    this.layerB.color = new Color4(1, 1, 1, 0);
-
-    this._zoneIndex = -1;
-    this._fog = new Color3();
-    scene.fogMode = Scene.FOGMODE_LINEAR;
-    scene.fogColor = this._fog;
-    scene.fogStart = 55;
-    scene.fogEnd = 195;
+    this.props.init();
 
     this._applyZone(0);
+
+    // The path is rebuilt from scratch on every restart, so the architecture
+    // has to be rebuilt with it or bay 0 would still be standing where the
+    // previous run's corner used to be.
+    this._offs.push(this.ctx.on(EV.RUN_START, () => this.props.reset()));
+  }
+
+  /**
+   * A light tent that travels with the character.
+   *
+   * Set stones are bright because they sit in a box of light, not because of
+   * anything about the stone. In a dark zone the environment's diffuse
+   * contribution is nearly nothing, so pavé rendered as dark grey lumps no
+   * matter how the material was tuned. These lights are restricted to the
+   * character's own meshes, so the world stays dark and moody while the piece
+   * in front of the camera is lit like it is on a jeweller's bench.
+   *
+   * This is the same trick portrait photography uses, and it is the reason
+   * product shots look the way they do.
+   */
+  attachPortraitRig(node) {
+    const scene = this.ctx.scene;
+    const meshes = node.getChildMeshes ? node.getChildMeshes() : [node];
+    this.portraitLights = [];
+
+    const rig = [
+      // [x, y, z, intensity, r, g, b]  — positions are relative to the char
+      [1.5, 2.2, 2.4, 30, 1.00, 0.94, 0.86],   // key, high front
+      [-2.0, 1.2, 1.6, 16, 0.82, 0.88, 1.00],  // fill, cool, low left
+      [0.2, 2.4, -2.6, 22, 1.00, 0.90, 0.80],  // rim from behind
+      [0.0, -1.2, 1.2, 8, 1.00, 0.86, 0.70],   // bounce from below
+    ];
+
+    // Point lights are a shader permutation cost per lit mesh, so the low
+    // preset gets the key and rim only. Two lights still tent the piece; four
+    // is a luxury for machines that can afford it.
+    const count = this.ctx.config.q.name === 'low' ? 2 : rig.length;
+    for (let i = 0; i < count; i++) {
+      const [x, y, z, inten, r, g, b] = rig[i];
+      const L = new PointLight(`portrait${i}`, new Vector3(x, y, z), scene);
+      L.parent = node;
+      L.intensity = inten;
+      L.range = 14;
+      L.diffuse = new Color3(r, g, b);
+      L.specular = new Color3(r, g, b);
+      L.includedOnlyMeshes = meshes;
+      this.portraitLights.push(L);
+    }
   }
 
   /** Set everything a zone controls, blending into the next by `t`. */
@@ -196,11 +129,9 @@ export default class World {
 
     if (index !== this._zoneIndex) {
       this._zoneIndex = index;
-      this.layerA.texture = this.zoneTextures[index];
-      this.layerB.texture = this.zoneTextures[next];
       this.zoneName = a.name;
     }
-    this.layerB.color.a = blend;
+    this.sky.setZone(index, next, blend);
 
     // Fog, environment intensity and bloom all interpolate, so a zone change
     // is a slow reveal rather than a cut.
@@ -209,6 +140,12 @@ export default class World {
     this._fog.b = a.fog[2] + (b.fog[2] - a.fog[2]) * blend;
     scene.fogColor = this._fog;
     scene.clearColor.set(this._fog.r, this._fog.g, this._fog.b, 1);
+
+    this.props.setGlow(
+      a.gem[0] + (b.gem[0] - a.gem[0]) * blend,
+      a.gem[1] + (b.gem[1] - a.gem[1]) * blend,
+      a.gem[2] + (b.gem[2] - a.gem[2]) * blend,
+    );
 
     scene.environmentIntensity = a.env + (b.env - a.env) * blend;
     const pipe = this.ctx.pipeline;
@@ -237,11 +174,19 @@ export default class World {
     if (map) map.renderList.push(mesh);
   }
 
+  /** Architecture is generated in the simulation step so it is deterministic. */
+  fixedUpdate() {
+    const play = this.ctx.tryGet('play');
+    const track = this.ctx.tryGet('track');
+    if (!play || !track || !track.path) return;
+    this.props.update(play.z, track);
+  }
+
   /** The shadow-casting light follows the player so the map stays tight. */
   renderUpdate() {
     const play = this.ctx.tryGet('play');
     if (!play) return;
-    if (this.layerA) this._applyZone(play.z);
+    this._applyZone(play.z);
     if (!this.key) return;
     this.key.position.set(play.x - 14, 24, play.z - 8);
     if (this.shadowGen) {
@@ -251,10 +196,11 @@ export default class World {
   }
 
   dispose() {
+    for (const off of this._offs) off();
+    this._offs.length = 0;
     if (this.portraitLights) for (const L of this.portraitLights) L.dispose();
-    if (this.layerA) this.layerA.dispose();
-    if (this.layerB) this.layerB.dispose();
-    if (this.zoneTextures) for (const t of this.zoneTextures) t.dispose();
+    this.props.dispose();
+    this.sky.dispose();
     if (this.shadowGen) this.shadowGen.dispose();
     if (this.key) this.key.dispose();
     if (this.ambient) this.ambient.dispose();
