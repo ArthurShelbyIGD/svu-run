@@ -80,7 +80,6 @@ export default class Props {
     const tess = low ? 8 : 16;
     const L = [];   // marbleLight  — shafts, capitals, voussoirs
     const D = [];   // marbleDark   — plinths and parapet, the darkest accents
-    const S = [];   // stoneCarved  — cornice, outer aisle, distant pylons
     const G = [];   // goldTrim     — rings, abaci, keystones, dentils, chains
     const M = [];   // emissive     — lantern gems
 
@@ -95,7 +94,7 @@ export default class Props {
         flutedShaft(scene, L, {
           rBottom: 0.52, rTop: 0.44, height: 3.68,
           flutes: low ? 8 : 14, depth: 0.15,
-          radial: low ? 16 : 42, rings: 3,
+          radial: low ? 16 : 30, rings: 3,
           x: sx, y: 0.78, z: cz,
         });
         // necking, echinus, abacus
@@ -121,47 +120,52 @@ export default class Props {
     arch(scene, L, G, {
       axis: 'x', x: 0, z: 0,
       radius: COL_X, springY: SPRING_Y,
-      voussoirs: low ? 9 : 15, thickness: 0.62, width: 1.20,
+      voussoirs: low ? 9 : 13, thickness: 0.62, width: 1.20,
     });
 
     // --- cornice, dentils and parapet running the length of the bay ---
+    //
+    // Profiled, not slabbed. The first version was a single 1.15m-wide box
+    // 24m long, and in the wide shot its underside was one enormous unbroken
+    // white plane filling a third of the frame — the exact "Minecraft block"
+    // read this whole file exists to kill. A corona over a dentil course over
+    // a bed mould breaks that plane into four lit steps for 36 extra
+    // triangles.
     const half = BAY_LEN * 0.5;
     for (const sx of [-1, 1]) {
-      const x = sx * 5.55;
-      box(scene, S, 1.15, 0.55, BAY_LEN, x, 5.60, 0);
-      box(scene, G, 1.32, 0.09, BAY_LEN, x, 5.92, 0);
-      box(scene, D, 0.32, 0.62, BAY_LEN, sx * 5.86, 6.28, 0);
-      const step = low ? 1.7 : 0.85;
+      const x = sx * 5.90;
+      box(scene, L, 0.62, 0.20, BAY_LEN, sx * 5.62, 5.06, 0);   // bed mould
+      box(scene, L, 0.86, 0.34, BAY_LEN, x, 5.42, 0);            // corona
+      box(scene, G, 1.02, 0.08, BAY_LEN, x, 5.63, 0);            // fillet
+      box(scene, L, 0.70, 0.26, BAY_LEN, sx * 6.02, 5.80, 0);    // cyma
+      box(scene, D, 0.30, 0.50, BAY_LEN, sx * 6.16, 6.18, 0);    // parapet
+      const step = low ? 1.7 : 1.0;
       for (let z = -half + step * 0.5; z < half; z += step) {
-        box(scene, G, 0.18, 0.24, 0.18, sx * 5.66, 5.20, z);
-      }
-      if (!low) {
-        for (let z = -half + 1.5; z < half; z += 3) {
-          box(scene, G, 0.26, 0.80, 0.26, sx * 5.86, 6.45, z);
-        }
+        box(scene, G, 0.17, 0.22, 0.17, sx * 5.98, 5.22, z);
       }
     }
 
     // --- outer aisle: a LOW ruined arcade beyond the colonnade ---
-    // Deliberately capped below the cornice line. The version before this one
-    // stood 8m tall and filled exactly the band of sky the clerestory windows
-    // live in, so the panorama was built, lit and then hidden behind a wall of
-    // pale marble. Depth at ground level, open air above.
+    // Deliberately capped below the cornice line, and in DARK marble. An
+    // earlier pass had it 8m tall in pale marble: it filled exactly the band
+    // of sky the clerestory windows live in, so the panorama was built, lit
+    // and then hidden behind a wall of white blocks. Low and dark, it reads
+    // as depth at ground level instead of competing with the colonnade.
     if (!low) {
       for (const sx of [-1, 1]) {
         const x = sx * 12.4;
         for (const cz of COL_Z) {
-          box(scene, S, 1.55, 4.30, 1.55, x, 2.15, cz);
+          box(scene, D, 1.30, 4.10, 1.30, x, 2.05, cz);
         }
         for (const az of [-4, 4, 12]) {
-          arch(scene, S, G, {
+          arch(scene, D, G, {
             axis: 'z', x, z: az,
-            radius: 3.20, springY: 2.90,
-            voussoirs: 9, thickness: 0.44, width: 1.25,
+            radius: 3.30, springY: 2.80,
+            voussoirs: 9, thickness: 0.42, width: 1.05,
           });
         }
-        box(scene, S, 1.85, 0.42, BAY_LEN, x, 4.55, 0);
-        box(scene, G, 1.98, 0.08, BAY_LEN, x, 4.80, 0);
+        box(scene, D, 1.55, 0.34, BAY_LEN, x, 4.28, 0);
+        box(scene, G, 1.68, 0.07, BAY_LEN, x, 4.49, 0);
       }
 
       // --- distant pylons ---
@@ -170,9 +174,9 @@ export default class Props {
       // painted backdrop reading as painted — and being narrow and widely
       // spaced, it interrupts the sky instead of replacing it.
       for (const sx of [-1, 1]) {
-        box(scene, S, 1.45, 12.0, 1.45, sx * 24.0, 6.0, 0);
-        box(scene, G, 1.85, 0.30, 1.85, sx * 24.0, 12.15, 0);
-        box(scene, S, 2.00, 0.46, 2.00, sx * 24.0, 0.23, 0);
+        box(scene, L, 1.40, 11.5, 1.40, sx * 24.0, 5.75, 0);
+        box(scene, G, 1.80, 0.28, 1.80, sx * 24.0, 11.64, 0);
+        box(scene, D, 1.95, 0.44, 1.95, sx * 24.0, 0.22, 0);
       }
     }
 
@@ -182,7 +186,7 @@ export default class Props {
     // single global key and reads flat.
     cyl(scene, G, 0.07, 0.07, 1.30, 0, 9.50, 0, 6);
     cyl(scene, G, 0.46, 0.16, 0.28, 0, 8.72, 0, tess);
-    gem(scene, M, 0.42, 0, 8.22, 0, low ? 1 : 2);
+    gem(scene, M, 0.42, 0, 8.22, 0, 1);
     for (const sx of [-1, 1]) {
       for (const cz of [-8, 8]) {
         cyl(scene, G, 0.05, 0.05, 0.62, sx * 6.0, 5.00, cz, 6);
@@ -193,21 +197,23 @@ export default class Props {
 
     this.bayLight = mergeBucket(scene, 'bayLight', L, mat.get('marbleLight'));
     this.bayDark = mergeBucket(scene, 'bayDark', D, mat.get('marbleDark'));
-    // The outer aisle and the pylons are pale marble too, not a metallic
-    // stone: every metallic material in a dark room reflects a dark room and
-    // renders as a black slab. The first pass used stoneCarved out here and
-    // the aisle read as a row of voids.
-    this.bayStone = mergeBucket(scene, 'bayStone', S, mat.get('marbleLight'));
+    // Everything structural is dielectric marble, never a metallic "stone":
+    // a metallic surface in a dark room reflects a dark room and renders as a
+    // black slab, which is how the first pass lost its whole outer aisle.
     this.bayGold = mergeBucket(scene, 'bayGold', G, mat.get('goldTrim'));
 
+    // Lit, NOT unlit. A fully emissive faceted gem renders every facet the
+    // same colour, so it reads on screen as a flat gold hexagon rather than a
+    // stone. Keeping a diffuse and a specular term lets the facets separate,
+    // and the emissive floor keeps it glowing in a black corridor.
     this.gemMat = new StandardMaterial('worldGem', scene);
-    this.gemMat.disableLighting = true;
-    this.gemMat.diffuseColor = new Color3(0, 0, 0);
-    this.gemMat.specularColor = new Color3(0, 0, 0);
+    this.gemMat.diffuseColor = new Color3(0.35, 0.28, 0.14);
+    this.gemMat.specularColor = new Color3(1, 0.94, 0.82);
+    this.gemMat.specularPower = 24;
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
-    for (const m of [this.bayLight, this.bayDark, this.bayStone, this.bayGold, this.bayGem]) {
+    for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
   }
@@ -438,7 +444,7 @@ export default class Props {
 
   /** Every mesh that should cast a shadow. */
   casters() {
-    return [this.bayLight, this.bayStone, this.accentStone];
+    return [this.bayLight, this.bayDark, this.accentStone];
   }
 
   dispose() {
