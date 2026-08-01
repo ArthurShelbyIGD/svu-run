@@ -50,54 +50,95 @@ export function buildTile(scene, mat, q, T, withEdges) {
   const hl = L * 0.5;
   const detail = q.name !== 'low';
 
+  // FOUR MATERIALS, AND NOT FIVE.
+  //
+  // A tile is instanced 27 times and every distinct material in it is another
+  // submesh, so one extra material on this mesh is 27 extra draw calls a
+  // frame — on the preset that has to hold 60fps on a phone. The base slab and
+  // the course bed are therefore the same dark marble even though a separate
+  // stone for the slab would have been marginally nicer, because nothing that
+  // costs 27 draws may be justified by "marginally nicer".
   const a = new Assembly(scene);
-  const stone = a.w(mat.get('trackStone'));
+  const pave = a.w(mat.get('stoneCarved'));
   const dark = a.w(mat.get('marbleDark'));
   const light = a.w(mat.get('marbleLight'));
   const gold = a.w(mat.get('trackInlay'));
 
   const outer = hw + (withEdges ? 0.74 : 0.0);
 
-  // Base slab. Chamfered, so the tile joints every 8m read as cut grooves.
-  stone.bevelBox(0, -0.215, 0, outer, 0.185, hl, 0.055);
+  // THE VALUE SCHEME, AND WHY IT IS THE WAY ROUND IT IS.
+  //
+  // The running surface used to be `marbleDark`: albedo 0.22 at roughScale
+  // 0.34, which is a dark near-mirror. On the largest surface in every frame
+  // that is precisely the failure ARCHITECTURE section 7 records. The floor
+  // stopped owning its own value and borrowed the studio environment's
+  // instead, so the paving rendered as wet black patent with white reflection
+  // blobs sliding across it, and every piece of construction underneath —
+  // courses, joints, medallions, roundels — was invisible beneath the
+  // reflection. Captures are explicitly untrustworthy for exactly this class
+  // of surface, so guessing was not an option; the fix has to remove the
+  // dependence on the environment rather than tune it.
+  //
+  // The paving is therefore `stoneCarved`: pale cut stone, roughScale 1.0,
+  // metal 6/255. It is a diffuse dielectric, so its value is its albedo and
+  // nothing else, and it cannot go black in a dark hall or white against a
+  // bright horizon. It also inverts the floor's contrast: a PALE field with
+  // DARK inlaid courses is what a laid marble floor in a jewel-box hall
+  // actually is, it matches the cream-and-silver key of the reference, and it
+  // gives every obstacle on the track a light ground to be a dark silhouette
+  // against — which is the single biggest thing legibility at speed needs.
+  //
+  // BASE SLAB AND COURSE BED ARE ONE BOX.
+  //
+  // The dark bed the paving is laid into doubles as the tile's carcass: its
+  // top face is 8mm below the paving, so every gap between two stones shows as
+  // a dark inlaid course rather than an ambiguous seam. That is what turns
+  // nine separate slabs into ONE LAID FLOOR — border courses are the thing the
+  // eye reads as construction, and they only exist if they are a different
+  // value from the stones they frame.
+  //
+  // Keeping it to one box rather than a slab plus a bed matters for fill rate,
+  // not for vertices: a second full-tile-area horizontal face under the paving
+  // is a whole extra screen-covering layer of opaque overdraw, on the surface
+  // that occupies most of the frame, times 27 live tiles.
+  //
+  // It also replaces the four hairline boxes that used to be inset in every
+  // stone — 36 boxes a tile, 864 vertices, and at 25 m they were sub-pixel.
+  // One bed reads better than thirty-six slivers and costs nothing extra.
+  dark.bevelBox(0, -0.204, 0, outer, 0.196, hl, 0.055);
 
-  // Lane panels — the running surface, laid as individual stones. Splitting
-  // them at the transverse courses is what turns a painted road into a floor:
-  // twelve stones per tile with real grooves between them, rather than three
-  // long strips with lines drawn on top.
-  const gj = 0.085;                                    // half-width of a joint
-  const bounds = [-hl + 0.16, -L * 0.25, L * 0.25, hl - 0.16];
+  // Paving stones — the running surface, laid as individual stones and set
+  // proud of the course bed. Splitting them at the transverse courses is what
+  // turns a painted road into a floor: nine stones per tile with real
+  // channels between them, rather than three long strips with lines on top.
+  const gj = 0.18;                                     // half-width of a course
+  const bounds = [-hl + 0.18, -L * 0.25, L * 0.25, hl - 0.18];
   for (let r = 0; r < 3; r++) {
     const z0 = bounds[r] + (r > 0 ? gj : 0);
     const z1 = bounds[r + 1] - (r < 2 ? gj : 0);
     const cz = (z0 + z1) * 0.5;
     const pz = (z1 - z0) * 0.5;
-    const px = lw * 0.5 - 0.15;
+    const px = lw * 0.5 - 0.18;
     for (let l = 0; l < T.laneCount; l++) {
       const x = (l - (T.laneCount - 1) / 2) * lw;
-      dark.bevelBox(x, -0.015, cz, px, 0.015, pz, 0.024);
-      // Hairline frame inset in each stone. Cheap, and it is what stops the
-      // paving reading as one flat dark field between the medallions.
-      if (detail) {
-        for (const sz of [-1, 1]) light.box(x, INLAY, cz + sz * (pz - 0.13), px - 0.13, 0.008, 0.017);
-        for (const sx of [-1, 1]) light.box(x + sx * (px - 0.13), INLAY, cz, 0.017, 0.008, pz - 0.13);
-      }
+      pave.bevelBox(x, -0.0075, cz, px, 0.0075, pz, 0.022);
     }
   }
 
-  // Gold inlay along every lane division, plus the outer border course.
+  // Gold inlay set into the middle of every course. A stripe laid on top of a
+  // slab is a painted line; a stripe running down the centre of a dark course
+  // that is itself sunk below the paving is inlay, and reads as inlay.
   for (let l = 0; l <= T.laneCount; l++) {
     const x = (l - T.laneCount / 2) * lw;
     const edge = (l === 0 || l === T.laneCount);
-    gold.box(x, -0.014, 0, edge ? 0.075 : 0.05, 0.016, hl - 0.17);
+    gold.box(x, -0.014, 0, edge ? 0.055 : 0.075, 0.014, hl - 0.18);
   }
 
   // Transverse courses at quarter points. These are the rhythm of the floor:
   // a 4m ladder streaming under the player is most of the sensation of speed,
   // and lane lines alone cannot supply it because they are parallel to travel.
   for (const cz of [-L * 0.25, L * 0.25]) {
-    light.box(0, -0.020, cz, hw - 0.10, 0.014, gj + 0.01);
-    gold.box(0, -0.012, cz, hw - 0.10, 0.014, 0.042);
+    gold.box(0, -0.014, cz, hw - 0.09, 0.014, 0.062);
     if (detail) {
       for (let l = 0; l <= T.laneCount; l++) {
         const x = (l - T.laneCount / 2) * lw;
@@ -119,9 +160,11 @@ export function buildTile(scene, mat, q, T, withEdges) {
   // They are ROUNDELS, not stars. The first version was an eight-point star
   // and at gameplay distance a bright star lying in a lane is the same visual
   // word as a collectible. Concentric rings cannot be misread that way.
+  // The outer ring is DARK now, not pale: the field it is inlaid into is pale
+  // cut stone, and a pale ring on pale stone is a ring nobody can see.
   if (detail) {
     for (const sx of [-1, 1]) {
-      light.collar(sx * lw, INLAY + 0.004, 0, 0.60, 0.72, 0.012, 20);
+      dark.collar(sx * lw, INLAY + 0.004, 0, 0.60, 0.72, 0.014, 20);
       gold.collar(sx * lw, INLAY + 0.004, 0, 0.31, 0.41, 0.012, 20);
       gold.star(sx * lw, INLAY, 0, 0.17, 0.075, 4, 0.010, 'y');
     }
@@ -173,36 +216,76 @@ export function buildColumn(scene, mat, q) {
 
 /* -------------------------------------------------------------- obstacles */
 
+/*
+ * THE THREE OBSTACLES ARE THREE WORDS, AND THE PLAYER READS THEM AT 25 METRES.
+ *
+ * Judged from the chase camera at spawn distance, each obstacle is about sixty
+ * pixels tall inside a corridor packed with columns, beams and gold. All three
+ * used to be dark objects with gold trim on a dark ground, so they arrived as
+ * one indistinct shape and the player had to be close enough to be committed
+ * before knowing which of jump / slide / dodge was being asked for.
+ *
+ * They are now built around three reads that survive being sixty pixels tall,
+ * and the reads are carried by the LARGEST mass in each object, because that
+ * is the only part with enough pixels to say anything:
+ *
+ *   LOW   a bright pale block, wide and ankle-height          -> step over it
+ *   HIGH  a dark curtain in the air with a lit hem            -> go under it
+ *   FULL  a tall pale monolith with a dark, jewelled panel    -> go round it
+ *
+ * The lit hem is the important one. A gap you must fit through has to show
+ * WHERE its edge is, and an emissive cord is the only mark that keeps working
+ * when the corridor lighting dips, when the obstacle is backlit, and at every
+ * quality preset — `rubyGlow` is a plain emissive PBR material, no glow layer,
+ * so it costs one submesh and nothing else. It is the same argument the corner
+ * wall arrow won: signage that the player cannot see is not signage.
+ *
+ * Nothing below leaves its collision box. The extents in OB_SIZE are unchanged
+ * and every builder is still written against them.
+ */
+
 /**
- * OB.LOW — gilded barrier. Half-extents 1.02 x 0.28 x 0.30, base y=0, top
- * y=0.56. Nothing here goes above 0.56 or wider than 1.02, so the jump
- * clearance the smoke test asserts is exactly the clearance you can see.
+ * OB.LOW — gilded barrier on a pale marble kerb. Half-extents 1.02 x 0.28 x
+ * 0.30, base y=0, top y=0.56. Nothing here goes above 0.56 or wider than 1.02,
+ * so the jump clearance the smoke test asserts is exactly what you can see.
+ *
+ * The base block used to be marbleDark, which put the object's biggest mass at
+ * the value of the ground it stands on. It is pale now: at distance the whole
+ * barrier reads as one bright horizontal bar lying across the lane, which is
+ * the clearest possible way of saying "this is a thing at ankle height".
  */
 export function buildLow(scene, mat, q, s) {
   const detail = q.name !== 'low';
   const top = s.hy * 2;                     // 0.56
   const a = new Assembly(scene);
-  const dark = a.w(mat.get('marbleDark'));
-  const gold = a.w(mat.get('yellowGold'));
-  const trim = a.w(mat.get('goldTrim'));
   const light = a.w(mat.get('marbleLight'));
+  const gold = a.w(mat.get('yellowGold'));
+  const glow = a.w(mat.get('rubyGlow'));
 
-  dark.bevelBox(0, 0.045, 0, s.hx, 0.045, s.hz, 0.03);          // 0.00-0.09
+  // Pale kerb block, full width. 0.00-0.13.
+  light.bevelBox(0, 0.065, 0, s.hx, 0.065, s.hz, 0.035);
+  // A gold plinth course capping it, so the pale block is set stone and not a
+  // slab of polystyrene. 0.13-0.175.
+  gold.bevelBox(0, 0.1525, 0, 0.96, 0.0225, 0.245, 0.018);
+
   for (const sx of [-1, 1]) {
-    trim.bevelBox(sx * 0.90, 0.30, 0, 0.11, 0.21, 0.155, 0.035); // 0.09-0.51
-    gold.gem(sx * 0.90, 0.525, 0, 0.075, 0.035);                 // finial
+    gold.bevelBox(sx * 0.90, 0.335, 0, 0.11, 0.185, 0.155, 0.035); // posts
+    gold.gem(sx * 0.90, 0.525, 0, 0.075, 0.035);                   // finial
   }
-  gold.bevelBox(0, top - 0.065, 0, 0.92, 0.065, 0.105, 0.03);    // top rail
-  trim.box(0, 0.30, 0, 0.92, 0.032, 0.055);                      // mid rail
+  gold.bevelBox(0, top - 0.065, 0, 0.92, 0.065, 0.105, 0.03);      // top rail
+  // The lit edge, on the face the player runs at, level with the top rail.
+  // This is the line you have to clear, drawn.
+  glow.box(0, top - 0.075, -0.115, 0.86, 0.020, 0.010);
   if (detail) {
+    light.box(0, 0.315, 0, 0.90, 0.030, 0.050);                    // mid rail
     for (const bx of [-0.46, 0, 0.46]) {
-      light.prism(bx, 0.305, 0, 0.042, 0.042, 0.40, 6, 0, 0.012);
+      light.prism(bx, 0.325, 0, 0.042, 0.042, 0.30, 6, 0, 0.012);  // balusters
     }
     // A bezel on a vertical face has to be authored in the XY plane; collar()
     // lies flat in XZ and would read as a shelf. A many-pointed star is a
     // faceted disc, which is what a setting looks like anyway.
-    trim.star(0, 0.335, -0.142, 0.155, 0.125, 10, 0.028, 'z');
-    a.w(mat.get('ruby')).gem(0, 0.335, -0.168, 0.10, 0.115, 0.06);
+    gold.star(0, 0.345, -0.142, 0.150, 0.120, 10, 0.028, 'z');
+    a.w(mat.get('ruby')).gem(0, 0.345, -0.168, 0.10, 0.115, 0.06);
   }
   return a.build('obLow');
 }
@@ -220,24 +303,38 @@ export function buildHigh(scene, mat, q, s) {
   const yTop = s.cy + s.hy;                 // 2.27
   const a = new Assembly(scene);
   const gold = a.w(mat.get('yellowGold'));
-  const trim = a.w(mat.get('goldTrim'));
   // Cloth, not marble. At marbleDark's value the banner rendered as a black
   // hole punched in the corridor with no form in it at all.
   const dark = a.w(mat.get('clothCape'));
+  const glow = a.w(mat.get('rubyGlow'));
 
-  trim.bevelBox(0, yTop - 0.11, 0, s.hx, 0.11, 0.20, 0.04);      // beam
+  // The beam and the header are yellowGold, not goldTrim. goldTrim tiles its
+  // hammer map at 6.0 against yellowGold's 4.0 with a third of the bump, so on
+  // a part this size its dishes fall below a pixel and turn the whole beam
+  // into crawling specular glitter. mat/ makes the same argument about the
+  // lane rails; it applies with more force to something moving towards camera.
+  gold.bevelBox(0, yTop - 0.11, 0, s.hx, 0.11, 0.20, 0.04);      // beam
   for (const sx of [-1, 1]) {
     gold.bevelBox(sx * 0.93, yTop - 0.14, 0, 0.09, 0.15, 0.25, 0.03);
     gold.prism(sx * 0.70, yTop + 0.62, 0, 0.032, 0.032, 1.24, 6); // hangers
   }
-  trim.bevelBox(0, yTop + 1.30, 0, 0.92, 0.07, 0.11, 0.03);       // header
+  gold.bevelBox(0, yTop + 1.30, 0, 0.92, 0.07, 0.11, 0.03);       // header
   // banner: top at 2.05, hem troughs land on 1.17
   dark.banner(0, yTop - 0.22, 0, s.hx * 2, (yTop - 0.22) - yBot, 0.025, 3);
-  trim.box(0, yTop - 0.235, -0.03, s.hx, 0.035, 0.035);
+  gold.box(0, yTop - 0.235, -0.03, s.hx, 0.035, 0.035);
+
+  // THE SLIDE LINE. A ruby cord run straight across the banner at the height
+  // of its lowest hem trough — which is the collision floor, 1.17, exactly.
+  // The scalloped hem is the right shape for a banner and the wrong shape for
+  // a gap: its edge rises and falls, so the eye has to guess which part of it
+  // is the part that will hit you. The cord does not rise and fall, it is
+  // emissive so it survives being backlit by the corridor, and it is the one
+  // mark on the object that says how low you have to get.
+  glow.box(0, yBot + 0.035, -0.048, s.hx * 0.94, 0.030, 0.012);
   if (detail) {
-    trim.box(0, yBot + 0.30, -0.03, s.hx * 0.86, 0.022, 0.03);
-    trim.star(0, yBot + 0.62, -0.042, 0.28, 0.125, 6, 0.03, 'z');
-    a.w(mat.get('ruby')).gem(0, yBot + 0.62, -0.078, 0.13, 0.16, 0.05);
+    gold.box(0, yBot + 0.36, -0.03, s.hx * 0.86, 0.022, 0.03);
+    gold.star(0, yBot + 0.66, -0.042, 0.28, 0.125, 6, 0.03, 'z');
+    a.w(mat.get('ruby')).gem(0, yBot + 0.66, -0.078, 0.13, 0.16, 0.05);
   }
   return a.build('obHigh');
 }
@@ -253,12 +350,18 @@ export function buildFull(scene, mat, q, s) {
   const a = new Assembly(scene);
   const light = a.w(mat.get('marbleLight'));
   const dark = a.w(mat.get('marbleDark'));
-  const trim = a.w(mat.get('goldTrim'));
+  const trim = a.w(mat.get('yellowGold'));
   const rose = a.w(mat.get('roseGold'));
 
   light.bevelBox(0, 0.09, 0, s.hx, 0.09, s.hz, 0.04);            // base step
   trim.bevelBox(0, 0.235, 0, 0.93, 0.055, 0.30, 0.035);
-  dark.bevelBox(0, 1.14, 0, 0.82, 0.85, 0.255, 0.055);           // shaft
+  // THE SHAFT IS PALE. It was marbleDark, which made the tallest, widest,
+  // most dangerous object on the track the same value as the corridor behind
+  // it — a dark block in a dark hall has no silhouette, and this is the one
+  // obstacle you cannot jump, slide or survive. Pale marble gives it the
+  // biggest tonal separation available from the background, and a monolith is
+  // what the shape wants to be anyway.
+  light.bevelBox(0, 1.14, 0, 0.82, 0.85, 0.255, 0.055);          // shaft
   // Corner pilasters. On low they collapse to one per side, on the front
   // corners only — the back pair is never visible to the player anyway.
   for (const sx of [-1, 1]) {
@@ -268,17 +371,28 @@ export function buildFull(scene, mat, q, s) {
   trim.bevelBox(0, top - 0.23, 0, s.hx, 0.08, s.hz, 0.04);       // cornice
   light.bevelBox(0, top - 0.11, 0, 0.86, 0.045, 0.28, 0.03);     // crown
   trim.bevelBox(0, top - 0.045, 0, 0.62, 0.03, 0.20, 0.02);      // cap
-  // A gold pinstripe framing the dark front panel. Without it the shaft face
-  // reads as a hole cut in the object rather than as a set panel.
-  for (const sy of [-1, 1]) trim.box(0, 1.14 + sy * 0.76, -0.268, 0.72, 0.022, 0.016);
-  for (const sx of [-1, 1]) trim.box(sx * 0.72, 1.14, -0.268, 0.022, 0.78, 0.016);
+
+  // The dark went where dark earns its keep: a sunk panel on the front face,
+  // the one face the player ever sees. It is now the plinth's jewellery
+  // setting rather than its bulk — a dark ground for the gold star, framed by
+  // pale marble, which is how a set stone is mounted and how it reads.
+  dark.bevelBox(0, 1.16, -0.252, 0.62, 0.68, 0.012, 0.03);
+  for (const sy of [-1, 1]) trim.box(0, 1.16 + sy * 0.70, -0.266, 0.66, 0.022, 0.016);
+  for (const sx of [-1, 1]) trim.box(sx * 0.66, 1.16, -0.266, 0.022, 0.72, 0.016);
 
   // Front face: a gold star setting with a ruby at its heart. The player sees
   // this face and only this face, so all the jewellery goes here.
+  //
+  // The gem's z is measured, not guessed. gem()'s third radius is its HALF
+  // depth, so the old call sat its tip at -0.405 on a box whose front face is
+  // -0.34: the one piece of jewellery on the object was sticking 6.5cm out
+  // through the collision hull, where it could be visually clipped by a player
+  // who had legitimately cleared the obstacle. -0.295 with a 0.045 half depth
+  // lands the tip exactly on -0.34 and still stands 2.5cm proud of the star.
   trim.star(0, 1.18, -0.265, 0.44, 0.20, 6, 0.05, 'z');
   if (detail) {
-    a.w(mat.get('ruby')).gem(0, 1.18, -0.315, 0.16, 0.19, 0.09);
-    for (const sy of [0.52, 1.84]) trim.box(0, sy, -0.268, 0.80, 0.022, 0.018);
+    a.w(mat.get('ruby')).gem(0, 1.18, -0.295, 0.16, 0.19, 0.045);
+    for (const sy of [0.44, 1.90]) trim.box(0, sy, -0.266, 0.80, 0.022, 0.018);
   }
   return a.build('obFull');
 }
@@ -307,17 +421,20 @@ export function buildCornerPad(scene, mat, q, w) {
   const detail = q.name !== 'low';
   const half = (w + 1.6) * 0.5;
   const a = new Assembly(scene);
-  const stone = a.w(mat.get('trackStone'));
+  const pave = a.w(mat.get('stoneCarved'));
   const dark = a.w(mat.get('marbleDark'));
   const light = a.w(mat.get('marbleLight'));
   const gold = a.w(mat.get('trackInlay'));
 
-  stone.bevelBox(0, -0.215, 0, half, 0.185, half, 0.055);
-  dark.bevelBox(0, -0.015, 0, w * 0.5 - 0.06, 0.015, w * 0.5 - 0.06, 0.03);
+  // Same three courses as buildTile, in the same order and the same materials.
+  // A corner paved differently from the straights reads as a different floor,
+  // which is the one thing a corner must not do.
+  dark.bevelBox(0, -0.204, 0, half, 0.196, half, 0.055);
+  pave.bevelBox(0, -0.0075, 0, w * 0.5 - 0.18, 0.0075, w * 0.5 - 0.18, 0.03);
   // border frame just inside the panel edge
   for (const s of [-1, 1]) {
-    gold.box(s * (w * 0.5 - 0.20), -0.012, 0, 0.06, 0.018, w * 0.5 - 0.06);
-    gold.box(0, -0.012, s * (w * 0.5 - 0.20), w * 0.5 - 0.06, 0.018, 0.06);
+    gold.box(s * (w * 0.5 - 0.09), -0.014, 0, 0.055, 0.014, w * 0.5 - 0.06);
+    gold.box(0, -0.014, s * (w * 0.5 - 0.09), w * 0.5 - 0.06, 0.014, 0.055);
   }
   if (detail) {
     // Concentric rings, raised a little more than the straight-run inlays.
@@ -325,7 +442,7 @@ export function buildCornerPad(scene, mat, q, w) {
     // goes here is always partly covered — rings still read as a rosette when
     // half of them is hidden, where a twelve-point star just read as debris
     // poking through the paving.
-    light.collar(0, 0.020, 0, 1.72, 1.96, 0.016, 28);
+    dark.collar(0, 0.020, 0, 1.72, 1.96, 0.018, 28);
     gold.collar(0, 0.020, 0, 1.18, 1.36, 0.016, 28);
     gold.collar(0, 0.020, 0, 0.44, 0.58, 0.016, 24);
     a.w(mat.get('ruby')).gem(0, 0.080, 0, 0.22, 0.085);
