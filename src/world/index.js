@@ -28,6 +28,7 @@ export default class World {
     this.sky = new Sky(ctx);
     this.props = new Props(ctx);
     this._fog = new Color3();
+    this._haze = new Color3();
     this._zoneIndex = -1;
     this._offs = [];
     this._w = [0, 0, 0];   // scratch for path->world, never reallocated
@@ -39,10 +40,31 @@ export default class World {
 
     this.sky.init();
 
-    scene.fogMode = Scene.FOGMODE_LINEAR;
-    scene.fogColor = this._fog;
-    scene.fogStart = 48;
-    scene.fogEnd = 205;
+    // ATMOSPHERE IS EXPONENTIAL, NOT A RAMP.
+    //
+    // Linear fog from 48m to 205m is a straight line, and a straight line is
+    // the one falloff curve that occurs nowhere in air. It gives the near
+    // field no haze at all, then takes a constant bite out of every subsequent
+    // metre — so the colonnade forty metres out and the colonnade a hundred
+    // and forty metres out arrive at the eye with almost the same contrast,
+    // and 205m of razor-sharp architecture competes with the lane for
+    // attention the whole way to the vanishing point.
+    //
+    // EXP2 is what real distance does: essentially nothing over the first
+    // twenty metres, where the obstacles the player must read actually live,
+    // then an accelerating dissolve. At this density the numbers are
+    //
+    //   20m  5% hazed     obstacles and the corner pad stay crisp
+    //   60m  38%          the colonnade starts giving up its detail
+    //  100m  73%          the mid depth band is a value, not a shape
+    //  160m  95%          the deep band is a rumour
+    //
+    // which is both the depth cue and the readability fix in one number: the
+    // sharpest, highest-contrast thing in frame is now always the ten metres
+    // in front of the player.
+    scene.fogMode = Scene.FOGMODE_EXP2;
+    scene.fogColor = this._haze;
+    scene.fogDensity = 0.0115;
 
     // THE KEY IS RAKING, NOT OVERHEAD.
     //
@@ -165,8 +187,29 @@ export default class World {
     this._fog.r = a.fog[0] + (b.fog[0] - a.fog[0]) * blend;
     this._fog.g = a.fog[1] + (b.fog[1] - a.fog[1]) * blend;
     this._fog.b = a.fog[2] + (b.fog[2] - a.fog[2]) * blend;
-    scene.fogColor = this._fog;
+    // THE HAZE IS BRIGHTER THAN THE VOID.
+    //
+    // `zone.fog` is a room colour: it is what the darkness of the hall is made
+    // of, and at 0.05 it is very nearly black. Fed straight to `scene.fogColor`
+    // it makes distance a subtraction — everything far away goes to black
+    // while the painted horizon behind it stays a bright gold, so the far
+    // architecture turns into cut-out shapes with no air in front of them and
+    // the depth cue is lost exactly where it is needed.
+    //
+    // Air does the opposite: it ADDS light. The panorama already knew this and
+    // paints its own haze band at 2.6x the zone fog (see paintZone), so the
+    // scene fog was the only part of the picture disagreeing. Lifted to a
+    // comparable value, distance becomes a wash rather than a hole: near
+    // masses are darker than the air, far ones dissolve up into it, and the
+    // value ramp between them is what the eye reads as a hundred metres.
     scene.clearColor.set(this._fog.r, this._fog.g, this._fog.b, 1);
+    const HAZE_GAIN = 2.3;
+    this._haze.set(
+      this._fog.r * HAZE_GAIN, this._fog.g * HAZE_GAIN, this._fog.b * HAZE_GAIN,
+    );
+    scene.fogColor = this._haze;
+
+    this.props.setHaze(this._haze.r, this._haze.g, this._haze.b);
 
     this.props.setGlow(
       a.gem[0] + (b.gem[0] - a.gem[0]) * blend,

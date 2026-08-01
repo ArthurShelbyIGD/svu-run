@@ -252,7 +252,11 @@ export default class Props {
       // car park; two lines of gold turn it into a floor that was designed,
       // and they stream past at speed, which the eye reads as velocity.
       box(scene, G, 0.16, 0.06, BAY_LEN, sx * 8.60, -0.05, 0);
-      box(scene, G, 0.10, 0.06, BAY_LEN, sx * 17.4, -0.05, 0);
+      // The matching strip at 17.4m used to be gold too. Two bright rails
+      // either side of the road, both aimed at the vanishing point, is two
+      // lines of arrows telling the eye to leave the lane. The outer one is
+      // dark stone now: same paving logic, none of the pull.
+      box(scene, F, 0.30, 0.06, BAY_LEN, sx * 17.4, -0.05, 0);
       // ...and cross-bands, so the slab reads as paving rather than as one
       // enormous matt panel. This is the same complaint as the cornice: area
       // without incident is what makes a surface look untextured.
@@ -308,41 +312,102 @@ export default class Props {
         for (const cz of COL_Z) {
           box(scene, D, 1.30, 4.10, 1.30, x, 2.05, cz);
         }
+        // The voussoirs and the ring both go in DARK. This arcade used to be
+        // dark stone picked out with gold, which is a high-contrast pattern
+        // repeated nine times per bay, sitting either side of the lane, at the
+        // exact height an obstacle occupies. It was the loudest thing in the
+        // frame after the near colonnade and it is the second furthest away.
+        // Aerial perspective says the far layer gets LESS contrast, not more.
         for (const az of [-4, 4, 12]) {
-          arch(scene, D, G, {
+          arch(scene, D, D, {
             axis: 'z', x, z: az,
             radius: 3.30, springY: 2.80,
             voussoirs: 9, thickness: 0.42, width: 1.05,
           });
         }
         box(scene, D, 1.55, 0.34, BAY_LEN, x, 4.28, 0);
-        box(scene, G, 1.68, 0.07, BAY_LEN, x, 4.49, 0);
-      }
-
-      // --- distant pylons ---
-      // Real geometry far enough out that it only shows through fog. It gives
-      // the panorama something to parallax against, which is what stops a
-      // painted backdrop reading as painted — and being narrow and widely
-      // spaced, it interrupts the sky instead of replacing it.
-      for (const sx of [-1, 1]) {
-        box(scene, L, 1.40, 11.5, 1.40, sx * 24.0, 5.75, 0);
-        box(scene, G, 1.80, 0.28, 1.80, sx * 24.0, 11.64, 0);
-        box(scene, D, 1.95, 0.44, 1.95, sx * 24.0, 0.22, 0);
+        box(scene, D, 1.72, 0.09, BAY_LEN, x, 4.50, 0);   // was a gold fillet
       }
     }
 
-    // --- hanging lanterns ---
-    // A lantern under the centre arch and one off each cornice. These are the
-    // only local light events in the world; without them the corridor has a
-    // single global key and reads flat.
-    cyl(scene, G, 0.07, 0.07, 1.30, 0, 9.50, 0, 6);
-    cyl(scene, G, 0.46, 0.16, 0.28, 0, 8.72, 0, tess);
-    gem(scene, M, 0.42, 0, 8.22, 0, 1);
-    for (const sx of [-1, 1]) {
-      for (const cz of [-8, 8]) {
-        cyl(scene, G, 0.05, 0.05, 0.62, sx * 6.0, 5.00, cz, 6);
-        cyl(scene, G, 0.30, 0.11, 0.20, sx * 6.0, 4.60, cz, tess);
-        gem(scene, M, 0.26, sx * 6.0, 4.28, cz, 1);
+    // --- DEPTH LAYERS -----------------------------------------------------
+    //
+    // THE PROBLEM. Everything above lives between x = 4.9 and x = 12.4, all of
+    // it lit by the same key, all of it at the same contrast. A corridor with
+    // two rows of columns in it is still a corridor: nothing in frame was
+    // evidence that the room continues past the arcade, so the panorama had to
+    // carry the entire idea of scale on its own — and a painted backdrop with
+    // nothing in front of it always reads as paint.
+    //
+    // WHERE DISTANCE IS ALLOWED TO SHOW, which is the whole design constraint
+    // and cost me a build to learn. The chase lens is 45 degrees vertical and
+    // pitched about 8 degrees down, so the top of the frame is only ~14 degrees
+    // above the horizon. The near cornice — 3.4m above eye level, 6.2m out —
+    // hides everything below elevation atan(0.55 * tan(theta)) at screen angle
+    // theta. Distant geometry therefore has exactly two ways onto the screen:
+    //
+    //   THROUGH the colonnade, under y = 4.9m, in the narrow band either side
+    //     of the horizon, framed by the columns
+    //   OVER the cornice, which requires height > 2.8 + 0.55x and is then
+    //     capped by the frame ceiling at height < 2.8 + 0.25z
+    //
+    // The first version of this layer used 22-42m towers and every one of them
+    // sailed off the top of the frame; the old 11.5m pylons at x = 24 failed
+    // the other test and were occluded at every distance. Both cost vertices
+    // to be invisible. Each band below carries a LOW piece for the first route
+    // and a TALL piece for the second, sized against those two inequalities.
+    //
+    // WHY THEY ARE UNLIT. A silhouette must not have a light direction: the
+    // moment a distant mass has a lit face and a dark face the eye reads it as
+    // near. Flat fill plus fog is the whole of aerial perspective, it is the
+    // cheapest opaque shader there is, and it can therefore run on `low` —
+    // which until now had no world at all beyond the colonnade, because the
+    // outer aisle above is gated behind `!low`.
+    //
+    // Sides are deliberately not mirrored. A hall that is symmetric about the
+    // lane reads as a texture; one that is not reads as a place.
+    const SIL = [];
+    // MID BAND, x = 19.5 — the aisle beyond the aisle.
+    {
+      const X = 19.5;
+      // low: a screen wall with piers, seen between the near columns
+      for (const sx of [-1, 1]) {
+        box(scene, SIL, 1.50, 4.30, BAY_LEN, sx * X, 2.15, 0);
+        for (const pz of COL_Z) {
+          box(scene, SIL, 2.00, 5.60, 1.70, sx * X, 2.80, pz + sx * 2.0);
+        }
+      }
+      // tall: must clear 2.8 + 0.55 * 19.5 = 13.5m to be seen over the cornice
+      const tall = [
+        [-1, [[-8.0, 2.8, 16.8], [6.0, 3.4, 19.2]]],
+        [1, [[-2.0, 3.2, 18.0], [10.0, 2.6, 15.6]]],
+      ];
+      for (const [sx, ts] of tall) {
+        for (const [tz, tw, th] of ts) {
+          box(scene, SIL, tw, th, tw, sx * X, th * 0.5, tz);
+        }
+      }
+    }
+    // FAR BAND, x = 33 — the far side of the hall.
+    {
+      const X = 33.0;
+      // low: taller than the mid band's 4.3m wall, or it never clears it
+      for (const sx of [-1, 1]) {
+        box(scene, SIL, 2.20, 7.60, BAY_LEN, sx * X, 3.80, 0);
+      }
+      // tall: must clear 2.8 + 0.55 * 33 = 21m. Kept under 31 so the tops are
+      // still inside the frame from about ninety metres out, which is where
+      // the haze has them at two thirds and they read as weather.
+      const tall = [
+        [-1, [[-11.0, 5.0, 26.5], [5.0, 6.2, 30.0]]],
+        [1, [[-4.0, 5.8, 28.5], [9.0, 4.6, 24.0]]],
+      ];
+      for (const [sx, ts] of tall) {
+        for (const [tz, tw, th] of ts) {
+          box(scene, SIL, tw, th, tw * 0.9, sx * X, th * 0.5, tz);
+          // an attic step, so the skyline is not a row of flat-topped boxes
+          box(scene, SIL, tw * 0.62, 2.60, tw * 0.56, sx * X, th + 1.3, tz);
+        }
       }
     }
 
@@ -364,6 +429,20 @@ export default class Props {
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
+    // The silhouette fill. `emissiveColor` rather than `diffuseColor` because
+    // with lighting disabled the standard shader multiplies diffuse by nothing
+    // and adds emissive — see the same note in sky.js. The colour is retinted
+    // per zone from the fog colour in setHaze(), so a distant mass is always a
+    // little darker than the air in front of it and never a hole cut out of a
+    // ruby room in the shape of a sapphire one.
+    this.silMat = new StandardMaterial('worldSil', scene);
+    this.silMat.disableLighting = true;
+    this.silMat.diffuseColor = new Color3(0, 0, 0);
+    this.silMat.specularColor = new Color3(0, 0, 0);
+    this.silMat.emissiveColor = new Color3(0.06, 0.055, 0.075);
+    this.baySil = mergeBucket(scene, 'baySil', SIL, this.silMat);
+    if (this.baySil) this.baySil.receiveShadows = false;
+
     // --- contact darkening where the walls meet the floor ---
     // Two bands per side, running the whole bay. This is what turns a set of
     // objects standing on a plane into a room: the eye reads the junction
@@ -377,7 +456,8 @@ export default class Props {
     this.bayAO = mergeBucket(scene, 'bayAO', A, this.aoMats[1]);
     if (this.bayAO) this.bayAO.receiveShadows = false;
 
-    for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem, this.bayAO]) {
+    for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem,
+      this.baySil, this.bayAO]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
 
@@ -739,6 +819,22 @@ export default class Props {
     for (const m of this.meshes) m.thinInstanceBufferUpdated('matrix');
   }
 
+  /**
+   * Zone tint for the depth layers. `r,g,b` is the blended FOG colour.
+   *
+   * A silhouette only works if it is darker than the air around it, so the
+   * layers are painted a fraction of the fog they will dissolve into. The
+   * small floor keeps the nearest band from crushing to pure black in the
+   * darkest zone, where the fog colour is barely above zero and an unlit mass
+   * would otherwise be indistinguishable from the void behind it.
+   */
+  setHaze(r, g, b) {
+    if (!this.silMat) return;
+    this.silMat.emissiveColor.set(
+      r * 0.42 + 0.010, g * 0.42 + 0.009, b * 0.42 + 0.013,
+    );
+  }
+
   /** Zone tint for the emissive bits. Called from renderUpdate. */
   setGlow(r, g, b) {
     if (this.gemMat) this.gemMat.emissiveColor.set(r, g, b);
@@ -770,6 +866,7 @@ export default class Props {
     for (const m of this.meshes) m.dispose();
     this.meshes.length = 0;
     if (this.gemMat) this.gemMat.dispose();
+    if (this.silMat) this.silMat.dispose();
     if (this.shaftMat) this.shaftMat.dispose();
     if (this.shaftTex) this.shaftTex.dispose();
     if (this.aoMats) for (const m of this.aoMats) m.dispose();
