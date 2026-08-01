@@ -83,8 +83,15 @@ try {
   check('slide ends by itself', d2.player.state === 0, `state=${d2.player.state}`);
 
   // ---- leak / pooling ----
+  //
+  // fastForward, not waitGameTime. This check is about POOLING — does the mesh
+  // count stay flat as the world recycles — and nothing about it needs the real
+  // render loop, which the earlier checks already exercised. As the scene got
+  // heavier the software renderer could no longer advance 12 seconds of game
+  // time inside a 60s wall-clock budget, so a passing suite started failing on
+  // a timeout that measured the CI machine rather than the game.
   const meshesBefore = a.totalMeshes;
-  await waitGameTime(page, 12);
+  await fastForward(page, 12);
   const e = await readState(page);
   check('mesh count stays bounded (pooling works)',
     e.totalMeshes <= meshesBefore + 2, `${meshesBefore} -> ${e.totalMeshes}`);
