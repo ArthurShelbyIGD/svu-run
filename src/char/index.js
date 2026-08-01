@@ -487,9 +487,11 @@ export default class Character {
       onFace(s * (AZ + 0.075), EL + 0.115, 1.055, q);
       shine.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.5);
       shine.add(ellipsoid({ rx: P.eyeR * 0.31, su: this.sd, sv: this.sd }));
-      onFace(s * (AZ - 0.085), EL - 0.125, 1.055, q);
-      shine.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.5);
-      shine.add(ellipsoid({ rx: P.eyeR * 0.145, su: this.sd, sv: this.sd }));
+      if (!this.lowQ) {
+        onFace(s * (AZ - 0.085), EL - 0.125, 1.055, q);
+        shine.at(q[0], q[1], q[2], 0, s * -AZ, 0, 1, 1, 0.5);
+        shine.add(ellipsoid({ rx: P.eyeR * 0.145, su: this.sd, sv: this.sd }));
+      }
     }
     // mouth: a cut line with a lifted corner, not a black bean
     onFace(0, -0.44, 1.020, q);
@@ -547,8 +549,12 @@ export default class Character {
     cap.toMesh('stalkCap', scene, mat.get('polGold'), head);
 
     this.parts.stalkSegs = [];
+    this._stalkRest = [];
     let prev = stalkRoot;
-    const segs = 4;
+    // Two segments on `low`: each one is its own transform node and its own
+    // draw call, for a whip on a 4cm-wide wire that is a handful of pixels on a
+    // phone. ARCHITECTURE §4.6.
+    const segs = this.lowQ ? 2 : 4;
     const segLen = P.antennaLen / segs;
     for (let i = 0; i < segs; i++) {
       const node = new TransformNode(`stalkSeg${i}`, scene);
@@ -556,13 +562,14 @@ export default class Character {
       node.position.y = i === 0 ? 0 : segLen;
       // A real BEND, increasing along the stem, so it arcs over the head like
       // the reference instead of standing up like an aerial.
-      node.rotation.z = -0.10 - i * 0.09;
+      node.rotation.z = -0.10 - i * (this.lowQ ? 0.18 : 0.09);
       const g = new Geo();
       const r0 = 0.019 * (1 - i * 0.09), r1 = 0.019 * (1 - (i + 1) * 0.09);
       g.at(0, 0, 0);
       g.add(tube([[0, 0, 0, r0, r0], [0, segLen, 0, r1, r1]], 6, false, false, 1, 2));
       g.toMesh(`stalkBit${i}`, scene, mat.get('polGold'), node);
       this.parts.stalkSegs.push(node);
+      this._stalkRest.push(node.rotation.z);
       prev = node;
     }
 
@@ -796,7 +803,11 @@ export default class Character {
 
     this.cape = new Cape(cols, rows, {
       iters: low ? 2 : 4,
-      len: 1.14,
+      // 0.92, not 1.14. The cape root sits at y = 0.95 and the centre of the
+      // hem is the longest point, so at 1.14 the tip hung 19cm BELOW the road
+      // and rendered as a thin gold wire trailing off the bottom of frame.
+      // Found by looking at a low-preset frame, where it was unmissable.
+      len: 0.92,
       halfW0: 0.17,
       halfW1: 0.95,
       scallops,
@@ -984,7 +995,7 @@ export default class Character {
     const whip = Math.sin(this.phase * 0.8) * 0.06 - this._lean * 0.35;
     for (let i = 0; i < this.parts.stalkSegs.length; i++) {
       const seg = this.parts.stalkSegs[i];
-      seg.rotation.z = -0.10 - i * 0.09 + whip * (i + 1) * 0.6;
+      seg.rotation.z = this._stalkRest[i] + whip * (i + 1) * 0.6;
       seg.rotation.x = Math.sin(this._flutter * 0.7 + i) * 0.03 * (i + 1);
     }
 
