@@ -115,10 +115,15 @@ export function buildTile(scene, mat, q, T, withEdges) {
   // is swallowed by it — the first build of this showed nothing but a small
   // spiky highlight where the ridge broke the surface. The rim goes just above
   // the paving and the whole motif is then visible.
+  //
+  // They are ROUNDELS, not stars. The first version was an eight-point star
+  // and at gameplay distance a bright star lying in a lane is the same visual
+  // word as a collectible. Concentric rings cannot be misread that way.
   if (detail) {
     for (const sx of [-1, 1]) {
-      light.star(sx * lw, INLAY, 0, 0.72, 0.33, 8, 0.010, 'y', Math.PI / 8);
-      gold.star(sx * lw, INLAY + 0.003, 0, 0.34, 0.15, 8, 0.010, 'y');
+      light.collar(sx * lw, INLAY + 0.004, 0, 0.60, 0.72, 0.012, 20);
+      gold.collar(sx * lw, INLAY + 0.004, 0, 0.31, 0.41, 0.012, 20);
+      gold.star(sx * lw, INLAY, 0, 0.17, 0.075, 4, 0.010, 'y');
     }
   }
 
@@ -315,12 +320,15 @@ export function buildCornerPad(scene, mat, q, w) {
     gold.box(0, -0.012, s * (w * 0.5 - 0.20), w * 0.5 - 0.06, 0.018, 0.06);
   }
   if (detail) {
-    // Raised a little more than the straight-run inlays: floor tiles from both
-    // corridors overlap the corner square, and a rosette flush with the paving
-    // would be buried under whichever tile happens to be drawn on top of it.
-    light.star(0, 0.010, 0, 1.85, 0.80, 12, 0.014, 'y', Math.PI / 12);
-    gold.star(0, 0.014, 0, 0.95, 0.40, 12, 0.014, 'y');
-    a.w(mat.get('ruby')).gem(0, 0.075, 0, 0.20, 0.075);
+    // Concentric rings, raised a little more than the straight-run inlays.
+    // Floor tiles from BOTH corridors overlap the corner square, so whatever
+    // goes here is always partly covered — rings still read as a rosette when
+    // half of them is hidden, where a twelve-point star just read as debris
+    // poking through the paving.
+    light.collar(0, 0.020, 0, 1.72, 1.96, 0.016, 28);
+    gold.collar(0, 0.020, 0, 1.18, 1.36, 0.016, 28);
+    gold.collar(0, 0.020, 0, 0.44, 0.58, 0.016, 24);
+    a.w(mat.get('ruby')).gem(0, 0.080, 0, 0.22, 0.085);
   }
   const mesh = a.build('cornerPad');
   mesh.receiveShadows = true;
