@@ -214,6 +214,114 @@ import { EV } from './ctx.js';
  * like the obvious suspect; measured, it is a crispness control, not a
  * headroom one. The regrade is what bought the headroom.
  *
+ * ---------------------------------------------------------------------------
+ * FOURTH MEASUREMENT PASS — SHARPEN WAS THE WHOLE THING, AND BLOOM WAS OFF.
+ *
+ * The frame came back blown out again: the character's pavé a solid white mass,
+ * every cornice and rail wearing a hard white rim, the floor speckle reading as
+ * paper. Hero pose, 1600x900, q=high, seed 1, measured at FULL resolution:
+ *
+ *   shipped    mean 61.2  p95 204  p99 243   1.49% of pixels above 250
+ *                                            0.36% at luma 255,  49.2% below 32
+ *
+ * Two probes settle it, and both contradict what everyone (this file included)
+ * assumed about which end of the pipeline was at fault.
+ *
+ * 1. SHARPEN IS NOT A SPARKLE LEVER. IT IS A 4.4x MULTIPLIER.
+ *    Switching sharpen off and changing nothing else:
+ *
+ *      sharpenEdge 0.85    1.469% above 250   p99 243   hi sigma 17.8
+ *      sharpen off         0.003% above 250   p99 208   hi sigma  5.0
+ *
+ *    Not "most of" the clipping — 99.8% of it. Read the shader
+ *    (sharpen.fragment.fx) and the reason is arithmetic, not taste:
+ *
+ *      out = max(colour*colorAmount - edgeAmount*(sum4Neighbours - 4*colour), 0)
+ *          = colour*(1 + 4*edgeAmount) - edgeAmount*sum4Neighbours
+ *
+ *    so a bright pixel surrounded by dark ones is multiplied by 1 + 4*e. At
+ *    e = 0.85 that is 4.4x, one-sided (the max() means it can only brighten).
+ *    A pavé bead against its own shadow gap, a floor speckle on black stone and
+ *    a gold rail against a black aisle are all exactly that pattern, so the one
+ *    operator in the chain with no roll-off was being handed the entire subject.
+ *    The earlier note that raising 0.40 -> 1.00 "moved pixels above 250 from
+ *    0.215% to 1.063% while the mean held" was true and was read backwards: that
+ *    is not sparkle appearing, it is a fifth of a percent of the frame being
+ *    destroyed and the mean not noticing because the pixels are small.
+ *
+ *    Swept on the hero pose (bloom and grade untouched):
+ *
+ *      e 0.85   above250 1.457%   p95 203   p99 243   hi sigma 17.7
+ *      e 0.55   above250 0.603%   p95 198   p99 223   hi sigma 14.3
+ *      e 0.40   above250 0.281%   p95 195   p99 218   hi sigma 11.6
+ *      e 0.28   above250 0.098%   p95 190   p99 212   hi sigma  9.0
+ *      e 0.18   above250 0.016%   p95 189   p99 210   hi sigma  6.8
+ *
+ *    0.40 is the knee: a 2.6x edge gain still crisps the stone facets and the
+ *    marble veining, and clipping is down 5x. Below ~0.25 the image goes soft
+ *    and the frame simply has no bright pixels in it at all, which is the flat
+ *    result this pass is trying not to buy.
+ *
+ * 2. BLOOM WAS NOT LETTING HALF THE FRAME THROUGH. IT WAS DOING NOTHING.
+ *    The threshold is a LINEAR value, so the honest way to check it is to
+ *    measure the scene's linear range rather than argue about it. Turn the
+ *    tonemapper, curves, contrast and vignette off and set exposure to 1/T: the
+ *    shader then emits (linear/T)^(1/2.2), so a byte decodes straight back to a
+ *    scene-linear value. On the hero pose the brightest pixel in the ENTIRE
+ *    frame decodes to linear 1.15. Nothing — not the apse, not the emitters,
+ *    not the gold — reaches 1.2.
+ *
+ *    The threshold was 2.40. Confirmed by the only test that matters, three
+ *    separate loads at threshold 2.40:
+ *
+ *      bloomWeight 0.469 (shipped)   mean 59.8   above250 1.411%
+ *      bloomWeight 0                 mean 59.7   above250 1.426%
+ *      bloomWeight 2.0               mean 59.4   above250 1.424%
+ *
+ *    Identical. A 4x change in bloom weight and a total switch-off are all the
+ *    same image, because the extract pass keeps zero pixels. 'low' was paying
+ *    for an extract, two downsampled blur chains and a merge every frame to
+ *    composite a black texture over the scene.
+ *
+ *    How it got here is the same integration failure as everything else: the
+ *    threshold was raised to 2.40 against a build whose emitters sat at 1.9-2.3
+ *    linear, and world/ then split the far band's value out and quietened the
+ *    outer aisle. The threshold outlived the scene it was measured against.
+ *    Against a 1.15 ceiling it belongs just under the top of the range:
+ *
+ *      thr 2.40   mean 59.8   above250 1.411%   (nothing blooms)
+ *      thr 0.95   mean 61.5   above250 1.235%
+ *      thr 0.75   mean 62.5   above250 1.205%
+ *      thr 0.55   mean 63.5   above250 1.149%
+ *
+ *    Note clipping goes DOWN as bloom comes on: bloom is a blur, so it spreads
+ *    a bright pixel's energy over its neighbours instead of stacking it. 0.90
+ *    is chosen by looking — the gold, the apse and the rails glow, the marble
+ *    and the character's pavé stay out of the highlight pass. At 0.70 the
+ *    column pedestals start to haze and the aisle loses its edge.
+ *
+ * WHAT THE TWO CHANGES BUY, hero pose, separate page loads:
+ *
+ *   pose               mean  p95  p99   >250    luma255   <32    hi sigma
+ *   hero    before     61.2  204  243   1.487%   0.357%   49.2%    17.7
+ *           after      62.0  199  219   0.170%   0.004%   47.8%     9.8
+ *   phone   before     70.7  213  228   0.257%   0.024%   37.0%    10.2
+ *           after      71.8  208  214   0.028%   0.000%   35.6%     6.4
+ *
+ * Clipping down 8.7x on hero and 9x on phone; luma-255 pixels — the actual
+ * white holes — down two orders of magnitude to essentially none. The dark end
+ * moves by 1.4 points, so this is not a lifted-blacks fix and the frame is no
+ * greyer: the mean is UP slightly, entirely because bloom is finally running.
+ * Looked at side by side, the pavé is a field of shaded beads instead of one
+ * white blob, the marble columns have their veining back, and the gold reads as
+ * gold rather than as pale yellow-white.
+ *
+ * WHAT WAS TRIED AND REJECTED. Spending the recovered headroom on exposure:
+ * 1.62 -> 1.72 with sharpen 0.50 measured well (above250 0.426%, mean 63.2) and
+ * looked worse — the wing and the sash desaturate towards white as they climb
+ * the ACES shoulder, so the character gains brightness and loses its gold. The
+ * headroom is better left as headroom.
+ *
  * MEASURING A/B IN ONE PAGE IS A TRAP, and it is worth writing down because
  * every future pass will be tempted by it. Posing the capture pauses the game
  * LOOP, but scene.render() still advances Babylon's own animation clock off
@@ -243,13 +351,15 @@ const LOOKS = {
     contrast: 1.10,
     vignetteWeight: 4.0,
     vignetteK: 0.34,
-    bloomThreshold: 2.40,
+    // Linear. The scene's own ceiling is 1.15 — see the fourth pass note.
+    bloomThreshold: 0.90,
     bloomKernel: 40,
     bloomScale: 0.5,
     samples: 4,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.85,
+    // 1 + 4*edge = 2.6x gain on an isolated bright pixel. 0.85 was 4.4x.
+    sharpenEdge: 0.40,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.9, samples: 10, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
@@ -257,13 +367,13 @@ const LOOKS = {
     contrast: 1.10,
     vignetteWeight: 3.9,
     vignetteK: 0.34,
-    bloomThreshold: 2.35,
+    bloomThreshold: 0.90,
     bloomKernel: 32,
     bloomScale: 0.5,
     samples: 1,
     dither: true,
     sharpen: true,
-    sharpenEdge: 0.80,
+    sharpenEdge: 0.38,
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 0.55, strength: 1.7, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   low: {
@@ -299,7 +409,9 @@ const LOOKS = {
     contrast: 1.08,
     vignetteWeight: 3.2,
     vignetteK: 0.34,
-    bloomThreshold: 2.30,
+    // 'low' has no sharpen and no AO, so bloom is the only thing left that can
+    // make a jewel look lit. It gets the threshold a notch lower than desktop.
+    bloomThreshold: 0.85,
     bloomKernel: 24,
     bloomScale: 0.4,
     samples: 1,
@@ -443,28 +555,26 @@ export class Post {
     // let the WEIGHT go up rather than down: selective bloom can afford to be
     // strong in a way that indiscriminate bloom never can.
     //
-    // THAT LAST SENTENCE TURNED OUT TO BE WRONG, and the correction is the
-    // useful part. "The emissive light columns are far brighter than 1.6" was
-    // an assumption; it was never sampled. Sweeping the threshold on the hero
-    // pose and looking at the frames:
+    // THAT LAST SENTENCE TURNED OUT TO BE WRONG TWICE OVER, and the correction
+    // is the useful part. "The emissive light columns are far brighter than
+    // 1.6" was an assumption; it was never sampled. Sweeping the threshold and
+    // looking at frames said the emitters sat in the same narrow 1.9..2.3 band
+    // as the character's pavé, so the threshold climbed to 2.40 to spare the
+    // runner. Then world/ split the far band's value out and quietened the
+    // outer aisle, and the whole scene dropped underneath it.
     //
-    //   1.90   corridor emitters glow, character has a soft halo
-    //   2.30   emitters already noticeably dimmer
-    //   2.80   emitters completely flat — hard-edged slabs, no glow at all
-    //   3.50   identical to 2.80. Nothing left in the scene is above 3.5.
+    // MEASURED, not swept: the brightest pixel in the hero frame is linear
+    // 1.15. A threshold of 2.40 extracts nothing, and bloomWeight 0, 0.469 and
+    // 2.0 all render the identical image. See the fourth measurement pass on
+    // LOOKS for the method — the sweep-and-look approach cannot tell "the
+    // emitters stopped blooming" from "the emitters got dimmer", and that is
+    // precisely the distinction that mattered here.
     //
-    // The emitters are not "far brighter" than the character's pavé. They sit
-    // in the SAME narrow linear band, roughly 1.9..2.3. So there is no
-    // threshold that blooms the corridor and spares the runner, and hunting for
-    // one is wasted effort — at 5.0 the face pose is beautiful and the vault is
-    // dead, at 1.6 the vault glows and the face is a blob.
-    //
-    // HANDOFF, because the fix is not post's: separating these needs a mask,
-    // not a threshold. A Babylon GlowLayer driven by the emitters' emissive
-    // channel in world/ would let bloom here be raised out of the character's
-    // range entirely while the corridor keeps (and could considerably increase)
-    // its glow. Until then 1.90 is the compromise, chosen by looking: it is the
-    // brightest threshold at which the corridor still reads as lit.
+    // Whether a mask would still be better than a threshold is open — a
+    // GlowLayer in world/ driven off the emissive channel would let the
+    // corridor glow independently of the runner. But it is not needed to make
+    // bloom work at all any more, which is what the handoff that used to be
+    // here was really asking for.
     //
     // What IS post's, and what was taken: the KERNEL. 64 -> 40 tightens the
     // halo around the character without touching what qualifies as a highlight.
@@ -506,13 +616,18 @@ export class Post {
     this.curves = curves;
 
     // --- display-space effects --------------------------------------------
-    // SHARPEN — promoted from "barely visible texture cue" to a load-bearing
-    // part of the material read. See the measurement note on LOOKS: at 0.40 it
-    // did nothing measurable; at 1.00 it roughly quintuples the number of
-    // pixels reaching 255 without moving the frame mean, because it is a local
-    // operator and the thing being lifted is a stone facet against its own
-    // shadow. FXAA runs after it, which is what keeps the halo from reading as
-    // a ringing artefact on the corridor's long converging edges.
+    // SHARPEN — a local contrast operator with a one-sided gain of
+    // (1 + 4*edgeAmount) on any bright pixel that sits against dark ones, and
+    // no roll-off of any kind. It runs AFTER image processing, so everything it
+    // adds lands on values that have already been tonemapped, gamma-encoded and
+    // saturated: there is nowhere above 1.0 for it to go. Treat it as the last
+    // and least forgiving operator in the chain, not as a texture cue.
+    //
+    // 0.40 (a 2.6x gain) crisps the stone facets and the marble veining; 0.85
+    // (4.4x) was manufacturing 99.8% of the frame's clipped pixels on its own.
+    // See the fourth measurement pass on LOOKS. FXAA runs after it, which is
+    // what keeps the halo from reading as a ringing artefact on the corridor's
+    // long converging edges.
     if (look.sharpen) {
       pipeline.sharpenEnabled = true;
       // colorAmount 1 = keep the original colour and only add the edge term.
