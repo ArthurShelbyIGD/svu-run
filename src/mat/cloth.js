@@ -76,13 +76,14 @@ export function generateClothMaps(size, threads = 44) {
       const slub = (fbm(u, v, 6, 4, 5501) - 0.5) * 0.55;
       height[i] = h + slub;
 
-      const isMetal = warpOnTop
-        ? (((iu % METALLIC_EVERY) + METALLIC_EVERY) % METALLIC_EVERY) === 3
-        : (((iv % METALLIC_EVERY) + METALLIC_EVERY) % METALLIC_EVERY) === 3;
-      // A metallic warp still passes UNDER at every other crossing, so the
-      // glint is dashed, not a continuous stripe. That dashing is the whole
-      // reason brocade sparkles.
-      const metalHere = isMetal && h > 0.35;
+      // WARP ONLY. Testing both warp and weft indices put a metallic patch at
+      // every crossing of the two, which drew L-shaped gold blocks and read as
+      // a printed motif rather than as thread running through cloth. A real
+      // brocade thread runs one way and is visible only where it passes OVER,
+      // so the glint is a dashed line down the weave — and that dashing is the
+      // whole reason brocade sparkles as it moves.
+      const isMetal = (((iu % METALLIC_EVERY) + METALLIC_EVERY) % METALLIC_EVERY) === 3;
+      const metalHere = isMetal && warpOnTop && h > 0.35;
 
       // --- albedo -------------------------------------------------------------
       const shade = 0.52 + h * 0.42 + slub * 0.30;
