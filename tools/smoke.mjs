@@ -419,6 +419,9 @@ try {
     `pad peak ${st.music.peak}, ${st.music.notes} bells / ${st.music.chords} chords`);
   check('voice pool is a hard polyphony cap', st.cap.started <= st.cap.pool,
     `${st.cap.asked} asked, ${st.cap.started} started, pool ${st.cap.pool}`);
+  check('a fast star run chimes on every pickup',
+    st.ladder.chimed === st.ladder.pickups,
+    `${st.ladder.chimed}/${st.ladder.pickups} rungs at 60ms apart`);
   check('audio self-test passes', st.ok === true);
 
   // Hiding the tab must silence it, and coming back must not leave it muted.

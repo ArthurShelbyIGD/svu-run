@@ -34,15 +34,22 @@ import { Music } from './music.js';
 
 /**
  * Per-preset budget. `low` is the binding constraint on the whole project, so
- * it gets a short mono reverb tail, a small polyphony cap and none of the
+ * it gets a short mono reverb tail, a smaller polyphony cap and none of the
  * decorative extra layers. The tail is the expensive part: convolution cost is
  * linear in impulse length and it is the one audio thing that can actually cost
  * a mid-range phone a frame.
+ *
+ * The pool sizes are not arbitrary. At top speed a star run delivers a pickup
+ * roughly every 60ms, so the cap has to be above what a genuine star run needs
+ * or the best moment in the game is the one where the audio starts dropping
+ * notes. Idle voices are close to free — Chrome propagates silence and skips
+ * processing nodes whose inputs are silent — so the cap costs what is actually
+ * ringing, not what is allocated.
  */
 const PRESETS = {
-  low:    { voices: 8,  musicVoices: 3, irSeconds: 0.55, irChannels: 1, irDecay: 2.6, extras: false, deathGrains: 3, bellDensity: 0.22 },
-  medium: { voices: 14, musicVoices: 4, irSeconds: 1.15, irChannels: 2, irDecay: 2.2, extras: true,  deathGrains: 5, bellDensity: 0.28 },
-  high:   { voices: 20, musicVoices: 5, irSeconds: 1.90, irChannels: 2, irDecay: 2.0, extras: true,  deathGrains: 7, bellDensity: 0.32 },
+  low:    { voices: 12, musicVoices: 3, irSeconds: 0.55, irChannels: 1, irDecay: 2.6, extras: false, deathGrains: 3, bellDensity: 0.22 },
+  medium: { voices: 18, musicVoices: 4, irSeconds: 1.15, irChannels: 2, irDecay: 2.2, extras: true,  deathGrains: 5, bellDensity: 0.28 },
+  high:   { voices: 24, musicVoices: 5, irSeconds: 1.90, irChannels: 2, irDecay: 2.0, extras: true,  deathGrains: 7, bellDensity: 0.32 },
 };
 
 /** Shared across presets — mix levels, not budgets. */
@@ -586,12 +593,38 @@ export default class Audio {
     });
     const cap = { asked: ASKED, started: cr.sfx.voices, pool: q.voices };
 
+    // Fourth pass: a real star run at top speed. Stars sit 2.0-2.2m apart and
+    // the player is doing 34 m/s, so pickups arrive about every 60ms, up to ten
+    // in a row. Every one of them has to chime — a ladder that drops rungs
+    // because the pool ran out is worse than no ladder at all. Measured against
+    // the REAL preset pool, not the roomy one.
+    const RUN_N = 12, RUN_GAP = 0.06;
+    const lr = await this.renderOffline(RUN_N * RUN_GAP + 1.2, (sfx4) => {
+      for (let k = 0; k < RUN_N; k++) sfx4.star(0.05 + k * RUN_GAP, k);
+    });
+    const LR = lr.buf.getChannelData(0);
+    const half = Math.floor(0.018 * SR);
+    let rungs = 0;
+    for (let k = 0; k < RUN_N; k++) {
+      const a = Math.floor((0.05 + k * RUN_GAP) * SR);
+      // A strike is a step change: compare the 18ms after the onset with the
+      // 18ms before it. A dropped chime leaves a smooth decay and no step.
+      let after = 0, before = 0;
+      for (let s2 = a; s2 < a + half; s2++) if (Math.abs(LR[s2]) > after) after = Math.abs(LR[s2]);
+      for (let s2 = Math.max(0, a - half); s2 < a; s2++) {
+        if (Math.abs(LR[s2]) > before) before = Math.abs(LR[s2]);
+      }
+      if (after > before * 1.02 + 0.004) rungs++;
+    }
+    const ladder = { pickups: RUN_N, chimed: rungs, voices: lr.sfx.voices };
+
     const silent = sounds.filter((s) => s.peak < 0.01 || s.rise < 1.5).map((s) => s.name);
     return {
       ok: finite && silent.length === 0 && mpeak > 0.005 && peakAll <= 1.0 &&
-        cap.started <= cap.pool,
+        cap.started <= cap.pool && ladder.chimed === ladder.pickups,
       weakestRise: +weakest.toFixed(2),
       cap,
+      ladder,
       preset: q === this._q ? this.ctx.config.presetName : 'default',
       sampleRate: SR,
       finite,

@@ -32,6 +32,12 @@ export class VoicePool {
     this.pan = new Array(size);
     this.send = new Array(size);
     this.mod = new Array(size);
+    // The source nodes currently running on each voice, so that reusing a voice
+    // can cut them off. Without this, an old oscillator would still be running
+    // into the shared filter when the next note re-envelopes it, and you would
+    // hear the previous bell's tail at the new note's volume.
+    this.srcA = new Array(size);
+    this.srcB = new Array(size);
     /** ac.currentTime at which each voice becomes reusable. */
     this.until = new Float64Array(size);
 
@@ -85,6 +91,7 @@ export class VoicePool {
       if (this.until[i] <= now) {
         this._cursor = (i + 1) % this.n;
         this.until[i] = endsAt;
+        this._cut(i, now);
         // Release last note's modulator so the finished carrier it was wired
         // into can be collected, and so the new note starts from a clean graph.
         this.mod[i].disconnect();
@@ -99,6 +106,24 @@ export class VoicePool {
     return -1;
   }
 
+  /**
+   * Remember the source nodes a note is running on, so the voice can be
+   * reclaimed cleanly. Stopping a source is allowed to be rescheduled earlier,
+   * which is what makes early reclamation safe.
+   */
+  attach(i, a, b) {
+    if (i < 0) return;
+    this.srcA[i] = a;
+    this.srcB[i] = b || null;
+  }
+
+  _cut(i, now) {
+    const a = this.srcA[i];
+    if (a) { try { a.stop(now); } catch (e) { /* already ended */ } this.srcA[i] = null; }
+    const b = this.srcB[i];
+    if (b) { try { b.stop(now); } catch (e) { /* already ended */ } this.srcB[i] = null; }
+  }
+
   /** How many voices are ringing at `now`. Used by the self-test. */
   active(now) {
     let n = 0;
@@ -111,12 +136,14 @@ export class VoicePool {
     for (let i = 0; i < this.n; i++) {
       this.gain[i].gain.cancelScheduledValues(now);
       this.gain[i].gain.setValueAtTime(0, now);
+      this._cut(i, now);
       this.until[i] = 0;
     }
   }
 
   dispose() {
     for (let i = 0; i < this.n; i++) {
+      this._cut(i, this.ac.currentTime);
       this.mod[i].disconnect();
       this.filt[i].disconnect();
       this.gain[i].disconnect();

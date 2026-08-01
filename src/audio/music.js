@@ -166,7 +166,7 @@ export class Music {
       const f = mtof(KEY - 12 + oct + deg);
       const amp = this.q.bellAmp * (0.7 + this.rng.next() * 0.5);
       const pan = (this.rng.next() - 0.5) * 0.9;
-      const i = this.pool.grab(t, t + 1.9);
+      const i = this.pool.grab(t, t + 1.2);
       if (i >= 0) {
         this._bell(i, t, f, amp, 1.8, pan);
         this.notes++;
@@ -199,6 +199,7 @@ export class Music {
     p.send[i].gain.setValueAtTime(this.q.bellSend, t);
     mod.start(t); mod.stop(t + dur + 0.03);
     car.start(t); car.stop(t + dur + 0.03);
+    p.attach(i, car, mod);
   }
 
   _chord(t, idx, speed01) {

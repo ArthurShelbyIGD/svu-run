@@ -22,6 +22,20 @@ import { mtof, PENTA, KEY, envPluck, sweep, hold } from './synth.js';
 /** Highest rung of the star ladder. Above this it is shrill, not exciting. */
 export const LADDER_MAX = 12;
 
+/**
+ * Fraction of a note's length for which its voice is held before it can be
+ * reused.
+ *
+ * An exponential decay from full level to -80 dB over `dur` is already 48 dB
+ * down at 0.6 of the way through — inaudible under anything else in the mix.
+ * Holding the voice for the full ring is therefore paying two thirds of the
+ * polyphony budget for silence, and on `low` (eight voices, a bell that rings
+ * for a second) that is the difference between a star run chiming on every
+ * pickup and a star run dropping half of them. The reclaim is clean because
+ * the old note's sources are stopped on the way out — see VoicePool._cut.
+ */
+const TAIL = 0.62;
+
 export class Sfx {
   constructor(bus, pool, rng, q) {
     this.bus = bus;
@@ -41,7 +55,7 @@ export class Sfx {
    */
   bell(t, freq, amp, dur, ratio, index, send, pan) {
     const p = this.pool;
-    const i = p.grab(t, t + dur + 0.04);
+    const i = p.grab(t, t + dur * TAIL + 0.02);
     if (i < 0) return -1;
     const ac = this.ac;
 
@@ -72,6 +86,7 @@ export class Sfx {
     mod.stop(t + dur + 0.03);
     car.start(t);
     car.stop(t + dur + 0.03);
+    p.attach(i, car, mod);
     this.voices++;
     return i;
   }
@@ -79,7 +94,7 @@ export class Sfx {
   /** Filtered noise burst: air, grit, glass dust, scrape. */
   noise(t, dur, amp, type, f0, f1, qf, send, pan, attack) {
     const p = this.pool;
-    const i = p.grab(t, t + dur + 0.04);
+    const i = p.grab(t, t + dur * TAIL + 0.02);
     if (i < 0) return -1;
     const ac = this.ac;
 
@@ -100,6 +115,7 @@ export class Sfx {
 
     src.start(t, off);
     src.stop(t + dur + 0.03);
+    p.attach(i, src, null);
     this.voices++;
     return i;
   }
@@ -107,7 +123,7 @@ export class Sfx {
   /** Plain swept oscillator: bodies, thumps, risers. */
   tone(t, type, f0, f1, dur, amp, cutoff, send, pan, attack) {
     const p = this.pool;
-    const i = p.grab(t, t + dur + 0.04);
+    const i = p.grab(t, t + dur * TAIL + 0.02);
     if (i < 0) return -1;
     const ac = this.ac;
 
@@ -125,6 +141,7 @@ export class Sfx {
 
     osc.start(t);
     osc.stop(t + dur + 0.03);
+    p.attach(i, osc, null);
     this.voices++;
     return i;
   }
@@ -150,11 +167,15 @@ export class Sfx {
     const midi = 72 + ((s / 5) | 0) * 12 + PENTA[s % 5];
     const f = mtof(midi);
     const pan = (this.rng.next() - 0.5) * 0.35;
-    this.bell(t, f, 0.46, 0.95, 3.03, 1.55, 0.34, pan);
+    // Higher rungs ring shorter, which is both what a smaller bell does and
+    // what keeps a long star run from eating the whole voice pool: at top speed
+    // stars arrive about every 60ms, so the chime has to get out of its own way.
+    const dur = 0.80 - s * 0.022;
+    this.bell(t, f, 0.46, dur, 3.03, 1.55, 0.34, pan);
     if (this.q.extras) {
       // A quiet octave above, struck a hair late — the glassy top that says
       // "cut stone" rather than "sine wave".
-      this.bell(t + 0.006, f * 2.005, 0.13, 0.5, 2.01, 0.85, 0.45, pan * -1);
+      this.bell(t + 0.006, f * 2.005, 0.13, dur * 0.55, 2.01, 0.85, 0.45, pan * -1);
     }
     // High rungs get a tick of dust on the strike so the ladder keeps growing
     // in excitement after it stops growing in pitch.
