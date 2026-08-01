@@ -28,6 +28,13 @@
 export function generatePaveMaps(size, cells) {
   const normal = new Uint8Array(size * size * 4);
   const orm = new Uint8Array(size * size * 4);
+  // Third map: a CROWN FACET normal, used as a clear-coat bump so each stone
+  // gets a second, near-mirror specular lobe broken into hard-edged facets.
+  // That is what produces the glint — a sharp flash that snaps on and off as
+  // the viewing angle crosses a facet boundary, instead of a highlight that
+  // slides smoothly across a dome. Smooth highlights read as plastic; snapping
+  // ones read as cut stone.
+  const facet = new Uint8Array(size * size * 4);
 
   const cellW = size / cells;
   const cellH = (cellW * Math.sqrt(3)) / 2;
@@ -42,13 +49,12 @@ export function generatePaveMaps(size, cells) {
     return ((h ^ (h >> 16)) >>> 0) / 4294967296;
   };
 
-  const stoneR = cellW * 0.455;   // leaves a little metal between stones
   const beadR = cellW * 0.10;
 
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       // Find the nearest stone centre among the neighbouring hex cells.
-      let best = 1e9, bdx = 0, bdy = 0;
+      let best = 1e9, bdx = 0, bdy = 0, bestR = cellW * 0.455, bestSeed = 0;
       const row0 = Math.floor(py / rowH);
 
       for (let dr = -1; dr <= 1; dr++) {
@@ -70,12 +76,46 @@ export function generatePaveMaps(size, cells) {
           if (dy > size * 0.5) dy -= size;
           if (dy < -size * 0.5) dy += size;
           const d2 = dx * dx + dy * dy;
-          if (d2 < best) { best = d2; bdx = dx; bdy = dy; }
+          if (d2 < best) {
+            best = d2; bdx = dx; bdy = dy;
+            // Stones are graded, not identical. A jeweller sets larger stones
+            // where there is room and fills with smaller ones; a field of
+            // perfectly equal stones is the thing that made this read as a
+            // machined mesh rather than as set gems.
+            const g = hash(c * 3 + 11, r * 7 - 5);
+            bestR = cellW * (g > 0.86 ? 0.520 : g > 0.55 ? 0.462 : 0.410);
+            bestSeed = hash(c - 19, r + 43);
+          }
         }
       }
 
       const d = Math.sqrt(best);
+      const stoneR = bestR;
       let nx, ny, nz, rough, occl;
+
+      // --- crown facets (clear-coat glint) ---
+      // Azimuth around the stone, quantised into an odd number of wedges so
+      // the pattern never lines up with the hex lattice, each wedge tilted a
+      // fixed amount outward. Hard edges are the point.
+      const FACETS = 9;
+      let fnx = 0, fny = 0;
+      if (d < stoneR) {
+        const az = Math.atan2(bdy, bdx);
+        const wedge = Math.floor(((az / (Math.PI * 2)) + 0.5 + bestSeed) * FACETS);
+        const mid = ((wedge + 0.5) / FACETS - 0.5 - bestSeed) * Math.PI * 2;
+        // Table on top, crown facets around the girdle.
+        const tilt = d / stoneR < 0.5 ? 0.06 : 0.46;
+        fnx = Math.cos(mid) * tilt;
+        fny = Math.sin(mid) * tilt;
+      }
+      {
+        const fnz = Math.sqrt(Math.max(0.0001, 1 - fnx * fnx - fny * fny));
+        const fo = (py * size + px) * 4;
+        facet[fo]     = Math.max(0, Math.min(255, ((fnx * 0.5 + 0.5) * 255) | 0));
+        facet[fo + 1] = Math.max(0, Math.min(255, ((fny * 0.5 + 0.5) * 255) | 0));
+        facet[fo + 2] = Math.max(0, Math.min(255, ((fnz * 0.5 + 0.5) * 255) | 0));
+        facet[fo + 3] = 255;
+      }
 
       if (d < stoneR) {
         // Dome of a cut stone. Slightly flattened on top, which is what a
@@ -93,8 +133,12 @@ export function generatePaveMaps(size, cells) {
         // behind the camera, which in a dark room is darkness — the first
         // build of this rendered the whole suit black. A little roughness
         // makes each stone gather light from a cone instead of a point.
-        rough = 0.085 + t * 0.075;
-        occl = 0.94 + (1 - t) * 0.06;
+        // Per-stone variation. Every stone in a real setting sits at a slightly
+        // different angle and takes a slightly different polish, so no two
+        // catch the light identically. Without this the field flashes as one
+        // unit and reads as a printed pattern.
+        rough = 0.085 + t * 0.075 + (bestSeed - 0.5) * 0.055;
+        occl = (0.94 + (1 - t) * 0.06) * (0.92 + bestSeed * 0.08);
       } else {
         // The setting: metal beading between stones, plus the dark channel
         // where the stones nearly touch. The occlusion here is what gives the
@@ -134,7 +178,7 @@ export function generatePaveMaps(size, cells) {
     }
   }
 
-  return { normal, orm };
+  return { normal, orm, facet };
 }
 
 /**
