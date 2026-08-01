@@ -65,7 +65,7 @@ const LOOKS = {
   high: {
     exposure: 2.05,
     contrast: 1.45,
-    vignetteWeight: 7.0,
+    vignetteWeight: 3.2,
     vignetteK: 0.52,
     bloomThreshold: 0.88,
     bloomKernel: 64,
@@ -76,12 +76,12 @@ const LOOKS = {
     sharpenEdge: 0.40,
     grain: 2.4,
     chromatic: 1.4,
-    ssao: { ratio: 0.75, blurRatio: 1.0, radius: 1.6, strength: 1.1, samples: 12, expensiveBlur: true },
+    ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.15, samples: 8, expensiveBlur: false, maxZ: 45 },
   },
   medium: {
     exposure: 2.05,
     contrast: 1.45,
-    vignetteWeight: 6.5,
+    vignetteWeight: 3.0,
     vignetteK: 0.52,
     bloomThreshold: 0.88,
     bloomKernel: 48,
@@ -92,7 +92,7 @@ const LOOKS = {
     sharpenEdge: 0.34,
     grain: 0,
     chromatic: 0,
-    ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.5, strength: 0.95, samples: 8, expensiveBlur: false },
+    ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.05, samples: 6, expensiveBlur: false, maxZ: 45 },
   },
   low: {
     // 'low' must hold 60fps on a mid-range phone, so it gets no AO, no grain,
@@ -105,7 +105,7 @@ const LOOKS = {
     // a little of the vault's drama.
     exposure: 2.18,
     contrast: 1.36,
-    vignetteWeight: 4.8,
+    vignetteWeight: 2.3,
     vignetteK: 0.52,
     bloomThreshold: 0.90,
     bloomKernel: 32,
@@ -205,7 +205,7 @@ export class Post {
       ssao.expensiveBlur = s.expensiveBlur;
       ssao.bilateralSoften = 0.1;
       ssao.bilateralTolerance = 0.5;
-      ssao.maxZ = 120;         // beyond this the corridor is fog anyway
+      ssao.maxZ = s.maxZ;
       ssao.minZAspect = 0.25;
       this.ssao = ssao;
     }
@@ -270,7 +270,10 @@ export class Post {
     if (look.grain > 0) {
       pipeline.grainEnabled = true;
       pipeline.grain.intensity = look.grain;
-      pipeline.grain.animated = true;
+      // Static, not animated. Animated grain forces a uniform update and a
+      // fresh hash every frame for a shimmer nobody asked for, and it also
+      // stops the capture harness ever seeing a stable frame.
+      pipeline.grain.animated = false;
     }
     if (look.chromatic > 0) {
       pipeline.chromaticAberrationEnabled = true;
@@ -300,7 +303,11 @@ export class Post {
    * MEASURED DEFECT. Babylon derives the vignette ellipse from
    * `vignetteCameraFov` and the render aspect:
    *
-   *   scaleY = tan(fov/2)             scaleX = scaleY * (width/height)
+   *   scaleY = tan(vignetteCameraFov/2)   scaleX = scaleY * (width/height)
+   *
+   * and `vignetteCameraFov` defaults to 0.5 RADIANS — not the camera's fov,
+   * and not pi/4 as the name suggests. Nothing keeps it in sync with the real
+   * camera, so the vignette silently had its own idea of the frame.
    *
    * so the same `vignetteWeight` produces wildly different framing on
    * different devices. At weight 7, the desktop 16:9 frame corner came out at
@@ -373,6 +380,7 @@ export class Post {
     if (o.curvesEnabled !== undefined) ip.colorCurvesEnabled = o.curvesEnabled;
     if (o.ssaoStrength !== undefined && this.ssao) this.ssao.totalStrength = o.ssaoStrength;
     if (o.ssaoRadius !== undefined && this.ssao) this.ssao.radius = o.ssaoRadius;
+    if (o.ssaoMaxZ !== undefined && this.ssao) this.ssao.maxZ = o.ssaoMaxZ;
     if (o.grain !== undefined) {
       this.pipeline.grainEnabled = o.grain > 0;
       if (o.grain > 0) this.pipeline.grain.intensity = o.grain;
