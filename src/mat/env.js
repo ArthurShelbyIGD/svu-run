@@ -111,9 +111,24 @@ export function buildStudioEnvFaces(size, hdr) {
     ]);
   }
 
+  // RESOLUTION-AWARE SOURCE SIZE. This is not a nicety, it is a correctness fix
+  // found by capturing the low preset instead of assuming it matched. A tent
+  // source of 0.017 rad is about one degree wide; the low preset's cube faces
+  // are 64x64, where one texel already spans about 1.4 degrees, so the entire
+  // light tent fell between the samples and simply did not exist. The pavé
+  // renders from that tent, and on low it came out charcoal while the same
+  // material at 256 sparkled. Any source smaller than a couple of texels is
+  // widened to that size and its radiance dropped by the square of the same
+  // ratio, which keeps its total flux — and therefore the surface's brightness —
+  // identical across all three presets.
+  const minRad = 2.2 / size;
   for (const L of lights) {
     const n = Math.hypot(L[0], L[1], L[2]);
     L[0] /= n; L[1] /= n; L[2] /= n;
+    if (L[3] < minRad) {
+      L[4] *= (L[3] / minRad) * (L[3] / minRad);
+      L[3] = minRad;
+    }
   }
 
   // Softbox PANELS, as rectangles in (azimuth, elevation) rather than discs.

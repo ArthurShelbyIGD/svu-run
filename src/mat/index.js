@@ -137,7 +137,7 @@ export default class Materials {
     // tiling, via this.textures — see _rawTex.
     this._size = size;
     this._paveSize = size;
-    this._pave = generatePaveMaps(size, cells);
+    this._pave = generatePaveMaps(size, cells, !q.glint);
     this._brushSize = size >> 1;
     this._brush = generateBrushedMaps(this._brushSize);
     // Isotropic polish, for the big smooth forms — the face and the mitten
@@ -274,13 +274,17 @@ export default class Materials {
     // top of roughly 1.9, and the room it multiplies is no longer a dim one.
     m.environmentIntensity = 1.30;
     m.usePhysicalLightFalloff = true;
-    // Raise the dielectric reflectance of the stones. Babylon computes
-    // F0 = 0.04 * metallicF0Factor for the non-metal part of the surface, and
-    // 0.04 is window glass; a stone that is nearly black in the diffuse term
-    // and only 4% reflective in the specular one has no way to be bright at
-    // all. This lifts them toward diamond without touching the setting metal,
-    // whose F0 comes from its albedo instead.
-    m.metallicF0Factor = 2.6;
+    // DIAMOND REFLECTANCE. Babylon computes the dielectric part of the surface
+    // as F0 = 0.04 * metallicF0Factor * metallicReflectanceColor, and 0.04 is
+    // window glass: a stone that is near-black in the diffuse term and only 4%
+    // reflective in the specular one has no way to be bright at all. Diamond's
+    // IOR of 2.42 gives F0 = 0.17, so the colour carries a factor of 4.2 and the
+    // F0 FACTOR IS LEFT AT 1 ON PURPOSE — Babylon also uses that factor as F90,
+    // and raising it there would make every grazing edge four times white. The
+    // metal beading between the stones is unaffected either way; a metal's F0
+    // comes from its albedo.
+    m.metallicF0Factor = 1.0;
+    m.metallicReflectanceColor = new Color3(4.2, 4.2, 4.2);
 
     m.bumpTexture = this._rawTex('pave_n', this._pave.normal, this._paveSize, false, tile, 1.0, 2);
     // Full-strength stone normals throw reflections so wide that most facets
@@ -315,6 +319,18 @@ export default class Materials {
     // in a shader that is already compiled per-material.
     //
     // Gated on q.glint, which is false on the low preset.
+    // WITHOUT THE GLINT COAT THE STONES GO BLACK, and the low preset is the one
+    // most people will actually see. The clear coat below is 17% of the stones'
+    // entire specular response; with it switched off, a near-black body in a
+    // near-black room renders as charcoal — a low-preset capture showed exactly
+    // that, and it is the same failure this file has now hit twice. So the low
+    // preset trades sparkle for value: brighter stone bodies and a lifted
+    // environment weight, which is the right trade when the alternative is a
+    // black character.
+    if (!this.ctx.config.q.glint) {
+      m.environmentIntensity = 1.55;
+    }
+
     if (this.ctx.config.q.glint) {
       // Full intensity, not 0.45. With the stone body now near-black this coat
       // IS the stone's specular: at IOR 2.42 it reflects 17% of everything it

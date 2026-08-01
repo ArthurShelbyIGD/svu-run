@@ -50,7 +50,19 @@ import { heightToNormal, hashi, vnoise, clamp255, clamp01, smoothstep } from './
  * @param cells  stones across the tile. More = finer stones.
  * @returns { normal, orm, facet, albedo }
  */
-export function generatePaveMaps(size, cells) {
+export function generatePaveMaps(size, cells, noGlint = false) {
+  // WITHOUT THE CLEAR COAT THE STONES NEED A BODY. The glint coat supplies 17%
+  // of a stone's specular response and is switched off on the low preset for
+  // frame time; with it gone, a near-black stone in a near-black room renders as
+  // charcoal, and a low-preset capture showed exactly that — the character was
+  // wearing studded leather. On low the stones are therefore built pale and the
+  // valleys shallower: less like a diamond, but a legible piece of white
+  // jewellery rather than a dark lump, which is the right trade on the preset
+  // most players will actually be running.
+  const stoneA = noGlint ? 0.46 : 0.175;
+  const stoneAT = noGlint ? 0.16 : 0.085;
+  const valleyA = noGlint ? 0.42 : 0.30;
+  const valleyAO = noGlint ? 0.50 : 0.34;
   const n = size * size;
   const orm = new Uint8Array(n * 4);
   const facet = new Uint8Array(n * 4);
@@ -220,7 +232,7 @@ export function generatePaveMaps(size, cells) {
         // NEAR-BLACK BODY. This is the change the whole second pass turns on.
         // 0.80 white here was the bubble wrap; the fire comes from the clear
         // coat and the facets, not from the diffuse term.
-        const a = 0.175 + t * t * 0.085 + s1 * 0.035;
+        const a = stoneA + t * t * stoneAT + s1 * 0.035;
         ar = a * 0.94; ag = a * 0.97; ab = a * 1.10;    // faintly blue-white
       } else if (bead > 0.14) {
         // The bead itself: bright polished metal, the one thing on this surface
@@ -240,9 +252,9 @@ export function generatePaveMaps(size, cells) {
         // than an embossed pattern.
         const gap = clamp01(e1 / (cellW * 0.30));
         rough = 0.22 + gap * 0.16;
-        occ = 0.34 + bead * 1.4 + gap * 0.10;
+        occ = valleyAO + bead * 1.4 + gap * 0.10;
         metal = 255;
-        const a = 0.30 + bead * 1.2 + gap * 0.10;
+        const a = valleyA + bead * 1.2 + gap * 0.10;
         ar = a; ag = a * 0.94; ab = a * 0.84;
       }
 
