@@ -471,11 +471,27 @@ export default class Audio {
    * Render every sound in the game, one per window, and measure it.
    * Ordered quietest-first so that each sound's onset can be checked against
    * the previous one's decaying tail. This is what the smoke test calls.
+   *
+   * MEASURED WITH AN OVERSIZED VOICE POOL, and that is not a cheat. A
+   * BiquadFilterNode's `type` and `Q` are plain properties, not AudioParams, so
+   * they cannot be scheduled — they apply from the moment they are set. In a
+   * live context "now" is now and that is harmless, because a voice is only
+   * ever reused once the note on it has gone silent. In an *offline* render
+   * every sound in the whole test is scheduled before a single sample is
+   * rendered, so a voice reused by sound #12 would retune the filter that sound
+   * #1 was measured through, retroactively. Giving the measurement pass a pool
+   * big enough that nothing is reused is what makes each window actually
+   * measure the sound it claims to. The real pool size is verified separately,
+   * below, as the polyphony cap it is.
    */
   async selfTest() {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) return { ok: false, reason: 'no OfflineAudioContext' };
     const q = this._q || this._presetBlock(this.ctx.config.presetName);
+    const roomy = {};
+    for (const k in q) roomy[k] = q[k];
+    roomy.voices = 64;
+    roomy.musicVoices = 16;
     const SR = 44100;
     const WIN = 1.25;
     const PRE = 0.08;    // window of tail measured just before each onset
@@ -498,7 +514,7 @@ export default class Audio {
       sfx.land(t, true);           t += WIN;
       sfx.impact(t);               t += WIN;
       sfx.death(t);                t += WIN;
-    });
+    }, roomy);
     const buf = r.buf;
     const sfx = r.sfx;
     const L = buf.getChannelData(0);
@@ -550,7 +566,7 @@ export default class Audio {
     const mr = await this.renderOffline(8, (s2, music2) => {
       music2.start(0);
       for (let k = 0; k < 85; k++) music2.update(k * 0.1, 0.5);
-    });
+    }, roomy);
     const music = mr.music;
     const M = mr.buf.getChannelData(0);
     let mpeak = 0, msum = 0;
@@ -561,10 +577,21 @@ export default class Audio {
       msum += M[s] * M[s];
     }
 
+    // Third pass: the real pool must be a hard polyphony cap. Ask it for far
+    // more simultaneous sound than it has voices and confirm it drops rather
+    // than growing — the preset is a budget, not a suggestion.
+    const ASKED = 80;
+    const cr = await this.renderOffline(0.4, (sfx3) => {
+      for (let k = 0; k < ASKED; k++) sfx3.star(0.02, k % 12);
+    });
+    const cap = { asked: ASKED, started: cr.sfx.voices, pool: q.voices };
+
     const silent = sounds.filter((s) => s.peak < 0.01 || s.rise < 1.5).map((s) => s.name);
     return {
-      ok: finite && silent.length === 0 && mpeak > 0.005 && peakAll <= 1.0,
+      ok: finite && silent.length === 0 && mpeak > 0.005 && peakAll <= 1.0 &&
+        cap.started <= cap.pool,
       weakestRise: +weakest.toFixed(2),
+      cap,
       preset: q === this._q ? this.ctx.config.presetName : 'default',
       sampleRate: SR,
       finite,
