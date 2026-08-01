@@ -88,10 +88,11 @@ const LOOKS = {
     ssao: { ratio: 0.5, blurRatio: 0.5, radius: 1.6, strength: 1.05, samples: 6, expensiveBlur: false, maxZ: 45 },
   },
   low: {
-    // 'low' must hold 60fps on a mid-range phone, so it gets no AO, no grain,
-    // no aberration and no sharpen pass. It still gets the grade, because
-    // colour curves and tonemapping are part of the same shader that was
-    // already running — they cost nothing extra.
+    // 'low' must hold 60fps on a mid-range phone, so it gets no AO and no
+    // sharpen pass — the two things here that cost a whole extra draw. It
+    // still gets the full grade, because colour curves, dithering and the
+    // tonemapper all live inside the one image-processing shader that was
+    // going to run anyway, so the look survives the budget intact.
     // 'low' is where the phones are, and a phone is often held in daylight.
     // It runs a stop brighter and a notch less contrasty than the desktop
     // grade so the corridor stays readable behind screen glare, at the cost of
