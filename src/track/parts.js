@@ -255,11 +255,29 @@ export function buildColumn(scene, mat, q) {
  * as well as three different heights, which is what makes them separable when
  * they are sixty pixels tall and half-occluded.
  *
- * THE LIT LINE IS ALWAYS rubyGlow AND ALWAYS AT THE CLEARANCE HEIGHT. Red cord
- * = the edge that will hit you. LOW puts it at its top, HIGH at its underside,
- * FULL runs it up both sides because there is no way through at all. It is a
- * plain emissive PBR material, no glow layer, so it costs one submesh and
- * nothing else, and it is the only mark that survives the corridor going dark.
+ * THE LIT MARKS ARE THE PRIMARY READ, NOT THE TRIM. This was measured, not
+ * assumed. Sampling a capture at the distance obstacles actually spawn at:
+ *
+ *     lit floor at 26m        (110, 105,  95)
+ *     pale marble obstacle    (102,  90,  69)
+ *
+ * — which is no value contrast at all. Albedo cannot fix it either, because
+ * the same floor is (32, 32, 40) in the shadowed near field, so there is no
+ * fixed obstacle value that separates at both distances. Only something that
+ * carries its own light separates everywhere, and that is rubyGlow: a plain
+ * emissive PBR material, no glow layer, one submesh, and it does not go out
+ * when the corridor does.
+ *
+ * So the marks carry a shape language you can COUNT at forty pixels, and each
+ * obstacle's mark is a different count:
+ *
+ *     LOW   one horizontal cord, low down          -> a line to clear
+ *     HIGH  two horizontal cords, head high        -> a band to get under
+ *     FULL  a closed rectangle                     -> sealed, go round
+ *
+ * One line, two lines, a box. That survives bloom, blur, half-occlusion by
+ * the player's own head, and a colour-blind player, which none of the
+ * material-based reads did.
  *
  * GOLD IS yellowGold HERE, NEVER goldTrim. goldTrim tiles its hammer map at
  * 6.0 with 0.40 bump; on obstacle-sized parts those dishes fall under a pixel
@@ -317,7 +335,7 @@ export function buildLow(scene, mat, q, s) {
   // shoulder and shows a top face as well as a front one. Emissive plus bloom
   // makes two pixels of that read; two pixels in shadow read as nothing.
   gold.bevelBox(0, 0.400, -0.135, 0.78, 0.070, 0.034, 0.015);
-  glow.box(0, 0.492, -0.128, 0.72, 0.024, 0.046);
+  glow.box(0, 0.492, -0.128, 0.80, 0.032, 0.046);
   if (detail) {
     // Centre fillet and the gold bosses closing the drum's ends.
     gold.prismAxis('x', 0, 0.265, 0, 0.272, 0.272, 0.11, sides, phase, 0.018);
@@ -361,6 +379,9 @@ export function buildHigh(scene, mat, q, s) {
   // banner's problem and it is not worth reintroducing for a little more mass.
   dark.bevelBox(0, 1.86, 0.06, 0.94, 0.24, 0.055, 0.035);
   for (const sy of [1.635, 2.085]) gold.box(0, sy, -0.020, 0.95, 0.017, 0.030);
+  // The SECOND cord, on the head rail. Two parallel lines is what makes this
+  // object countable against the drum's one and the vitrine's four.
+  glow.box(0, 2.085, -0.058, 0.90, 0.022, 0.012);
 
   // Side stiles, floor-of-the-box to beam. These are what close the shape
   // into a gate rather than leaving a comb of loose sticks.
@@ -381,7 +402,7 @@ export function buildHigh(scene, mat, q, s) {
   // Bottom rail. Underside at 1.17 — the slide line, drawn as a solid object
   // rather than inferred from a fringe. The cord sits on its face at 1.20.
   gold.bevelBox(0, yBot + 0.070, 0, s.hx, 0.070, 0.125, 0.03);
-  glow.box(0, yBot + 0.055, -0.140, 0.94, 0.026, 0.010);
+  glow.box(0, yBot + 0.055, -0.140, 0.94, 0.034, 0.012);
 
   if (detail) {
     // A ruby boss at the foot of every other bar, standing ON TOP of the rail.
@@ -467,14 +488,14 @@ export function buildFull(scene, mat, q, s) {
   // the only version of this that survives the corridor going dark.
   if (detail) glow.gem(0, wy, -0.295, 0.155, 0.185, 0.045);
 
-  // NO WAY THROUGH, SAID IN THE SAME VOCABULARY AS THE OTHER TWO. LOW and
-  // HIGH each draw one red line at the height that hurts. This one has no
-  // height that does not hurt, so the cord runs up both jambs instead of
-  // across — a shape the player cannot mistake for a clearance line, saying
-  // the same word.
-  for (const sx of [-1, 1]) {
-    glow.box(sx * 0.845, 1.30, -0.262, 0.014, 0.86, 0.010);
-  }
+  // NO WAY THROUGH, SAID IN THE SAME VOCABULARY AS THE OTHER TWO. LOW draws
+  // one lit line at the height that hurts and HIGH draws two. This one has no
+  // height that does not hurt, so its cord closes into a rectangle round the
+  // whole case — a shape with no gap in it, which is the one thing the player
+  // must not read as a clearance line. Four sides, not two: a pair of
+  // verticals alone still leaves a horizontal gap for the eye to aim at.
+  for (const sx of [-1, 1]) glow.box(sx * 0.845, 1.30, -0.262, 0.016, 0.86, 0.010);
+  for (const sy of [0.44, 2.16]) glow.box(0, sy, -0.262, 0.861, 0.016, 0.010);
   if (detail) for (const sy of [0.44, 1.98]) trim.box(0, sy, -0.266, 0.80, 0.022, 0.018);
   return a.build('obFull');
 }
