@@ -333,7 +333,20 @@ export default class Character {
       // total-internal-reflects off the pavilion and comes back out. Eight
       // percent is the value that stops the crescents reading as holes without
       // touching anything that is already lit.
-      mm.emissiveColor = mm.albedoColor.scale(0.080);
+      //
+      // EIGHT PERCENT WAS A THIRD OF WHAT IT NEEDED TO BE, measured. Luminance
+      // percentiles over the hood, each normalised by its own frame's white:
+      //
+      //              p05    p25    p50    p75    p95
+      //   reference  0.525  0.654  0.742  0.837  0.989
+      //   ours       0.177  0.404  0.625  0.854  0.953
+      //
+      // The top half already matches — it is the BOTTOM that falls off a cliff,
+      // which is exactly the light-tent-versus-black-hall difference this floor
+      // exists to cover, and 0.08 was not covering it. The lift goes into the
+      // floor rather than into the albedo or the environment because those two
+      // move p75 and p95 as well, and those are already right.
+      mm.emissiveColor = mm.albedoColor.scale(0.190);
     });
     this._msStone = m;
     return m;
@@ -1356,8 +1369,42 @@ export default class Character {
       // 0.65 against 0.87: the ribs band correctly and the highlights do not
       // reach. The lamps are what make a specular streak on a vertical rib, so
       // they go up rather than the albedo, which would take the mean with it.
-      1.60,
+      2.40,
     );
+    // ...and the second half of "satin, not mirror", which is a HISTOGRAM
+    // SHAPE, not a mean. Luminance percentiles over the skirt, each normalised
+    // by its own frame's white:
+    //
+    //              p05    p25    p50    p75    p95
+    //   reference  0.152  0.252  0.372  0.551  0.848
+    //   ours       0.026  0.181  0.404  0.576  0.666
+    //
+    // The median is right and both ends are wrong, in opposite directions. A
+    // mirror is BIMODAL: its bright streak is a reflection of a source, so it
+    // runs away past everything else (p95 0.85), and its creases reflect the
+    // room rather than nothing at all (p05 0.15). Ours was a satin hump — top
+    // clipped off, bottom falling into black. Two levers, one per end:
+    //
+    //   * directIntensity 1.60 -> 2.40. The four portrait lamps are the only
+    //     small bright sources in this scene, and a small bright source on a
+    //     near-vertical polished rib IS the long vertical streak. This is the
+    //     p95 lever and it touches nothing else, because a GGX lobe this tight
+    //     puts its energy in a few percent of the surface.
+    //   * a cool emissive floor for p05. The reference skirt's creases sit at
+    //     0.15 of white because a light tent has no black in it; our hall does,
+    //     so the creases render at 0.03 and the cape reads as a piece of the
+    //     background with edges. Cool, not neutral — see the WHITE POINT note
+    //     above _bedMat().
+    //
+    // A CAVEAT THE NEXT AGENT MUST READ: ARCHITECTURE §7 says a mirror in a
+    // software rasteriser is the one thing this harness is known to lie about.
+    // Both numbers here were set against percentiles rather than against
+    // "looks right", which is the most robust thing available headless, but
+    // directIntensity in particular should be re-checked on a real GPU before
+    // anyone builds on it.
+    mat.mutate('capeMirror', (mm) => {
+      mm.emissiveColor.set(0.0165, 0.0175, 0.0190);
+    });
 
     this.cape.init(
       this.ctx.scene,
@@ -1453,9 +1500,18 @@ export default class Character {
     }, g);
     st.toMesh('yokeStones', scene, this._stoneMat(mat), capeRoot);
 
-    // gold edge, swept along the yoke's lower rim. Heavier than the hem wire on
-    // purpose: this is the line that says "the cape hangs from here", and it is
-    // the only hard horizontal on the back of the character.
+    // gold edge, swept along the yoke's lower rim: the line that says "the cape
+    // hangs from here", and the only hard horizontal on the back of the piece.
+    //
+    // A LINE, NOT A HOOP. At 0.0155 — and everything here is multiplied by the
+    // 1.24 presentation scale — this swept a 38 mm tube round a figure whose
+    // head is 1.0 m across, and once the rest of the character went cool it was
+    // the only warm object left, so it took the whole frame: the rear capture
+    // read as a bear wearing a horse collar. Measured off the reference, the
+    // collar's gold edge is 0.02 of the hood's width, which on this head is a
+    // 16 mm tube, i.e. r = 0.008 before scale. 0.0090 keeps a hair more than
+    // that because it also has to survive being three pixels wide at chase
+    // distance.
     const rim = [];
     const rn = this.lowQ ? 20 : 30;
     const p = [0, 0, 0];
@@ -1464,7 +1520,7 @@ export default class Character {
       rim.push([p[0] * 1.02, p[1] - 0.004, p[2] * 1.02]);
     }
     g.at(0, 0, 0);
-    g.add(pipe(rim, () => 0.0155, 6));
+    g.add(pipe(rim, () => 0.0090, 6));
     g.toMesh('yokeEdge', scene, this._goldMat(mat), capeRoot);
   }
 
