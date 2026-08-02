@@ -9,6 +9,55 @@ about what to do on the next working day.
 
 ---
 
+## The false affordance — fix this first, it is cheap and it is a real bug
+
+> "One thing I notice are red gem stones in front of one type of obstacle but
+> not certain if they are supposed to be collected or just visual. Impossible
+> to collect if that is the purpose as they are very close to the obstacle."
+
+They are decorative. Confirmed in `src/track/parts.js`: the ruby bosses on the
+`obHigh` portcullis rail (`ruby.gem(x, 1.345, ...)`, every other bar) and the
+exhibit gem inside the vitrine (`rubyGlow.gem(...)`) are obstacle geometry. The
+only collectible is `buildStar` — a gold star.
+
+But "decorative" is not a defence. This is a game about collecting jewels, and
+the obstacle has jewels stuck to it that glow. Colour plus glow reads as an
+affordance whatever the intent, and a player who trusts it steers INTO a
+hazard. Worse, the bosses sit at y=1.345 and the slide gap's underside is at
+1.17 — so they flash past right at head height on the one move where the
+player is committed and cannot correct.
+
+The confusion is the bug. Two ways out, pick one and be consistent everywhere:
+
+1. **Make them non-jewel.** Gold, steel, pearl — anything that is not the
+   colour of a pickup. Cheapest, and preserves the jewelled-vault look.
+2. **Make them real.** A genuine collectible tucked into the slide gap is a
+   good risk/reward beat, but only if it is actually reachable on the correct
+   line, and only if the reachable ones look different from the welded-on ones.
+
+Option 1 unless there is appetite for the gameplay work. Whichever is chosen,
+audit every red gem on every obstacle — the rail bosses, the vitrine exhibit,
+the column finials — and make the rule legible: **if it is a gem colour, you
+can take it; if you cannot take it, it is not a gem colour.**
+
+Anthony spotted this from play in a couple of minutes. It was invisible to
+55 passing checks and to every screenshot review.
+
+---
+
+## Verified by ear, at last
+
+Anthony has now heard the audio, which nobody had:
+
+> "The audio sounds ok, quiet a dark, almost war like, low pitched drone sound
+> with nice bright sounds playing when the stars get collected."
+
+So the generative bed and the star chimes both land. The drone reads darker and
+heavier than a jewel-vault setting implies — not wrong, but worth asking him
+whether he wants it lighter before anyone tunes it.
+
+---
+
 ## The open defect, in Anthony's words
 
 > "Looks like we lost the hands with fingers along the way at some point, they
