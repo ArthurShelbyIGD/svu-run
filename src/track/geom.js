@@ -140,6 +140,83 @@ export class Writer {
     return this;
   }
 
+  /**
+   * Prism about an arbitrary cardinal axis — for things that LIE DOWN.
+   *
+   * `prism()` above is the y-axis case and keeps its own body because it is
+   * called from everywhere; this is the general one. `axis` is 'x', 'y' or
+   * 'z' and `len` runs along it, centred on (cx,cy,cz).
+   *
+   * WINDING. The ring ordering per axis is not arbitrary and must not be
+   * "tidied". This file's convention is n = -cross(v1-v0, v2-v1), so a ring
+   * whose right-hand-rule normal is +N shades as -N. Each case below orders
+   * its ring so that fan(ring, false) comes out along +axis, which is what
+   * makes the shared skirt() calls face outward. Swap the two trig terms in
+   * any case and that surface turns inside out — and an inside-out cylinder
+   * under a soft studio environment does not look inside out, it just looks
+   * like a slightly odd cylinder, so this will not announce itself.
+   */
+  prismAxis(axis, cx, cy, cz, rA, rB, len, sides = 12, phase = 0, bevel = 0) {
+    const c = axis === 'x' ? cx : axis === 'y' ? cy : cz;
+    const u0 = c - len * 0.5, u1 = c + len * 0.5;
+    const bb = Math.min(bevel, len * 0.24, rA * 0.4, rB * 0.4);
+    const ring = (r, u) => {
+      const out = [];
+      for (let k = 0; k < sides; k++) {
+        const a = phase + (k / sides) * TAU;
+        const s = Math.sin(a) * r, t = Math.cos(a) * r;
+        if (axis === 'x') out.push([u, cy + s, cz + t]);
+        else if (axis === 'y') out.push([cx + t, u, cz + s]);
+        else out.push([cx + s, cy + t, u]);
+      }
+      return out;
+    };
+    const rings = bb > 0
+      ? [ring(rA - bb, u0), ring(rA, u0 + bb), ring(rB, u1 - bb), ring(rB - bb, u1)]
+      : [ring(rA, u0), ring(rB, u1)];
+    this.fan(rings[0], true);
+    for (let r = 0; r < rings.length - 1; r++) this.skirt(rings[r], rings[r + 1]);
+    this.fan(rings[rings.length - 1], false);
+    return this;
+  }
+
+  /**
+   * Cut-gem star: a girdle band, a faceted crown on each face, and a flat
+   * table at the centre of each.
+   *
+   * star() below runs a single ridge from the rim straight to one apex, which
+   * is a cone with a wavy base. A cone has one silhouette and one highlight,
+   * so a spinning one flickers between "bright triangle" and "nothing" and
+   * reads as card. Three facet families instead of one means that at any
+   * rotation SOME facet is near-normal to the key, so the thing glints
+   * continuously — that is the difference between a star-shaped object and
+   * something that reads as cut.
+   *
+   * Authored in the XY plane, facing -Z, same convention as star('z').
+   */
+  cutStar(cx, cy, cz, rOuter, rInner, points, girdle, crown, tableScale = 0.32, rot = 0) {
+    const n = points * 2;
+    const ring = (scale, z) => {
+      const out = [];
+      for (let k = 0; k < n; k++) {
+        const a = rot + (k / n) * TAU;
+        const r = ((k % 2 === 0) ? rOuter : rInner) * scale;
+        out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r, z]);
+      }
+      return out;
+    };
+    const rimF = ring(1, cz - girdle);
+    const rimB = ring(1, cz + girdle);
+    const tabF = ring(tableScale, cz - girdle - crown);
+    const tabB = ring(tableScale, cz + girdle + crown);
+    this.skirt(rimB, rimF);   // girdle wall — the bright rim line
+    this.skirt(rimF, tabF);   // front crown facets
+    this.fan(tabF, false);    // front table
+    this.skirt(tabB, rimB);   // back crown facets
+    this.fan(tabB, true);     // back table
+    return this;
+  }
+
   /** Flat ring / torus-ish band lying in XZ. Cheap collar for columns. */
   collar(cx, cy, cz, rInner, rOuter, h, sides = 12) {
     const y0 = cy - h * 0.5, y1 = cy + h * 0.5;

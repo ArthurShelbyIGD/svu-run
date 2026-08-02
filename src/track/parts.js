@@ -219,83 +219,116 @@ export function buildColumn(scene, mat, q) {
 /*
  * THE THREE OBSTACLES ARE THREE WORDS, AND THE PLAYER READS THEM AT 25 METRES.
  *
- * Judged from the chase camera at spawn distance, each obstacle is about sixty
- * pixels tall inside a corridor packed with columns, beams and gold. All three
- * used to be dark objects with gold trim on a dark ground, so they arrived as
- * one indistinct shape and the player had to be close enough to be committed
- * before knowing which of jump / slide / dodge was being asked for.
+ * Judged from the chase camera at spawn distance an obstacle is about sixty
+ * pixels tall, inside a corridor packed with columns, beams and gold, and in
+ * portrait the player's own head covers most of the centre lane. So the read
+ * cannot come from detail. It comes from three things, in this order:
  *
- * They are now built around three reads that survive being sixty pixels tall,
- * and the reads are carried by the LARGEST mass in each object, because that
- * is the only part with enough pixels to say anything:
+ *   1. WHERE THE MASS IS.   ankle / head / floor-to-ceiling.
+ *   2. WHAT THE MASS DOES.  one long horizontal body / a comb of verticals /
+ *                           one uninterrupted slab.
+ *   3. THE LIT LINE.        an emissive cord at the exact height that hurts.
  *
- *   LOW   a bright pale block, wide and ankle-height          -> step over it
- *   HIGH  a dark curtain in the air with a lit hem            -> go under it
- *   FULL  a tall pale monolith with a dark, jewelled panel    -> go round it
+ * Each obstacle is also an OBJECT out of this building rather than a block
+ * with trim stuck on it, because a thing you recognise is a thing you parse
+ * faster than a thing you have to measure:
  *
- * The lit hem is the important one. A gap you must fit through has to show
- * WHERE its edge is, and an emissive cord is the only mark that keeps working
- * when the corridor lighting dips, when the obstacle is backlit, and at every
- * quality preset — `rubyGlow` is a plain emissive PBR material, no glow layer,
- * so it costs one submesh and nothing else. It is the same argument the corner
- * wall arrow won: signage that the player cannot see is not signage.
+ *   LOW   a toppled column drum lying across the lane      -> step over it
+ *   HIGH  a gilded portcullis hanging from a beam          -> go under it
+ *   FULL  a marble display vitrine, glazed and jewelled    -> go round it
+ *
+ * WHY A CYLINDER FOR THE LOW ONE. Captured in the chase camera the running
+ * surface is very dark and the corridor is under-lit for most of its length,
+ * so albedo separation alone is not enough — the pale marble of the old LOW
+ * barrier went the same value as everything else and it disappeared. A curved
+ * body cannot do that: whatever the light is doing, SOME band of a cylinder is
+ * near-normal to it, so a drum always carries one continuous bright streak
+ * along its length. That streak is the silhouette. Flat-faced boxes have no
+ * such guarantee and go uniformly dark whenever the key misses them.
+ *
+ * WHY A COMB FOR THE HIGH ONE. The old one was a cloth banner, and clothCape
+ * tiled at 3.0 on a 2m x 1m sheet renders as a black-and-white herringbone —
+ * a dazzle pattern, which is the exact opposite of a readable silhouette. It
+ * is also the wrong object: a curtain says "a wall of fabric", and the thing
+ * we want the player to think is "bars, with a gap under them". Vertical bars
+ * against a horizontal drum against a solid slab is three different textures
+ * as well as three different heights, which is what makes them separable when
+ * they are sixty pixels tall and half-occluded.
+ *
+ * THE LIT LINE IS ALWAYS rubyGlow AND ALWAYS AT THE CLEARANCE HEIGHT. Red cord
+ * = the edge that will hit you. LOW puts it at its top, HIGH at its underside,
+ * FULL runs it up both sides because there is no way through at all. It is a
+ * plain emissive PBR material, no glow layer, so it costs one submesh and
+ * nothing else, and it is the only mark that survives the corridor going dark.
+ *
+ * GOLD IS yellowGold HERE, NEVER goldTrim. goldTrim tiles its hammer map at
+ * 6.0 with 0.40 bump; on obstacle-sized parts those dishes fall under a pixel
+ * and the whole object turns into crawling specular glitter that reads as
+ * noise, not metal. yellowGold (tile 4.0, bump 0.22) is the calm one. The same
+ * argument applies with more force to a part moving towards the camera.
  *
  * Nothing below leaves its collision box. The extents in OB_SIZE are unchanged
- * and every builder is still written against them.
+ * and every builder is written against them, with the fit asserted in numbers
+ * in the comment above it.
  */
 
 /**
- * OB.LOW — gilded barrier on a pale marble kerb. Half-extents 1.02 x 0.28 x
- * 0.30, base y=0, top y=0.56. Nothing here goes above 0.56 or wider than 1.02,
- * so the jump clearance the smoke test asserts is exactly what you can see.
+ * OB.LOW — a toppled column drum. Half-extents 1.02 x 0.28 x 0.30, base y=0,
+ * top y=0.56.
  *
- * The base block used to be marbleDark, which put the object's biggest mass at
- * the value of the ground it stands on. It is pale now: at distance the whole
- * barrier reads as one bright horizontal bar lying across the lane, which is
- * the clearest possible way of saying "this is a thing at ankle height".
+ * FIT. The drum is r=0.255 centred at y=0.265, so it spans y 0.010..0.520 and
+ * z -0.255..0.255. The gold astragals at each end are r=0.295 at the same
+ * centre: y -0.030..0.560 — the top touches the collision ceiling exactly and
+ * the bottom is buried in the floor, which is what a heavy thing that fell
+ * over should look like. Widest x is the astragal at 0.87 and the boss at
+ * 0.885, both inside 1.02.
  */
 export function buildLow(scene, mat, q, s) {
   const detail = q.name !== 'low';
-  const top = s.hy * 2;                     // 0.56
+  const sides = q.name === 'low' ? 8 : 12;
+  // Facets straddle the top and bottom rather than meeting in a ridge there.
+  // A ridge along the crown of a lying cylinder catches one hairline highlight
+  // and reads as a crease; a flat facet catches a broad one and reads as the
+  // top of a drum.
+  const phase = Math.PI / sides;
   const a = new Assembly(scene);
   const light = a.w(mat.get('marbleLight'));
   const gold = a.w(mat.get('yellowGold'));
   const glow = a.w(mat.get('rubyGlow'));
 
-  // Pale kerb block, full width. 0.00-0.13.
-  light.bevelBox(0, 0.065, 0, s.hx, 0.065, s.hz, 0.035);
-  // A gold plinth course capping it, so the pale block is set stone and not a
-  // slab of polystyrene. 0.13-0.175.
-  gold.bevelBox(0, 0.1525, 0, 0.96, 0.0225, 0.245, 0.018);
-
+  // The drum itself, lying across the lane.
+  light.prismAxis('x', 0, 0.265, 0, 0.255, 0.255, 1.62, sides, phase, 0.035);
+  // Astragal bands at both ends — the mouldings a real column drum is banded
+  // with, and the two bright dots that give the object its dumbbell
+  // silhouette when the middle has gone dark.
   for (const sx of [-1, 1]) {
-    gold.bevelBox(sx * 0.90, 0.335, 0, 0.11, 0.185, 0.155, 0.035); // posts
-    gold.gem(sx * 0.90, 0.525, 0, 0.075, 0.035);                   // finial
+    gold.prismAxis('x', sx * 0.80, 0.265, 0, 0.295, 0.295, 0.15, sides, phase, 0.025);
   }
-  gold.bevelBox(0, top - 0.065, 0, 0.92, 0.065, 0.105, 0.03);      // top rail
-  // The lit edge, on the face the player runs at, level with the top rail.
-  // This is the line you have to clear, drawn.
-  glow.box(0, top - 0.075, -0.115, 0.86, 0.020, 0.010);
+  // A gold plate bolted across the front, carrying the lit line. A light
+  // strip glued to bare stone would be nonsense; set into a plate it is a
+  // marker somebody screwed on, which is what it is.
+  gold.bevelBox(0, 0.455, -0.140, 0.74, 0.052, 0.032, 0.016);
+  glow.box(0, 0.462, -0.176, 0.68, 0.021, 0.008);
   if (detail) {
-    light.box(0, 0.315, 0, 0.90, 0.030, 0.050);                    // mid rail
-    for (const bx of [-0.46, 0, 0.46]) {
-      light.prism(bx, 0.325, 0, 0.042, 0.042, 0.30, 6, 0, 0.012);  // balusters
+    // Centre fillet and the gold bosses closing the drum's ends.
+    gold.prismAxis('x', 0, 0.265, 0, 0.272, 0.272, 0.11, sides, phase, 0.018);
+    for (const sx of [-1, 1]) {
+      gold.prismAxis('x', sx * 0.868, 0.265, 0, 0.155, 0.155, 0.034, sides, phase, 0.010);
+      a.w(mat.get('ruby')).gem(sx * 0.888, 0.265, 0, 0.030, 0.070, 0.070);
     }
-    // A bezel on a vertical face has to be authored in the XY plane; collar()
-    // lies flat in XZ and would read as a shelf. A many-pointed star is a
-    // faceted disc, which is what a setting looks like anyway.
-    gold.star(0, 0.345, -0.142, 0.150, 0.120, 10, 0.028, 'z');
-    a.w(mat.get('ruby')).gem(0, 0.345, -0.168, 0.10, 0.115, 0.06);
   }
   return a.build('obLow');
 }
 
 /**
- * OB.HIGH — hanging banner under a gilded beam. Half-extents 1.02 x 0.55 x
- * 0.30 centred at y=1.72, so the volume is y 1.17 to 2.27. The banner's
- * scalloped hem touches exactly 1.17 at its lowest points: the visual bottom
- * IS the slide clearance. Chains and header above 2.27 are decoration in dead
- * space and cannot be collided with.
+ * OB.HIGH — a gilded portcullis. Half-extents 1.02 x 0.55 x 0.30 centred at
+ * y=1.72, so the volume is y 1.17 to 2.27.
+ *
+ * FIT. The bottom rail's underside is y=1.17 exactly and the lit cord sits on
+ * its front face — the visual bottom IS the slide clearance, with no scallop
+ * or fringe to make the player guess which part of the hem is the part that
+ * hits. The beam tops out at 2.27. Hangers and header above 2.27 are in dead
+ * space above the collision box and cannot be hit.
  */
 export function buildHigh(scene, mat, q, s) {
   const detail = q.name !== 'low';
@@ -303,46 +336,65 @@ export function buildHigh(scene, mat, q, s) {
   const yTop = s.cy + s.hy;                 // 2.27
   const a = new Assembly(scene);
   const gold = a.w(mat.get('yellowGold'));
-  // Cloth, not marble. At marbleDark's value the banner rendered as a black
-  // hole punched in the corridor with no form in it at all.
-  const dark = a.w(mat.get('clothCape'));
+  const dark = a.w(mat.get('marbleDark'));
   const glow = a.w(mat.get('rubyGlow'));
 
-  // The beam and the header are yellowGold, not goldTrim. goldTrim tiles its
-  // hammer map at 6.0 against yellowGold's 4.0 with a third of the bump, so on
-  // a part this size its dishes fall below a pixel and turn the whole beam
-  // into crawling specular glitter. mat/ makes the same argument about the
-  // lane rails; it applies with more force to something moving towards camera.
-  gold.bevelBox(0, yTop - 0.11, 0, s.hx, 0.11, 0.20, 0.04);      // beam
-  for (const sx of [-1, 1]) {
-    gold.bevelBox(sx * 0.93, yTop - 0.14, 0, 0.09, 0.15, 0.25, 0.03);
-    gold.prism(sx * 0.70, yTop + 0.62, 0, 0.032, 0.032, 1.24, 6); // hangers
-  }
-  gold.bevelBox(0, yTop + 1.30, 0, 0.92, 0.07, 0.11, 0.03);       // header
-  // banner: top at 2.05, hem troughs land on 1.17
-  dark.banner(0, yTop - 0.22, 0, s.hx * 2, (yTop - 0.22) - yBot, 0.025, 3);
-  gold.box(0, yTop - 0.235, -0.03, s.hx, 0.035, 0.035);
+  // Head beam. 2.10-2.27.
+  gold.bevelBox(0, yTop - 0.085, 0, s.hx, 0.085, 0.19, 0.04);
+  // Valance under it: a dark spandrel that gives the top of the object real
+  // mass against the lit arch at the vanishing point. 1.76-2.10.
+  dark.bevelBox(0, 1.93, 0, 0.94, 0.17, 0.075, 0.035);
+  for (const sy of [1.755, 2.105]) gold.box(0, sy, -0.085, 0.95, 0.017, 0.020);
 
-  // THE SLIDE LINE. A ruby cord run straight across the banner at the height
-  // of its lowest hem trough — which is the collision floor, 1.17, exactly.
-  // The scalloped hem is the right shape for a banner and the wrong shape for
-  // a gap: its edge rises and falls, so the eye has to guess which part of it
-  // is the part that will hit you. The cord does not rise and fall, it is
-  // emissive so it survives being backlit by the corridor, and it is the one
-  // mark on the object that says how low you have to get.
-  glow.box(0, yBot + 0.035, -0.048, s.hx * 0.94, 0.030, 0.012);
+  // Side stiles, floor-of-the-box to beam. These are what close the shape
+  // into a gate rather than leaving a comb of loose sticks.
+  for (const sx of [-1, 1]) {
+    gold.bevelBox(sx * 0.945, 1.72, 0, 0.075, 0.55, 0.105, 0.03);
+  }
+
+  // The bars. Seven of them, 1.31 to 1.76.
+  const nBar = q.name === 'low' ? 5 : 7;
+  for (let i = 0; i < nBar; i++) {
+    const x = -0.78 + (1.56 * i) / (nBar - 1);
+    gold.prism(x, 1.535, 0, 0.042, 0.042, 0.45, 6, 0, 0.012);
+  }
+
+  // Bottom rail. Underside at 1.17 — the slide line, drawn as a solid object
+  // rather than inferred from a fringe. The cord sits on its face at 1.20.
+  gold.bevelBox(0, yBot + 0.070, 0, s.hx, 0.070, 0.125, 0.03);
+  glow.box(0, yBot + 0.055, -0.140, 0.94, 0.026, 0.010);
+
   if (detail) {
-    gold.box(0, yBot + 0.36, -0.03, s.hx * 0.86, 0.022, 0.03);
-    gold.star(0, yBot + 0.66, -0.042, 0.28, 0.125, 6, 0.03, 'z');
-    a.w(mat.get('ruby')).gem(0, yBot + 0.66, -0.078, 0.13, 0.16, 0.05);
+    // A ruby boss at the foot of every other bar, sitting on the rail.
+    const ruby = a.w(mat.get('ruby'));
+    for (let i = 0; i < nBar; i += 2) {
+      const x = -0.78 + (1.56 * i) / (nBar - 1);
+      ruby.gem(x, yBot + 0.075, -0.155, 0.050, 0.058, 0.045);
+    }
+    // Hangers and header, in the dead space above the box.
+    for (const sx of [-1, 1]) gold.prism(sx * 0.70, yTop + 0.62, 0, 0.030, 0.030, 1.24, 6);
+    gold.bevelBox(0, yTop + 1.30, 0, 0.92, 0.065, 0.10, 0.03);
   }
   return a.build('obHigh');
 }
 
 /**
- * OB.FULL — carved, gem-set plinth. Half-extents 1.02 x 1.15 x 0.34 centred
- * at 1.15, so y 0 to 2.30. The cornice is the widest part at exactly 1.02;
- * the finial tops out at 2.29.
+ * OB.FULL — a marble display vitrine. Half-extents 1.02 x 1.15 x 0.34 centred
+ * at 1.15, so y 0 to 2.30.
+ *
+ * FIT. The cornice is the widest part at exactly 1.02 and the cap tops out at
+ * 2.29. The gem is the only thing that stands proud of the glazing and its z
+ * is measured, not guessed: gem()'s third radius is its HALF DEPTH, so at
+ * cz=-0.295 with a 0.045 half depth the tip lands exactly on the collision
+ * face at -0.34. A gem poking out past that could be clipped by a player who
+ * had legitimately gone round the obstacle.
+ *
+ * WHY IT STAYS A SOLID PALE SLAB. This is the one obstacle that cannot be
+ * jumped, slid or survived, so it gets the biggest tonal separation available
+ * from the corridor behind it and an unbroken outline. An actual open-fronted
+ * vitrine with four corner posts would be prettier and would have no
+ * silhouette at all; a glazed case with a dark window in a pale marble carcass
+ * is the same idea with the outline kept.
  */
 export function buildFull(scene, mat, q, s) {
   const detail = q.name !== 'low';
@@ -352,16 +404,11 @@ export function buildFull(scene, mat, q, s) {
   const dark = a.w(mat.get('marbleDark'));
   const trim = a.w(mat.get('yellowGold'));
   const rose = a.w(mat.get('roseGold'));
+  const glow = a.w(mat.get('rubyGlow'));
 
   light.bevelBox(0, 0.09, 0, s.hx, 0.09, s.hz, 0.04);            // base step
-  trim.bevelBox(0, 0.235, 0, 0.93, 0.055, 0.30, 0.035);
-  // THE SHAFT IS PALE. It was marbleDark, which made the tallest, widest,
-  // most dangerous object on the track the same value as the corridor behind
-  // it — a dark block in a dark hall has no silhouette, and this is the one
-  // obstacle you cannot jump, slide or survive. Pale marble gives it the
-  // biggest tonal separation available from the background, and a monolith is
-  // what the shape wants to be anyway.
-  light.bevelBox(0, 1.14, 0, 0.82, 0.85, 0.255, 0.055);          // shaft
+  trim.bevelBox(0, 0.235, 0, 0.93, 0.055, 0.30, 0.035);          // course
+  light.bevelBox(0, 1.14, 0, 0.82, 0.85, 0.255, 0.055);          // carcass
   // Corner pilasters. On low they collapse to one per side, on the front
   // corners only — the back pair is never visible to the player anyway.
   for (const sx of [-1, 1]) {
@@ -372,47 +419,77 @@ export function buildFull(scene, mat, q, s) {
   light.bevelBox(0, top - 0.11, 0, 0.86, 0.045, 0.28, 0.03);     // crown
   trim.bevelBox(0, top - 0.045, 0, 0.62, 0.03, 0.20, 0.02);      // cap
 
-  // The dark went where dark earns its keep: a sunk panel on the front face,
-  // the one face the player ever sees. It is now the plinth's jewellery
-  // setting rather than its bulk — a dark ground for the gold star, framed by
-  // pale marble, which is how a set stone is mounted and how it reads.
-  dark.bevelBox(0, 1.16, -0.252, 0.62, 0.68, 0.012, 0.03);
-  for (const sy of [-1, 1]) trim.box(0, 1.16 + sy * 0.70, -0.266, 0.66, 0.022, 0.016);
-  for (const sx of [-1, 1]) trim.box(sx * 0.66, 1.16, -0.266, 0.022, 0.72, 0.016);
+  // THE WINDOW. Dark marble is very nearly a mirror at roughScale 0.34, which
+  // on a small vertical panel is exactly what glass does: it holds the room
+  // rather than a value of its own. Set into pale marble and gridded with
+  // gold glazing bars it reads as a glazed case, and it gives the gold and
+  // the gem a dark ground to be seen against.
+  const wy = 1.24, wh = 0.60, ww = 0.58;
+  dark.bevelBox(0, wy, -0.252, ww, wh, 0.012, 0.025);
+  for (const sy of [-1, 1]) trim.box(0, wy + sy * (wh + 0.030), -0.266, ww + 0.06, 0.028, 0.016);
+  for (const sx of [-1, 1]) trim.box(sx * (ww + 0.030), wy, -0.266, 0.028, wh + 0.088, 0.016);
+  // Glazing bars: one mullion, one transom. Four panes is a case; a single
+  // pane is a hole cut in a wall.
+  trim.box(0, wy, -0.262, 0.014, wh, 0.012);
+  trim.box(0, wy, -0.262, ww, 0.014, 0.012);
 
-  // Front face: a gold star setting with a ruby at its heart. The player sees
-  // this face and only this face, so all the jewellery goes here.
-  //
-  // The gem's z is measured, not guessed. gem()'s third radius is its HALF
-  // depth, so the old call sat its tip at -0.405 on a box whose front face is
-  // -0.34: the one piece of jewellery on the object was sticking 6.5cm out
-  // through the collision hull, where it could be visually clipped by a player
-  // who had legitimately cleared the obstacle. -0.295 with a 0.045 half depth
-  // lands the tip exactly on -0.34 and still stands 2.5cm proud of the star.
-  trim.star(0, 1.18, -0.265, 0.44, 0.20, 6, 0.05, 'z');
+  // The exhibit: a bracket shelf, a big ruby on it, and a lit strip under the
+  // shelf washing up over the stone. A museum lights its own vitrines.
+  trim.bevelBox(0, 0.945, -0.278, 0.26, 0.028, 0.042, 0.012);
+  glow.box(0, 0.905, -0.286, 0.22, 0.014, 0.026);
+  trim.star(0, wy, -0.262, 0.36, 0.165, 6, 0.038, 'z');
   if (detail) {
-    a.w(mat.get('ruby')).gem(0, 1.18, -0.295, 0.16, 0.19, 0.045);
-    for (const sy of [0.44, 1.90]) trim.box(0, sy, -0.266, 0.80, 0.022, 0.018);
+    a.w(mat.get('ruby')).gem(0, wy, -0.295, 0.155, 0.185, 0.045);
   }
+
+  // NO WAY THROUGH, SAID IN THE SAME VOCABULARY AS THE OTHER TWO. LOW and
+  // HIGH each draw one red line at the height that hurts. This one has no
+  // height that does not hurt, so the cord runs up both jambs instead of
+  // across — a shape the player cannot mistake for a clearance line, saying
+  // the same word.
+  for (const sx of [-1, 1]) {
+    glow.box(sx * 0.845, 1.30, -0.262, 0.014, 0.86, 0.010);
+  }
+  if (detail) for (const sy of [0.44, 1.98]) trim.box(0, sy, -0.266, 0.80, 0.022, 0.018);
   return a.build('obFull');
 }
 
 /* ------------------------------------------------------------ collectible */
 
 /**
- * Collectible star — the gold stars that float around the reference NFT.
- * A faceted five-point solid with a ridge from the centre to each tip, so it
- * throws a different highlight on every facet as it turns. The old version was
- * a squashed octahedron, which reads as a gemstone chip, not a star.
+ * Collectible star — the gold stars that float around the reference NFT,
+ * cut as a stone rather than stamped out of sheet.
+ *
+ * The old one was Writer.star(): a rim polygon with a single ridge running to
+ * one apex on each face. That is a cone with a wavy base, and it captured as a
+ * scrap of crumpled foil — one silhouette, one highlight, and as it spun it
+ * flickered between "bright triangle" and "nothing". A collectible has to look
+ * worth picking up from further away than it can be picked up from.
+ *
+ * cutStar() gives it three facet families — a girdle wall, crown facets, and a
+ * flat table on each face. There is always a facet near-normal to the key, so
+ * it glints continuously through the spin instead of blinking, and the girdle
+ * catches a bright rim line that draws the outline for free.
+ *
+ * SIZE IS A GAMEPLAY NUMBER, NOT A TASTE ONE. Outer radius 0.245 put a
+ * half-metre ornament on the track, wider than the character and tall enough
+ * to hide the obstacle behind it. 0.152 is a 30cm star: bigger than the 23cm
+ * it was, small enough that a run of them never masks what kills you.
  */
 export function buildStar(scene, mat, q) {
   const a = new Assembly(scene);
-  // Outer radius 0.245 put a HALF-METRE star on the track — wider than the
-  // character and tall enough to hide the obstacle behind it. A collectible
-  // must be legible without competing with the thing that kills you.
-  a.w(mat.get('goldLeaf')).star(0, 0, 0, 0.115, 0.050, 5, 0.036, 'z', Math.PI / 2);
+  const R = 0.152, r = 0.078;
+  a.w(mat.get('goldLeaf'))
+    .cutStar(0, 0, 0, R, r, 5, 0.016, 0.050, 0.30, Math.PI / 2);
   if (q.name !== 'low') {
-    a.w(mat.get('yellowGold')).star(0, 0, 0, 0.055, 0.024, 5, 0.042, 'z', Math.PI / 2);
+    // A white spark seated in the table on both faces. Only the tips of this
+    // little double pyramid clear the gold, so what the player sees is a hot
+    // point at the heart of the stone — which is the single cheapest thing
+    // that makes a collectible read as valuable at forty metres. It is
+    // emissive, so unlike everything else on the star it does not go out when
+    // the corridor does.
+    a.w(mat.get('catchlight'))
+      .star(0, 0, 0, R * 0.27, r * 0.27, 5, 0.078, 'z', Math.PI / 2);
   }
   return a.build('star');
 }
