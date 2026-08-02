@@ -299,9 +299,24 @@ try {
           }
           return best;
         };
+        // Collectibles are NOT obstacles, so the gap seek above ignores them —
+        // and capture mode disables collision, so the player happily comes to
+        // rest inside a star. That parked a full-size gold star on top of the
+        // character in the hero shot and cost a grading pass, because it read
+        // as broken character geometry rather than a tooling artefact. Reject
+        // any pose with an untaken collectible close enough to overlap.
+        const starClear = () => {
+          const list = track.stars || track.collectibles || track.pickups || [];
+          for (const s of list) {
+            if (s.taken || s.active === false) continue;
+            const d = (s.z !== undefined ? s.z : s.s) - play.z;
+            if (d > -2.5 && d < 3.5) return false;
+          }
+          return true;
+        };
         for (let i = 0; i < 20000; i++) {
           const g = gap();
-          if (g >= minA && g <= maxA) break;
+          if (g >= minA && g <= maxA && starClear()) break;
           S.loop.advance(1 / 60, 0);
         }
         play._camInit = false;
@@ -319,6 +334,25 @@ try {
     await page.evaluate((cam) => {
       const S = window.SVU;
       S.loop.setPaused(true);
+
+      // Collectibles are not obstacles, so the framing seek above ignores them,
+      // and capture mode disables collision — so the player parks INSIDE a
+      // star. A full-size gold star then sits on the character and reads as
+      // broken character geometry; it cost a grading pass and misled an agent
+      // into rewriting geometry that was fine.
+      //
+      // This must happen AFTER setPaused. Disabling the meshes before the last
+      // advance() does nothing: track's renderUpdate re-enables and repositions
+      // every live star each frame, so the change is undone before the grab.
+      {
+        const play = S.ctx.get('play');
+        const track = S.ctx.tryGet('track');
+        for (const s of ((track && track.stars) || [])) {
+          const d = s.z - play.z;
+          if (d > -6.0 && d < 7.0 && s.mesh) s.mesh.setEnabled(false);
+        }
+      }
+
       if (cam) {
         const play = S.ctx.get('play');
         play.camLocked = true;
