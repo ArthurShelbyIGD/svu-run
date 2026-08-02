@@ -419,6 +419,45 @@ export default class Character {
     return this._msGold;
   }
 
+  /**
+   * The character's polished white metal: boots, gloves, shoulder caps, hem
+   * band. NOT `polRhodium`, which is mat's shared one and correct where it is.
+   *
+   * `polRhodium` is albedo 0.905, metallic 1.0, roughness 0.085 — a true
+   * mirror, and a true mirror shows you what is around it. Around these parts
+   * is a black hall and a black floor, so measured off the rear capture:
+   *
+   *                    p10    p50    p90     (luminance / frame white)
+   *     ref boots      0.464  0.725  0.838
+   *     ours           0.003  0.143  0.544
+   *     ref glove      0.475  0.736  0.997
+   *     ours           0.019  0.377  0.745
+   *
+   * The boots were FIVE TIMES too dark and were simply not in the picture —
+   * "the boots are missing" survived a pass in which the boots were built,
+   * placed and visible, because a black boot under a black hem in a black hall
+   * is not visible. Same failure mode the pavé had, same fix as the pavé had:
+   *
+   *   * metallic 1.0 -> 0.42, so a bit under two thirds of the response is a
+   *     view-INDEPENDENT diffuse body the portrait lamps can light, instead of
+   *     100% of it being a reflection of nothing. The specular is still there
+   *     and still takes the lamps, so it keeps reading as metal.
+   *   * a cool emissive floor, for the same light-tent reason as the stones.
+   *
+   * Cool, not neutral — see the WHITE POINT note above.
+   */
+  _rhodMat(mat) {
+    if (this._msRhod) return this._msRhod;
+    const m = mat.polished('charRhodium', { r: 0.880, g: 0.900, b: 0.935 }, 0.085, 2, 1.15);
+    mat.mutate('charRhodium', (mm) => {
+      mm.metallic = 0.42;
+      mm.environmentIntensity = 1.15;
+      mm.emissiveColor.set(0.052, 0.056, 0.062);
+    });
+    this._msRhod = m;
+    return m;
+  }
+
   _bedMat(mat) {
     if (this._msBed) return this._msBed;
     const m = mat.enamel('paveBed', { r: 0.630, g: 0.640, b: 0.650 }, 0.34);
@@ -506,7 +545,7 @@ export default class Character {
     // hem band at the bottom of the onesie
     t.at(0, P.bodyY - P.bodyH * 0.965, 0, Math.PI / 2, 0, 0, 1.0, 1.0, 0.90);
     t.add(torus(P.bodyW * 0.845, 0.030, this.su, this.sd, null, 0.75));
-    t.toMesh('onesieTrim', this.ctx.scene, mat.get('polRhodium'), body);
+    t.toMesh('onesieTrim', this.ctx.scene, this._rhodMat(mat), body);
 
     // --- gold: the zip with real teeth, and its pull ---
     //
@@ -1077,7 +1116,7 @@ export default class Character {
     g.at(s * R * 0.76, -R * 0.88, 0.030, -0.30, 0, s * 1.05);
     g.add(tube(trings, this.sd, true, true, 1, 3));
 
-    g.toMesh(`glove${s}`, scene, mat.get('polRhodium'), wrist);
+    g.toMesh(`glove${s}`, scene, this._rhodMat(mat), wrist);
   }
 
   // ---- legs and boots --------------------------------------------------
@@ -1161,7 +1200,7 @@ export default class Character {
         b.at(0, -P.legLen - P.bootR * (0.34 + i * 0.44), 0.030, Math.PI / 2, 0, 0, 1.0, 1.0, 1.14);
         b.add(torus(P.bootR * (0.86 - i * 0.10), P.bootR * 0.115, this.sd + 8, 6, null, 0.80));
       }
-      b.toMesh(`boot${s}`, scene, mat.get('polRhodium'), pivot);
+      b.toMesh(`boot${s}`, scene, this._rhodMat(mat), pivot);
 
 
       this.parts.legs.push(pivot);
