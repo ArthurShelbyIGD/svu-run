@@ -124,17 +124,38 @@ export default class Character {
     // head, the torso and the boots is the fastest way to break the illusion,
     // and the previous build's did.
     //
-    // 0.072m on a 0.85m-wide hood puts roughly 12 stones across the visible
-    // crown, which is what the reference shows. The old normal map ran at more
-    // than 70, which is why it dissolved into fabric texture.
-    this.pitch = low ? 0.086 : (high ? 0.066 : 0.076);
-    this.facets = low ? 5 : 6;
+    // "Roughly 12 stones across the visible crown, which is what the reference
+    // shows" was simply a miscount, and it is the reason the character wears
+    // golf balls. Crop docs/reference-rear.png to the hood and count: 20-22
+    // stones across the head's width, which over a hemisphere of arc length
+    // pi.R = 1.28 m is a pitch near 0.045 m, not 0.076.
+    //
+    // Two things had to move with it or halving the pitch would have made it
+    // worse, both learned from the capture:
+    //
+    //   * THE SETTING BED IS NOT DARK. The old bed was `darkChrome` on the
+    //     theory that black gaps give contrast. In the reference there are no
+    //     black gaps at all — the bed is bright champagne gold and the darkest
+    //     5% of the hood still sits at 0.51, while ours sat at 0.11. Big stones
+    //     over a black bed is exactly what "golf balls" describes: it is the
+    //     GAPS you are reading, not the stones. See _bedMat().
+    //   * THE GRAINS SCALE WITH THE PITCH (beadR = pitch * k), so they shrink
+    //     automatically — but their apex extension did not, which is why they
+    //     photographed as yellow spikes. See pave.js.
+    //
+    // Cost: stone count goes as 1/pitch^2, so this is about 3x the stones. The
+    // facet count drops to 5 to pay part of it back (11 verts and 15 tris per
+    // stone instead of 13 and 18), and `low` keeps a coarser pitch. Everything
+    // is still merged per part, so the DRAW CALL count is unchanged — this is
+    // vertices only, and vertices are the cheap axis on a phone.
+    this.pitch = low ? 0.056 : (high ? 0.041 : 0.046);
+    this.facets = 5;
 
     // Gold grains: one per Nth stone. An octahedron is 6 verts and 8 tris and
     // merges into a gold mesh the part already owns, so this is vertices only —
     // no extra draw call, no extra material, no texture. `low` gets a third of
     // them, which still reads as warmth in the gaps at phone size.
-    this.beadEvery = low ? 3 : 1;
+    this.beadEvery = low ? 2 : 1;
 
     // A private deterministic stream. Stone rotations and micro-jitter are
     // procedural geometry, not gameplay, but they still must be identical
@@ -181,6 +202,41 @@ export default class Character {
    *              "jewellery" from "grey object" at chase distance, and it was
    *              the single largest colour note missing from the back view.
    */
+  /**
+   * The two materials the pavé is made of, created through mat's public
+   * factories rather than by editing src/mat/index.js, which is another agent's
+   * directory. Both are cached by name in the materials registry and disposed
+   * with it, exactly like the built-ins.
+   *
+   * WHY NOT THE EXISTING NAMES. The stones were `whiteGold` and the bed was
+   * `darkChrome`, and both are `surface()` materials — a tiled hammered-metal
+   * normal map at four to six repeats over 0..1 UVs. On a 4 cm stone with a
+   * 0.6-wide UV patch that map is pure noise, and its ORM channel drags the
+   * roughness up to 0.85, which is why 800 individually cut mirrors rendered as
+   * matte ceramic. A cut stone wants NO texture at all: its detail is its
+   * facets, and each facet should return one clean, flat reflection.
+   *
+   * `metal()` is the only factory here that applies no maps whatsoever.
+   */
+  _stoneMat(mat) {
+    // Pale, near-mirror, faintly warm — measured off the reference hood, whose
+    // mean is (0.72, 0.66, 0.59). Not the near-black of src/mat/pave.js: that
+    // number is right for a TEXTURE, where a stone is two pixels and every one
+    // of its facets has been averaged away, so all that is left to sell it is
+    // the value swing. Here the facets are real geometry and produce the swing
+    // themselves; a 0.06 albedo on real facets is just a black bead.
+    return mat.metal('paveStone', { r: 0.880, g: 0.870, b: 0.855 }, 0.085);
+  }
+
+  /**
+   * The setting the stones sit in. CHAMPAGNE GOLD, and mid-value — see the
+   * pitch note in init(). Rougher than the stones so it stays quiet and never
+   * out-sparkles them; warm so the pavé reads as jewellery rather than as grey.
+   */
+  _bedMat(mat) {
+    return mat.metal('paveBed', { r: 0.665, g: 0.575, b: 0.415 }, 0.30);
+  }
+
   _stones(geo, surf, opts, gold) {
     opts.pitch = opts.pitch === undefined ? this.pitch : opts.pitch;
     opts.facets = this.facets;
@@ -235,7 +291,7 @@ export default class Character {
     const bed = new Geo();
     bed.at(0, P.bodyY, 0, 0, 0, 0, 0.982, 0.99, 0.982);
     bed.add(surface(bodySurf, this.su, this.sv, 2, 1));
-    bed.toMesh('onesieBed', this.ctx.scene, mat.get('darkChrome'), body);
+    bed.toMesh('onesieBed', this.ctx.scene, this._bedMat(mat), body);
 
     // The gold accumulator for the whole torso — grains plus the zip. Declared
     // here because the grains are emitted alongside the stones, below.
@@ -248,7 +304,7 @@ export default class Character {
       v0: 0.02, v1: 0.985,
       omit: (x, y, zz) => Math.abs(x) < 0.050 && zz > P.bodyD * 0.55,
     }, z);
-    g.toMesh('onesieStones', this.ctx.scene, mat.get('whiteGold'), body);
+    g.toMesh('onesieStones', this.ctx.scene, this._stoneMat(mat), body);
 
     // --- metal garment furniture ---
     const t = new Geo();
@@ -391,7 +447,7 @@ export default class Character {
       bed.at(0, 0, 0);
       bed.add(surface(f, this.sd + 8, this.sd + 4, 2, 1));
     }
-    bed.toMesh('hoodBed', scene, mat.get('darkChrome'), head);
+    bed.toMesh('hoodBed', scene, this._bedMat(mat), head);
 
     // The head's gold accumulator: aperture rim, ear rings, and the grains
     // between every stone on the hood and the ears. Declared before the stones
@@ -413,7 +469,7 @@ export default class Character {
           && ((x - f.cx) * (x - f.cx) + (y - f.cy) * (y - f.cy)) < P.earR * P.earR * 0.42,
       }, p);
     }
-    st.toMesh('hoodStones', scene, mat.get('whiteGold'), head);
+    st.toMesh('hoodStones', scene, this._stoneMat(mat), head);
 
     // --- ear cups: an inset opening in darker polished metal ---
     const ic = new Geo();
@@ -707,11 +763,11 @@ export default class Character {
       const ub = new Geo();
       ub.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
       ub.add(surface(upperSurf, this.sd + 8, this.sd + 2, 2, 1));
-      ub.toMesh(`upperBed${s}`, scene, mat.get('darkChrome'), pivot);
+      ub.toMesh(`upperBed${s}`, scene, this._bedMat(mat), pivot);
       const us = new Geo();
       us.at(0, 0, 0);
       this._stones(us, upperSurf, { v0: 0.10, v1: 0.94, cy: -P.upperLen * 0.5 });
-      us.toMesh(`upperStones${s}`, scene, mat.get('whiteGold'), pivot);
+      us.toMesh(`upperStones${s}`, scene, this._stoneMat(mat), pivot);
 
       // elbow joint
       const elbow = new TransformNode(`elbow${s}`, scene);
@@ -729,7 +785,7 @@ export default class Character {
       const fb = new Geo();
       fb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
       fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
-      fb.toMesh(`foreBed${s}`, scene, mat.get('darkChrome'), elbow);
+      fb.toMesh(`foreBed${s}`, scene, this._bedMat(mat), elbow);
       // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
       // each pavé sleeve meets the silver hand, and from behind it is one of
       // only three warm accents on the whole back of the piece — the others
@@ -743,7 +799,7 @@ export default class Character {
       const fs = new Geo();
       fs.at(0, 0, 0);
       this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
-      fs.toMesh(`foreStones${s}`, scene, mat.get('whiteGold'), elbow);
+      fs.toMesh(`foreStones${s}`, scene, this._stoneMat(mat), elbow);
       gc.toMesh(`cuff${s}`, scene, mat.get('polGold'), elbow);
 
       // --- glove ---
@@ -862,7 +918,7 @@ export default class Character {
       lb.add(surface(legSurf, this.sd + 8, this.sd + 2, 2, 1));
       lb.at(0, 0, 0, 0, 0, 0, 0.97, 0.97, 0.97);
       lb.add(surface(bandSurf, this.sd + 6, this.sd - 2, 3, 1));
-      lb.toMesh(`legBed${s}`, scene, mat.get('darkChrome'), pivot);
+      lb.toMesh(`legBed${s}`, scene, this._bedMat(mat), pivot);
 
       // The leg's gold: a wire either side of the pavé boot band, plus the
       // grains between the stones. One mesh, one draw call per leg. The boot
@@ -876,7 +932,7 @@ export default class Character {
       this._stones(ls, legSurf, { v0: 0.05, v1: 0.90, cy: -P.legLen * 0.5 }, lg);
       ls.at(0, 0, 0);
       this._stones(ls, bandSurf, { v0: 0.10, v1: 0.90, cy: bY, pitch: this.pitch * 0.80 }, lg);
-      ls.toMesh(`legStones${s}`, scene, mat.get('whiteGold'), pivot);
+      ls.toMesh(`legStones${s}`, scene, this._stoneMat(mat), pivot);
 
       for (const e of [-1, 1]) {
         lg.at(0, bY + e * bt * 0.94, 0, Math.PI / 2, 0, 0, 1, 1, 0.94);
@@ -1073,9 +1129,15 @@ export default class Character {
     // cached by name in the materials registry exactly like every built-in, so
     // it is disposed with them. If mat/ ever grows a `capeMirror` of its own,
     // this call becomes a no-op cache hit and should be replaced by a get().
+    // Numbers, not adjectives. Sampling docs/reference-rear.png over the skirt
+    // gives mean RGB (0.458, 0.408, 0.356) with 5th/95th percentiles at 0.19
+    // and 0.87 — a WARM metal, a little under half value, with a two-and-a-half
+    // stop swing across it. The same window on our own capture read (0.683,
+    // 0.649, 0.606): the swing was already right once the ribs were rounded,
+    // the mean was half a stop too bright, and it was too cool by half.
     const capeMat = mat.polished(
       'capeMirror',
-      { r: 0.545, g: 0.560, b: 0.605 },  // cool, and about half of rhodium
+      { r: 0.395, g: 0.372, b: 0.345 },
       0.060,                              // mirror
       3,                                  // micro-polish tiling
       1.25,                               // KEEP the portrait rig: it is the streak
@@ -1092,7 +1154,7 @@ export default class Character {
       // outline drawn round a bedsheet. Plain polished rhodium is a stop
       // brighter than `capeMirror`, which draws the scallop as a bright line
       // without turning it into jewellery in its own right.
-      mat.get('polRhodium'),
+      mat.polished('capeWire', { r: 0.640, g: 0.605, b: 0.560 }, 0.055, 4, 1.1),
       capeRoot, 3, 2,
       mat.get('darkChrome'),     // inside: the dark cavity
     );
@@ -1157,7 +1219,7 @@ export default class Character {
     const bed = new Geo();
     bed.at(0, 0, 0, 0, 0, 0, 0.985, 1, 0.985);
     bed.add(surface(yokeSurf, this.lowQ ? 14 : this.su, this.lowQ ? 4 : 6, 2, 1));
-    bed.toMesh('yokeBed', scene, mat.get('darkChrome'), capeRoot);
+    bed.toMesh('yokeBed', scene, this._bedMat(mat), capeRoot);
 
     const g = new Geo();
 
@@ -1173,7 +1235,7 @@ export default class Character {
     this._stones(st, yokeSurf, {
       v0: 0.06, v1: 0.93, uOpen: true, uPad: 0.035,
     }, g);
-    st.toMesh('yokeStones', scene, mat.get('whiteGold'), capeRoot);
+    st.toMesh('yokeStones', scene, this._stoneMat(mat), capeRoot);
 
     // gold edge, swept along the yoke's lower rim. Heavier than the hem wire on
     // purpose: this is the line that says "the cape hangs from here", and it is

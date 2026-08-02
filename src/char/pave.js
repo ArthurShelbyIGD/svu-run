@@ -143,7 +143,15 @@ export function stoneField(surf, o) {
   // random row stagger included. Returned separately so the caller can merge it
   // into a gold mesh it already has, which is why it costs no extra draw call.
   const beadEvery = o.beadEvery || 0;
-  const beadR = o.beadR === undefined ? pitch * 0.130 : o.beadR;
+  // BEAD SIZE SCALES WITH THE PITCH, BUT ITS PROFILE MUST NOT. At the old
+  // 0.076 pitch the grains stood 12 mm proud on a 1.25x apex extension and
+  // photographed as yellow SPIKES pushed between the stones — the "yellow
+  // cubes" in the rear capture. A setter's grain is a hemispherical bead
+  // slightly wider than it is tall; the apex extension is now 0.80, which makes
+  // the octahedron a squat dome instead of a pyramid, and the radius is a
+  // little smaller so the bead web stays a web rather than a second stone field.
+  const beadR = o.beadR === undefined ? pitch * 0.115 : o.beadR;
+  const beadApex = o.beadApex === undefined ? 0.80 : o.beadApex;
   const bpos = [], buv = [], bidx = [];
   // (x, y, z) => true to leave this cell bare. The hood uses it to open a face
   // aperture: the test is "inside the face sphere", so the opening is shaped by
@@ -214,7 +222,7 @@ export function stoneField(surf, o) {
         const s = beadR;
         // octahedron: 6 verts, 8 tris, and it takes a hard specular hit on the
         // outward apex — which is the whole point of a grain at 20 metres.
-        bpos.push(bx + nx * s * 1.25, by + ny * s * 1.25, bz + nz * s * 1.25);
+        bpos.push(bx + nx * s * beadApex, by + ny * s * beadApex, bz + nz * s * beadApex);
         bpos.push(bx - nx * s * 0.55, by - ny * s * 0.55, bz - nz * s * 0.55);
         bpos.push(bx + e1x * s, by + e1y * s, bz + e1z * s);
         bpos.push(bx + e2x * s, by + e2y * s, bz + e2z * s);
