@@ -306,6 +306,19 @@ export default class Character {
     mat.mutate('paveStone', (mm) => {
       mm.metallic = 0.18;
       mm.environmentIntensity = 1.15;
+      // A SMALL EMISSIVE FLOOR, and it is not a cheat.
+      //
+      // The reference is photographed on a white sweep in a light tent, where
+      // every crown facet that faces away from the key is still filled by the
+      // room — its darkest 5% is 0.51. We are in a black hall, so the same
+      // facet gets nothing and goes to 0.10, and 800 stones each with a black
+      // crescent on one side is what makes the field read as fish scales
+      // instead of as glitter. A real diamond also genuinely does return light
+      // from directions no surface shader here models: light enters the table,
+      // total-internal-reflects off the pavilion and comes back out. Eight
+      // percent is the value that stops the crescents reading as holes without
+      // touching anything that is already lit.
+      mm.emissiveColor = mm.albedoColor.scale(0.080);
     });
     this._msStone = m;
     return m;
@@ -1270,7 +1283,7 @@ export default class Character {
       // rasteriser is the one thing the capture harness is known to lie about,
       // so this number is matched on the MEAN, which is robust, and not on the
       // highlights, which are not.
-      { r: 0.310, g: 0.292, b: 0.270 },
+      { r: 0.263, g: 0.248, b: 0.229 },
       0.060,                              // mirror
       3,                                  // micro-polish tiling
       // KEEP the portrait rig, and then some. Measured, the mean is now right

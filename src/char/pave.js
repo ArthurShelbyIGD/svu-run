@@ -136,7 +136,7 @@ export function stoneField(surf, o) {
   // silhouette; too small and we are back to a smooth arc with a texture on it.
   // Too large and each stone shades its neighbour, which is the other half of
   // why the field read as dark lumps rather than as a bright continuous glitter.
-  const rise = o.rise === undefined ? pitch * 0.105 : o.rise;
+  const rise = o.rise === undefined ? pitch * 0.085 : o.rise;
   // Fraction of the stone that is flat TABLE. A round brilliant seen from above
   // is mostly table; at 0.76 the crown wall was 42% of the footprint and every
   // stone had a dark ring round it. 0.84 went the other way and left no crown
@@ -153,7 +153,11 @@ export function stoneField(surf, o) {
   // irregularity is in the FACET ANGLES, not in where the stones are — so the
   // sparkle stays on `tilt` and the positions tighten up.
   const jitter = o.jitter === undefined ? 0.14 : o.jitter;
-  const tilt = o.tilt === undefined ? 0.11 : o.tilt;
+  // More spread than before. Tilt is the ONLY source of per-stone variation
+  // left now that the positions are a tight lattice and the tables are flat, and
+  // it is what makes individual stones flare and go out independently as the
+  // character runs. At 0.11 the whole field turned over together.
+  const tilt = o.tilt === undefined ? 0.17 : o.tilt;
   // Gold beading. One grain per stone, dropped in the lattice gap diagonally
   // between this stone and its neighbours — emitted from inside this loop
   // rather than from a second pass so it lands in the ACTUAL gaps, jitter and
