@@ -918,9 +918,16 @@ export default class Character {
     // at once: about nine ribs across the visible back, and three hem waves.
     // The build this replaces tied one hem wave to every rib, which is why the
     // hem came out as a paper crown. See _rest() in cape.js.
-    const flutes = 9;
-    const scallops = 3;
-    const perFlute = low ? 5 : (high ? 8 : 6);
+    // FIFTEEN FLUTES, FIVE HEM WAVES. Nine ribs was measured off the reference's
+    // BACK ONLY and then applied to an arc that spans 143 degrees rather than
+    // 180, so the model ended up coarser than the thing it was measured from.
+    // Counting the reference again across the full visible skirt gives 14-18
+    // ribs, and the ribs are narrow: each one is roughly a fifth as deep as it
+    // is wide. Fifteen over this arc puts a rib every 8 cm at the hem, which is
+    // fine enough to read as fluting rather than as panels.
+    const flutes = 15;
+    const scallops = 5;              // divides flutes, both odd — see _rest()
+    const perFlute = low ? 4 : (high ? 6 : 5);
     const rows = low ? 7 : (high ? 14 : 12);
 
     // The yoke line. Everything below is measured off docs/reference-rear.png,
@@ -997,16 +1004,24 @@ export default class Character {
       // rib is 0.17 m around, so 0.062 is a little over a third — still much
       // bolder than the reference, because this is seen at 20 metres in a dark
       // hall rather than lit on a plinth, and legibility wins.
-      fluteAmp: 0.062,
+      // Fifteen ribs across a 1.2 m hem arc is one rib every 8 cm, so the
+      // amplitude that gave a given SLOPE at nine ribs now gives one nearly
+      // twice as steep. Slope is what matters on a mirror — it is what decides
+      // how much of the environment each rib sweeps through — so the amplitude
+      // comes down with the rib width. 0.034 over a 0.082 m rib is the
+      // reference's "proud by about a fifth of its width", and still swings the
+      // surface normal by about 50 degrees at each crease, which is enough to
+      // take the reflection from the bright tent down to the dark floor and
+      // back within every single rib. That sweep IS the vertical streak.
+      fluteAmp: 0.034,
       // Hem wave, as a fraction of skirt length. The reference's is 0.125 of
       // the drop peak-to-trough; a touch more here for the same reason.
-      hemCut: 0.145,
-      // A FINE gold line, which is what the reference has — one bright wire
-      // drawing the scallop, not a rope laid on it. Two things push this down:
-      // the 1.24 presentation scale multiplies whatever is modelled here, and
-      // at the old weight the trim was the brightest object on the character,
-      // so the eye landed on the hem before the hood.
-      trimR: 0.0105,
+      hemCut: 0.135,
+      // A FINE wire. It is now RHODIUM, not gold (see the material note below),
+      // and at 7 mm x the 1.24 presentation scale it is a 1.7 cm bead running
+      // the scallop. At 0.0105 in gold it was the brightest object in the whole
+      // frame and the bloom pass turned it into a glowing cartoon outline.
+      trimR: 0.0070,
       trimSu: low ? 4 : 5,
       rippleAmp: 0.022,
       // Heavy metal skirt, not a flag: a stiff spring with real damping, so it
@@ -1034,10 +1049,50 @@ export default class Character {
     // dark creases and reads as the reference's polished silver. The lesson is
     // the project's own: a mirror is readable exactly as far as its geometry
     // makes it readable, and no material tuning substitutes for that.
+    //
+    // ...AND THE SIX-COLUMN VERSION STILL RENDERED AS A CREAM BEDSHEET, which is
+    // where this pass came in. The remaining half of the diagnosis:
+    //
+    //   * `_lobe` was flat-topped, so the middle half of every rib had a
+    //     CONSTANT NORMAL and therefore a constant colour. Columns per flute
+    //     cannot fix that — they only sample a flat top more finely. Fixed in
+    //     cape.js: the crown is round now.
+    //   * `polRhodium` is albedo 0.905. A mirror's value is albedo x whatever it
+    //     reflects, our environment is a bright cream light tent, and 0.905 x
+    //     cream is cream no matter what the geometry does. The reference skirt
+    //     is DARK with white streaks on it, and its average value is somewhere
+    //     near half. So the cape gets its own metal at roughly half albedo.
+    //   * `polished()` turns the analytic lights DOWN (directIntensity 0.55) to
+    //     stop small parts drowning in the portrait rig's highlight. The cape is
+    //     the opposite case: those point lights on a near-vertical polished rib
+    //     are precisely the long vertical specular streak the reference has, so
+    //     this one keeps them at full and a bit over.
+    //
+    // Built through mat's PUBLIC factory rather than by adding a case to
+    // src/mat/index.js, because src/mat/ is another agent's directory. It is
+    // cached by name in the materials registry exactly like every built-in, so
+    // it is disposed with them. If mat/ ever grows a `capeMirror` of its own,
+    // this call becomes a no-op cache hit and should be replaced by a get().
+    const capeMat = mat.polished(
+      'capeMirror',
+      { r: 0.545, g: 0.560, b: 0.605 },  // cool, and about half of rhodium
+      0.060,                              // mirror
+      3,                                  // micro-polish tiling
+      1.25,                               // KEEP the portrait rig: it is the streak
+    );
+
     this.cape.init(
       this.ctx.scene,
-      mat.get('polRhodium'),     // outside: polished silver
-      mat.get('polGold'),        // the hem wire
+      capeMat,                   // outside: polished mirror rhodium
+      // THE HEM IS NOT GOLD. docs/reference-rear.png finishes the scallop with a
+      // fine RAISED WIRE OF THE SAME METAL — you can see it because it is a bead
+      // catching a different part of the room, not because it is a different
+      // colour. In gold it was the loudest thing on the character: the eye went
+      // to the hem before the hood, and with bloom on it read as a cartoon
+      // outline drawn round a bedsheet. Plain polished rhodium is a stop
+      // brighter than `capeMirror`, which draws the scallop as a bright line
+      // without turning it into jewellery in its own right.
+      mat.get('polRhodium'),
       capeRoot, 3, 2,
       mat.get('darkChrome'),     // inside: the dark cavity
     );

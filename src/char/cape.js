@@ -143,12 +143,29 @@ export class Cape {
    * scallop function, which is a smooth cosine.
    *
    * `t(2 - t)` with `t = |sin|` keeps the corner (slope 2 at the crease, finite)
-   * and flattens the top into the broad face the reference shows. Compare the
-   * two at the crease: infinite slope against 2.
+   * and flattens the top into the broad face the reference shows.
+   *
+   * ...AND THAT FLAT TOP IS WHY THE SKIRT RENDERED AS A CREAM LAMPSHADE. This
+   * is the third time this function has been the real cause of a material
+   * complaint, so: a mirror has no colour of its own. Every pixel of it is
+   * `env(reflect(view, normal))`. A region of CONSTANT NORMAL is therefore a
+   * region of constant colour, however polished the material is. `t(2-t)` has
+   * zero curvature over the middle half of every rib, so the middle half of
+   * every rib was one flat value — and since our environment is a bright cream
+   * light tent, that value was bright cream. Nine flat cream bands separated by
+   * creases is a bedsheet with folds in it.
+   *
+   * Plain `|sin|` is the fluted column, and it is the right answer:
+   *   - curvature is non-zero EVERYWHERE on the crown, so the reflection sweeps
+   *     continuously across each rib and lays down the long vertical specular
+   *     streak the reference has;
+   *   - the slope is still discontinuous at the crease (a hard corner, |sin|'
+   *     jumps from -pi.N to +pi.N), so the creases still read as creases;
+   *   - unlike `|sin|^0.48` the slope is FINITE there, so the plan outline does
+   *     not spike inward and the hem wire does not come out as a paper crown.
    */
   _lobe(u) {
-    const t = Math.abs(Math.sin(Math.PI * this.flutes * u));
-    return t * (2 - t);
+    return Math.abs(Math.sin(Math.PI * this.flutes * u));
   }
 
   /**
@@ -186,7 +203,11 @@ export class Cape {
     // hem trough on a lobe crown, and both are odd, so the centre-back meridian
     // gets a lobe crown at the bottom of a trough — the widest, calmest read
     // for the one view that is on screen all game.
-    const scal = 0.5 + 0.5 * Math.cos(Math.PI * 2 * this.scallops * u);
+    // Raised to a power > 1 so the DOWN lobes are broad and round and the UP
+    // cusps between them are narrow. A pure cosine gives equal time to both and
+    // reads as a pennant; the reference's hem is a row of hanging petals with a
+    // pinch between each pair.
+    const scal = Math.pow(0.5 + 0.5 * Math.cos(Math.PI * 2 * this.scallops * u), 1.35);
     // ...and it is eased in with a smoothstep rather than a linear ramp. A
     // linear ramp puts a horizontal crease right across the skirt at v = 0.62
     // where the second derivative jumps; on a mirror surface that crease shows

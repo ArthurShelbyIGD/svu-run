@@ -77,6 +77,17 @@ const POSES = [
     note: 'rear three-quarter — what players ACTUALLY see for 99% of a run',
   },
   {
+    // Dead behind, tight. docs/reference-rear.png is a straight-on elevation, so
+    // the three-quarter char-rear pose is not directly comparable with it — half
+    // the grading arguments in this project have been made off a view that hides
+    // one arm and foreshortens the cape. This is the A/B shot.
+    name: 'char-back',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0, 1.30, -3.85, 0, 1.02, 0],
+    note: 'straight-on rear elevation — the direct A/B against docs/reference-rear.png',
+  },
+  {
     name: 'jump',
     viewport: 'desktop',
     time: 5,
