@@ -41,23 +41,61 @@ import { Cape } from './cape.js';
 // ball with boots. The torso is longer and the head sits higher for that
 // reason, while the head stays over half the standing height because oversized
 // head is the recognisable part of the collection.
+// EVERY NUMBER BELOW THAT MOVED IN r6 WAS MEASURED OFF docs/reference-rear.png
+// IN PIXELS AND CONVERTED, not chosen. The method, so the next person can redo
+// it: threshold the reference against its cream backdrop, take the silhouette
+// width row by row, and read the landmarks off that profile. The figure runs
+// y = 252 (ear tops) to y = 1203 (soles), 951 px, and the bare head sphere is
+// 385 px across, so 1 head radius = 192 px and the whole figure is 4.95 head
+// radii tall. Everything here is quoted in those two units.
+//
+//   reference                                  this model (r5)      r6
+//   figure height        4.95 headR            3.95 headR          4.41
+//   head band (top->collar)  37% of height     56%                 50%
+//   skirt band               48%               42%                 38%
+//   boots visible below hem  15%               2%                  13%
+//   ear radius           0.26 headR            0.41                0.26
+//   ear centre           1.12 headR @ 57 deg   1.12 @ 44 deg       1.12 @ 57
+//   shoulder half-width  1.20 head half-widths 0.84                1.07
+//
+// The head stays deliberately larger than the reference's — an oversized head
+// is the recognisable thing about the collection, and shrinking it also shrinks
+// the pavé, which is the other recognisable thing. Everything BELOW the head
+// grew instead. That is the same correction and it costs nothing that reads.
 const P = {
   standH: 1.66,
   headR: 0.408,
-  headY: 1.205,
+  // +0.15 on everything from the hips up. See the table above: the model was
+  // 3.95 head-radii tall against the reference's 4.95, and all of the missing
+  // height was between the hem and the floor, which is why there were never any
+  // boots in frame. Lengthening the legs and carrying the torso up with them
+  // moves four numbers and leaves every relative proportion above the waist —
+  // hood to collar, collar to yoke, shoulder to hem — exactly as it was.
+  headY: 1.355,
   faceR: 0.328,
   faceZ: 0.158,          // how far the face centre sits forward of the head
-  earR: 0.168,
-  earSpread: 0.318,
-  earY: 0.80,            // fraction of headR above centre
+  // SMALL, ROUND, LOW, CLOSE — 0.26 head radii, centred 1.12 radii out at 57
+  // degrees off the crown. At 0.41 radii and 44 degrees they were half again
+  // too big and sat a full 13 degrees too high, which is the difference between
+  // a bear and a mouse. Both figures are off the reference: ear disc 100 px
+  // against a 192 px head radius, ear centre (175, -113) px from head centre.
+  earR: 0.106,
+  earSpread: 0.383,
+  earY: 0.610,           // fraction of headR above centre
   bodyW: 0.318, bodyH: 0.352, bodyD: 0.262,
-  bodyY: 0.640,
-  upperLen: 0.205, foreLen: 0.195, armR: 0.088,
-  handR: 0.104,
-  shoulderX: 0.320, shoulderY: 0.880,
-  legR: 0.104, legLen: 0.205,
-  bootR: 0.142,
-  hipX: 0.147, hipY: 0.452,
+  bodyY: 0.790,
+  upperLen: 0.225, foreLen: 0.215, armR: 0.101,
+  handR: 0.108,
+  // THE SLEEVES MUST HANG OUTSIDE THE HEAD'S SILHOUETTE. In the reference the
+  // outer edge of the sleeve is 274 px from the centre line against a 228 px
+  // head half-width — the arms are the widest thing on the figure after the
+  // skirt. Ours were at 0.408 against a head-and-ears half-width of 0.486, so
+  // they were entirely inside the head's outline from behind and simply could
+  // not be seen. 0.415 + 0.101 = 0.516 puts them back outside it.
+  shoulderX: 0.415, shoulderY: 1.030,
+  legR: 0.107, legLen: 0.360,
+  bootR: 0.150,
+  hipX: 0.152, hipY: 0.602,
   antennaLen: 0.40, orbR: 0.104,
   eyeR: 0.082, eyeX: 0.130, eyeY: 0.005,
 };
@@ -113,7 +151,12 @@ export default class Character {
     // was already 1.11x the capsule before this; 1.24x is the same kind of
     // licence, sized so the hood is a little under half a lane wide, which is
     // where the stones start to read again at chase distance.
-    this.scale = 1.24;
+    //
+    // 1.24 -> 1.16 because P grew: the figure is 1.713 m against the old
+    // 1.610 m (see the proportion table at the top of this file), and 1.713 x
+    // 1.16 = 1.99 m is the same on-screen height 1.610 x 1.24 = 2.00 m was.
+    // The character did not get bigger; it got better proportioned.
+    this.scale = 1.16;
 
     this.su = low ? 18 : (high ? 30 : 24);
     this.sv = low ? 11 : (high ? 18 : 14);
@@ -219,22 +262,72 @@ export default class Character {
    * `metal()` is the only factory here that applies no maps whatsoever.
    */
   _stoneMat(mat) {
-    // Pale, near-mirror, faintly warm — measured off the reference hood, whose
-    // mean is (0.72, 0.66, 0.59). Not the near-black of src/mat/pave.js: that
-    // number is right for a TEXTURE, where a stone is two pixels and every one
-    // of its facets has been averaged away, so all that is left to sell it is
-    // the value swing. Here the facets are real geometry and produce the swing
-    // themselves; a 0.06 albedo on real facets is just a black bead.
-    return mat.metal('paveStone', { r: 0.880, g: 0.870, b: 0.855 }, 0.085);
+    if (this._msStone) return this._msStone;
+    // A STONE IS NOT A MIRROR AND IT IS NOT NEAR-BLACK. Both extremes have now
+    // been photographed and both are wrong, for the same reason:
+    //
+    //   * `metal()` at 0.88 albedo — full metallic — renders each facet as a
+    //     reflection of the room, and this room is a black hall. The captured
+    //     hood came out at mean 0.317 against the reference's 0.720: a dark
+    //     sphere with white glitter on it.
+    //   * the 0.06 albedo recorded in src/mat/pave.js is correct THERE and
+    //     wrong here. That number is for a two-pixel stone in a normal map,
+    //     where every facet has been averaged away and the only thing left to
+    //     sell the material is the value swing. Our facets are real geometry.
+    //
+    // What a diamond actually does is give you a bright body (light goes in,
+    // bounces around inside, comes back out) plus a hard specular from a
+    // FRESNEL FLOOR far above a normal dielectric's: n = 2.42 puts F0 at 0.17
+    // where glass is 0.04. PBR has no subsurface term here, so both halves are
+    // faked with one number — partial metalness on a near-white albedo:
+    //
+    //     diffuse body = albedo * (1 - metallic)   = 0.62, the lit body
+    //     specular F0  = mix(0.04, albedo, 0.34)   = 0.34, the hard facet hit
+    //
+    // which is a bright stone that still flares white on the facets that happen
+    // to face a light. It needs no property beyond metallic, so it cannot break
+    // on a Babylon version bump.
+    const m = mat.enamel('paveStone', { r: 0.945, g: 0.940, b: 0.930 }, 0.115);
+    mat.mutate('paveStone', (mm) => {
+      mm.metallic = 0.34;
+      mm.environmentIntensity = 1.15;
+    });
+    this._msStone = m;
+    return m;
   }
 
   /**
    * The setting the stones sit in. CHAMPAGNE GOLD, and mid-value — see the
-   * pitch note in init(). Rougher than the stones so it stays quiet and never
-   * out-sparkles them; warm so the pavé reads as jewellery rather than as grey.
+   * pitch note in init(). Warm so the pavé reads as jewellery rather than as
+   * grey, and mostly DIELECTRIC for the same reason as the stones: a metallic
+   * bed in a black hall is a black bed, which is the golf-ball look again. It
+   * is only ever seen through 5 mm gaps, so all it has to be is a warm value.
    */
+  /**
+   * The character's gold. PALE CHAMPAGNE, not the world's saturated rail gold.
+   *
+   * Every warm accent on the reference — the antenna stem, the hood rim, the
+   * collar edge, the wrist cuffs, the bead web — is a pale, almost white-gold
+   * champagne. `polGold` is PALETTE.yellowGold (1.00, 0.79, 0.31), which is
+   * correct for an 8 m lane rail seen at distance and reads as poster-paint
+   * yellow at 30 cm on a piece of jewellery. In the rear captures the hem wire
+   * and the collar edge were the two loudest objects in the frame and both were
+   * this colour.
+   *
+   * Only char/ uses this. The world's rails keep `polGold`.
+   */
+  _goldMat(mat) {
+    if (this._msGold) return this._msGold;
+    this._msGold = mat.polished('charGold', { r: 0.960, g: 0.845, b: 0.615 }, 0.095, 2, 0.7);
+    return this._msGold;
+  }
+
   _bedMat(mat) {
-    return mat.metal('paveBed', { r: 0.665, g: 0.575, b: 0.415 }, 0.30);
+    if (this._msBed) return this._msBed;
+    const m = mat.enamel('paveBed', { r: 0.740, g: 0.630, b: 0.440 }, 0.34);
+    mat.mutate('paveBed', (mm) => { mm.metallic = 0.25; });
+    this._msBed = m;
+    return m;
   }
 
   _stones(geo, surf, opts, gold) {
@@ -352,7 +445,7 @@ export default class Character {
     const pull = zAt(0.99);
     z.at(0, pull[1] - 0.010, pull[2] + 0.020, 0.5);
     z.add(gem(0.034, 6, 0.9));
-    z.toMesh('zip', this.ctx.scene, mat.get('polGold'), body);
+    z.toMesh('zip', this.ctx.scene, this._goldMat(mat), body);
     void zTop; void zBot;
   }
 
@@ -512,7 +605,9 @@ export default class Character {
     }, 6));
     for (const s of [-1, 1]) {
       p.at(s * P.earSpread, R * P.earY, -0.048 + P.earR * 0.50, Math.PI / 2, 0, s * -0.20);
-      p.add(torus(P.earR * 0.66, 0.016, this.sd + 8, 6, null, 0.9));
+      // Scaled WITH the ear. At a fixed 0.016 tube on a now-0.070 ring this was
+      // a gold doughnut nearly as thick as the ear it sits in.
+      p.add(torus(P.earR * 0.66, P.earR * 0.095, this.sd + 8, 6, null, 0.9));
     }
 
     // THE HOOD'S OWN LOWER EDGE, IN GOLD. The reference outlines the hood all
@@ -535,7 +630,7 @@ export default class Character {
     p.at(0, 0, 0);
     p.add(pipe(edge, () => 0.0125, 6));
 
-    p.toMesh('hoodPiping', scene, mat.get('polGold'), head);
+    p.toMesh('hoodPiping', scene, this._goldMat(mat), head);
 
     this._buildFace(head, mat, scene);
     this._buildAntenna(head, mat, scene);
@@ -659,7 +754,7 @@ export default class Character {
       h.add(tube(rings, this.sd, true, true, 1, 2));
     }
     void a0; void a1;
-    h.toMesh('fringe', scene, mat.get('polGold'), head);
+    h.toMesh('fringe', scene, this._goldMat(mat), head);
   }
 
   _buildAntenna(head, mat, scene) {
@@ -676,7 +771,7 @@ export default class Character {
     const cap = new Geo();
     cap.at(0.045, P.headR * 0.86, -0.10, 0.30, 0, -0.16, 1, 0.7, 1);
     cap.add(ellipsoid({ rx: 0.052, ry: 0.040, rz: 0.052, e1: 0.7, su: this.sd + 4, sv: this.sd }));
-    cap.toMesh('stalkCap', scene, mat.get('polGold'), head);
+    cap.toMesh('stalkCap', scene, this._goldMat(mat), head);
 
     this.parts.stalkSegs = [];
     this._stalkRest = [];
@@ -697,7 +792,7 @@ export default class Character {
       const r0 = 0.019 * (1 - i * 0.09), r1 = 0.019 * (1 - (i + 1) * 0.09);
       g.at(0, 0, 0);
       g.add(tube([[0, 0, 0, r0, r0], [0, segLen, 0, r1, r1]], 6, false, false, 1, 2));
-      g.toMesh(`stalkBit${i}`, scene, mat.get('polGold'), node);
+      g.toMesh(`stalkBit${i}`, scene, this._goldMat(mat), node);
       this.parts.stalkSegs.push(node);
       this._stalkRest.push(node.rotation.z);
       prev = node;
@@ -729,7 +824,7 @@ export default class Character {
     const bz = new Geo();
     bz.at(0, segLen - P.orbR * 0.82, 0, Math.PI / 2, 0, 0, 1, 1, 0.8);
     bz.add(torus(P.orbR * 0.50, 0.022, this.sd + 8, 6, null, 0.9));
-    bz.toMesh('orbBezel', scene, mat.get('polGold'), prev);
+    bz.toMesh('orbBezel', scene, this._goldMat(mat), prev);
   }
 
   // ---- arms and gloves -------------------------------------------------
@@ -800,7 +895,7 @@ export default class Character {
       fs.at(0, 0, 0);
       this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
       fs.toMesh(`foreStones${s}`, scene, this._stoneMat(mat), elbow);
-      gc.toMesh(`cuff${s}`, scene, mat.get('polGold'), elbow);
+      gc.toMesh(`cuff${s}`, scene, this._goldMat(mat), elbow);
 
       // --- glove ---
       const wrist = new TransformNode(`wrist${s}`, scene);
@@ -938,7 +1033,7 @@ export default class Character {
         lg.at(0, bY + e * bt * 0.94, 0, Math.PI / 2, 0, 0, 1, 1, 0.94);
         lg.add(torus(bR + bt * 0.30, 0.0125, this.sd + 8, 5, null, 0.85));
       }
-      lg.toMesh(`legGold${s}`, scene, mat.get('polGold'), pivot);
+      lg.toMesh(`legGold${s}`, scene, this._goldMat(mat), pivot);
 
       // --- boot ---
       // A shaped last with a toe box, an instep and a heel. From behind you see
@@ -1249,7 +1344,7 @@ export default class Character {
     }
     g.at(0, 0, 0);
     g.add(pipe(rim, () => 0.0155, 6));
-    g.toMesh('yokeEdge', scene, mat.get('polGold'), capeRoot);
+    g.toMesh('yokeEdge', scene, this._goldMat(mat), capeRoot);
   }
 
   // ---- simulation ------------------------------------------------------
@@ -1335,8 +1430,11 @@ export default class Character {
 
     switch (play.state) {
       case STATE.RUN: {
-        this.parts.legs[0].rotation.x = sw * 0.92;
-        this.parts.legs[1].rotation.x = swAlt * 0.92;
+        // 0.92 rad on a leg that is now 0.36 m rather than 0.205 m swings the
+        // foot 0.29 m fore and aft instead of 0.16 m, which at this stride rate
+        // reads as a scissor kick. Same arc length, smaller angle.
+        this.parts.legs[0].rotation.x = sw * 0.70;
+        this.parts.legs[1].rotation.x = swAlt * 0.70;
         this.parts.arms[0].rotation.x = swAlt * 0.62;
         this.parts.arms[1].rotation.x = sw * 0.62;
         // splayed further than a real runner. From the side and from behind
@@ -1349,12 +1447,23 @@ export default class Character {
         // 0.55 rad plus the wider shoulder puts the mitten 11 cm clear of the
         // hem's radius at its own height — the gold cuff and the silver hand
         // sit against the background, which is how the reference reads them.
-        this.parts.arms[0].rotation.z = -0.55 + swAlt * 0.10;
-        this.parts.arms[1].rotation.z = 0.55 - swAlt * 0.10;
+        //
+        // ...and the splay comes back DOWN to 0.36 now that the shoulder itself
+        // has moved out to 0.415. Splay was doing the shoulder's job: at 0.55 on
+        // a narrow shoulder the arm is a chicken wing held out sideways, which
+        // clears the skirt but does not look like an arm. The reference hangs
+        // its sleeves nearly vertical and gets its width from where they are
+        // ATTACHED. 0.415 + sin(0.36) x 0.44 puts the hand 0.57 out, 0.18 clear
+        // of the hem radius at that height, with the arm still hanging.
+        this.parts.arms[0].rotation.z = -0.36 + swAlt * 0.09;
+        this.parts.arms[1].rotation.z = 0.36 - swAlt * 0.09;
         // The elbow is the whole point of the two-segment arm: a runner's arm
-        // is held bent, and a straight one reads as a stick.
-        bendA = -0.95 - swAlt * 0.35;
-        bendB = -0.95 - sw * 0.35;
+        // is held bent, and a straight one reads as a stick. Eased off from
+        // -0.95: that folded the forearm so far forward that from directly
+        // behind — the only view that matters — the sleeve ended at the elbow
+        // and the glove was hidden in front of the body.
+        bendA = -0.58 - swAlt * 0.32;
+        bendB = -0.58 - sw * 0.32;
         body.position.y = this._bob * this.scale;
         body.rotation.x = 0.11;
         wantStretch = 1 + Math.abs(sw) * 0.03;
