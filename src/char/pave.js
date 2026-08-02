@@ -129,7 +129,9 @@ export function stoneField(surf, o) {
   // stones are set touching; 0.545 makes them overlap by a tenth, which closes
   // the junctions and lifts the darkest 5% of the hood from 0.10 towards the
   // reference's 0.51.
-  const rad = o.rad === undefined ? pitch * 0.545 : o.rad;
+  // ...but 0.545 tiles them like a roof: overlapping flat tops read as scales.
+  // 0.515 still closes the hex junctions and keeps each stone a separate round.
+  const rad = o.rad === undefined ? pitch * 0.515 : o.rad;
   // How proud of the setting the stone sits. This number IS the crenellated
   // silhouette; too small and we are back to a smooth arc with a texture on it.
   // Too large and each stone shades its neighbour, which is the other half of
@@ -137,8 +139,10 @@ export function stoneField(surf, o) {
   const rise = o.rise === undefined ? pitch * 0.105 : o.rise;
   // Fraction of the stone that is flat TABLE. A round brilliant seen from above
   // is mostly table; at 0.76 the crown wall was 42% of the footprint and every
-  // stone had a dark ring round it.
-  const table = o.table === undefined ? 0.84 : o.table;
+  // stone had a dark ring round it. 0.84 went the other way and left no crown
+  // at all — the stones became discs. 0.78 keeps a narrow bevel, which is the
+  // ring of secondary glints round each table in the reference.
+  const table = o.table === undefined ? 0.78 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;

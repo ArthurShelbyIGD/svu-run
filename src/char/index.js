@@ -192,7 +192,11 @@ export default class Character {
     // is still merged per part, so the DRAW CALL count is unchanged — this is
     // vertices only, and vertices are the cheap axis on a phone.
     this.pitch = low ? 0.056 : (high ? 0.041 : 0.046);
-    this.facets = 5;
+    // SIX, not five. At five the flat table is a visible PENTAGON and a field of
+    // pentagons reads as chain mail. Six is the cheapest polygon that reads as a
+    // circle at this size, and the round brilliant it is standing in for is
+    // round. One extra vertex ring per stone, no extra draw call.
+    this.facets = low ? 5 : 6;
 
     // Gold grains: one per Nth stone. An octahedron is 6 verts and 8 tris and
     // merges into a gold mesh the part already owns, so this is vertices only —
@@ -287,9 +291,20 @@ export default class Character {
     // which is a bright stone that still flares white on the facets that happen
     // to face a light. It needs no property beyond metallic, so it cannot break
     // on a Babylon version bump.
-    const m = mat.enamel('paveStone', { r: 0.945, g: 0.940, b: 0.930 }, 0.115);
+    // 0.34 was too much metal. Photographed, it turned the hood into a
+    // patchwork of white and near-black SEQUINS: with a flat table and a third
+    // of the response coming from a mirror, every stone whose table happened to
+    // face away from a lamp reflected the black hall and went out, and because
+    // neighbouring stones share a surface normal they went out in PATCHES.
+    // The reference hood has no black anywhere on it — its darkest 5% is 0.51.
+    //
+    // At 0.18 the body is 0.78 of albedo, which is view-independent and holds
+    // the field bright and even, while F0 is still 0.20 — five times a normal
+    // dielectric — so the tables that do face a lamp blow out to a pinpoint.
+    // Bright continuous glitter with sparks in it, which is the brief.
+    const m = mat.enamel('paveStone', { r: 0.955, g: 0.948, b: 0.936 }, 0.130);
     mat.mutate('paveStone', (mm) => {
-      mm.metallic = 0.34;
+      mm.metallic = 0.18;
       mm.environmentIntensity = 1.15;
     });
     this._msStone = m;
@@ -1258,7 +1273,12 @@ export default class Character {
       { r: 0.310, g: 0.292, b: 0.270 },
       0.060,                              // mirror
       3,                                  // micro-polish tiling
-      1.25,                               // KEEP the portrait rig: it is the streak
+      // KEEP the portrait rig, and then some. Measured, the mean is now right
+      // (0.439 against the reference's 0.458) but the 95th percentile is only
+      // 0.65 against 0.87: the ribs band correctly and the highlights do not
+      // reach. The lamps are what make a specular streak on a vertical rib, so
+      // they go up rather than the albedo, which would take the mean with it.
+      1.60,
     );
 
     this.cape.init(
