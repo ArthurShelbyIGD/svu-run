@@ -341,10 +341,17 @@ export function buildHigh(scene, mat, q, s) {
 
   // Head beam. 2.10-2.27.
   gold.bevelBox(0, yTop - 0.085, 0, s.hx, 0.085, 0.19, 0.04);
-  // Valance under it: a dark spandrel that gives the top of the object real
-  // mass against the lit arch at the vanishing point. 1.76-2.10.
-  dark.bevelBox(0, 1.93, 0, 0.94, 0.17, 0.075, 0.035);
-  for (const sy of [1.755, 2.105]) gold.box(0, sy, -0.085, 0.95, 0.017, 0.020);
+  // Valance under it: a dark spandrel, set BACK behind the bars, that gives
+  // the top of the object real mass against the lit arch at the vanishing
+  // point and gives the upper half of the bars something dark to be
+  // silhouetted against. 1.62-2.10, at z +0.06.
+  //
+  // It stops at 1.62 on purpose. Below that the player must be able to see
+  // corridor THROUGH the gate: a gate you can see under says "get under it",
+  // and the same gate backed all the way down says "wall". That was the old
+  // banner's problem and it is not worth reintroducing for a little more mass.
+  dark.bevelBox(0, 1.86, 0.06, 0.94, 0.24, 0.055, 0.035);
+  for (const sy of [1.635, 2.085]) gold.box(0, sy, -0.020, 0.95, 0.017, 0.030);
 
   // Side stiles, floor-of-the-box to beam. These are what close the shape
   // into a gate rather than leaving a comb of loose sticks.
@@ -365,11 +372,14 @@ export function buildHigh(scene, mat, q, s) {
   glow.box(0, yBot + 0.055, -0.140, 0.94, 0.026, 0.010);
 
   if (detail) {
-    // A ruby boss at the foot of every other bar, sitting on the rail.
+    // A ruby boss at the foot of every other bar, standing ON TOP of the rail.
+    // They used to sit on the rail's front face, over the cord, and each one
+    // punched a dark notch out of the one line on this object that has to be
+    // unbroken. Nothing goes in front of the lit line.
     const ruby = a.w(mat.get('ruby'));
     for (let i = 0; i < nBar; i += 2) {
       const x = -0.78 + (1.56 * i) / (nBar - 1);
-      ruby.gem(x, yBot + 0.075, -0.155, 0.050, 0.058, 0.045);
+      ruby.gem(x, 1.345, 0, 0.052, 0.058, 0.052);
     }
     // Hangers and header, in the dead space above the box.
     for (const sx of [-1, 1]) gold.prism(sx * 0.70, yTop + 0.62, 0, 0.030, 0.030, 1.24, 6);
@@ -438,9 +448,12 @@ export function buildFull(scene, mat, q, s) {
   trim.bevelBox(0, 0.945, -0.278, 0.26, 0.028, 0.042, 0.012);
   glow.box(0, 0.905, -0.286, 0.22, 0.014, 0.026);
   trim.star(0, wy, -0.262, 0.36, 0.165, 6, 0.038, 'z');
-  if (detail) {
-    a.w(mat.get('ruby')).gem(0, wy, -0.295, 0.155, 0.185, 0.045);
-  }
+  // THE EXHIBIT GEM IS EMISSIVE, NOT METAL. `ruby` is metallic with roughness
+  // 0.10 — a red mirror — and a mirror in an unlit case reflects an unlit
+  // room, so the centrepiece of the whole object captured as a black diamond.
+  // rubyGlow carries its own light, which is both what a lit vitrine does and
+  // the only version of this that survives the corridor going dark.
+  if (detail) glow.gem(0, wy, -0.295, 0.155, 0.185, 0.045);
 
   // NO WAY THROUGH, SAID IN THE SAME VOCABULARY AS THE OTHER TWO. LOW and
   // HIGH each draw one red line at the height that hurts. This one has no

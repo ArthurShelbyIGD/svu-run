@@ -74,6 +74,7 @@ export default class Track {
     this._pRecycle = { chunk: null };
     this._w = [0, 0, 0];     // scratch for path->world, never reallocated
     this._w2 = [0, 0, 0];
+    this._spin = 0;
   }
 
   init() {
@@ -258,7 +259,7 @@ export default class Track {
     for (let i = 0; i < n; i++) {
       const mesh = i === 0 ? proto : proto.createInstance(`star${i}`);
       mesh.position.set(this._parkZ, this._parkZ, this._parkZ);
-      this._starPool.push({ mesh, x: 0, y: 0, z: 0, active: false, taken: false });
+      this._starPool.push({ mesh, x: 0, y: 0, z: 0, yaw: 0, active: false, taken: false });
     }
   }
 
@@ -470,8 +471,10 @@ export default class Track {
       s.x = this._laneX(lane);
       s.y = y;
       s.z = z;
+      s.yaw = this.path.yawExactAt(z);
       this.path.toWorldExact(z, s.x, y, this._w);
       s.mesh.position.set(this._w[0], this._w[1], this._w[2]);
+      s.mesh.rotation.y = s.yaw;
       s.mesh.setEnabled(true);
       this.stars.push(s);
       return s;
@@ -532,16 +535,34 @@ export default class Track {
     this._syncJunctions();
   }
 
+  /**
+   * Stars spin IN THEIR OWN PLANE, not about world Y. One shared angle,
+   * applied to active stars only. No allocation.
+   *
+   * THE OLD SPIN IS WHY THE COLLECTIBLES LOOKED LIKE SCRAPS OF FOIL.
+   * A star is a flat-ish object authored in XY facing -Z. Driving rotation.y
+   * with the spin swings that plane through the view, so for half of every
+   * turn the player is looking at the girdle edge-on and there is no
+   * five-point silhouette at all. The comment that used to live here claimed a
+   * fixed rotation.x tilt fixed that. It does not: a 0.34 rad tilt on a plane
+   * that is rotating ninety degrees away is still edge-on when it gets there.
+   *
+   * Babylon composes mesh.rotation as Yaw(y) * Pitch(x) * Roll(z), so roll is
+   * applied FIRST, in the mesh's own frame. Putting the spin on z therefore
+   * turns the star about its own axis: the silhouette is a five-point star at
+   * every instant, the points sweep round, and the crown facets take the key
+   * in turn. y carries the path yaw so the face still squares up to the player
+   * after a corner — without it every star past the first junction faces
+   * sideways for good, which is the same bug frozen rather than flickering.
+   */
   renderUpdate(dtReal) {
-    // Stars spin. One shared rotation value applied to active stars only.
-    // A faceted star spun about Y alone goes edge-on twice a turn and briefly
-    // disappears; a fixed tilt keeps a face towards the camera throughout and
-    // makes each facet catch the light in turn.
-    this._spin = (this._spin || 0) + dtReal * 1.9;
+    this._spin += dtReal * 1.7;
     for (let i = 0; i < this.stars.length; i++) {
-      const r = this.stars[i].mesh.rotation;
-      r.y = this._spin;
-      r.x = -0.34;
+      const st = this.stars[i];
+      const r = st.mesh.rotation;
+      r.y = st.yaw;
+      r.x = 0.28;          // tips the face up towards the chase camera
+      r.z = this._spin;
     }
   }
 
