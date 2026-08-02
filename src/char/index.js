@@ -1366,21 +1366,41 @@ export default class Character {
       // the albedo comes back down by that ratio. Albedo is the one lever that
       // moves the whole histogram together, which makes it the right one for a
       // median and the wrong one for a shape.
-      { r: 0.183, g: 0.186, b: 0.196 },
-      // ROUGHNESS IS THE SHAPE LEVER, and it is the only one here that widens
-      // the histogram without moving its centre. A tighter GGX lobe puts the
-      // same energy into fewer pixels: p95 goes up, p50 and p75 come down, mean
-      // barely moves. That is the difference between satin and mirror stated as
-      // arithmetic. (mat.polished divides this by 0.055 to scale its ORM map,
-      // so 0.038 is an effective roughness around 0.02..0.06 — a real mirror.)
-      0.038,
+      { r: 0.235, g: 0.238, b: 0.251 },
+      // DO NOT LOWER THIS AGAIN WITHOUT READING THE NEXT PARAGRAPH.
+      //
+      // The reasoning that says "a tighter GGX lobe concentrates the same energy
+      // into fewer pixels, so p95 rises and p50 falls, which is exactly the
+      // satin-to-mirror difference" is correct in general and WRONG HERE, and
+      // it was tried: 0.060 -> 0.038 took the skirt from p50 0.553 to p50 0.817
+      // and p75 to 0.921. It blew out, it did not sharpen.
+      //
+      // The reason is what this cape is standing next to. world/ hangs four
+      // point lights off the character at intensities up to 30 and a range of
+      // 14 m, which for a 0.8 m skirt is a lamp at arm's length. Those are not
+      // distant sources whose reflections are pinpoints — they are large,
+      // near, bright sources, and the tighter the lobe the more completely the
+      // rib mirrors them. Concentrating a lobe only darkens a surface when
+      // there is somewhere dark for it to concentrate AWAY from, and in this
+      // scene the lamps fill most of the hemisphere the ribs face.
+      //
+      // Measured, the widest histogram this material has produced is at
+      // roughness 0.060 with the lamps at 1.6-1.9 (p50 0.404, p95 0.666, ratio
+      // 1.65). Turning the lamps UP narrows it (at 2.40: p50 0.553, p95 0.745,
+      // ratio 1.35) because they start washing whole ribs instead of streaking
+      // them. The reference's ratio is 2.28, and the honest conclusion is that
+      // the remaining gap is the ENVIRONMENT, not this material: the reference
+      // is a light tent, a big white card against black, and our hall has
+      // nothing bright and nothing large for a mirror to find. That is
+      // src/mat/'s cubemap, not char/'s to change.
+      0.060,
       3,                                  // micro-polish tiling
       // KEEP the portrait rig, and then some. Measured, the mean is now right
       // (0.439 against the reference's 0.458) but the 95th percentile is only
       // 0.65 against 0.87: the ribs band correctly and the highlights do not
       // reach. The lamps are what make a specular streak on a vertical rib, so
       // they go up rather than the albedo, which would take the mean with it.
-      2.40,
+      1.85,
     );
     // ...and the second half of "satin, not mirror", which is a HISTOGRAM
     // SHAPE, not a mean. Luminance percentiles over the skirt, each normalised
@@ -1396,11 +1416,13 @@ export default class Character {
     // room rather than nothing at all (p05 0.15). Ours was a satin hump — top
     // clipped off, bottom falling into black. Two levers, one per end:
     //
-    //   * directIntensity 1.60 -> 2.40. The four portrait lamps are the only
-    //     small bright sources in this scene, and a small bright source on a
-    //     near-vertical polished rib IS the long vertical streak. This is the
-    //     p95 lever and it touches nothing else, because a GGX lobe this tight
-    //     puts its energy in a few percent of the surface.
+    //   * directIntensity 1.60 -> 1.85, AND NO FURTHER. 2.40 was tried, on the
+    //     theory that the four portrait lamps are the only small bright sources
+    //     in the scene and a small bright source on a near-vertical polished
+    //     rib is the long vertical streak. Measured, it went the wrong way: the
+    //     lamps are close enough and broad enough that turning them up washes
+    //     whole ribs instead of streaking them, and p95/p50 FELL from 1.65 to
+    //     1.35. Same trap as the roughness note above.
     //   * a cool emissive floor for p05. The reference skirt's creases sit at
     //     0.15 of white because a light tent has no black in it; our hall does,
     //     so the creases render at 0.03 and the cape reads as a piece of the
@@ -1414,7 +1436,7 @@ export default class Character {
     // directIntensity in particular should be re-checked on a real GPU before
     // anyone builds on it.
     mat.mutate('capeMirror', (mm) => {
-      mm.emissiveColor.set(0.0165, 0.0175, 0.0190);
+      mm.emissiveColor.set(0.0105, 0.0112, 0.0122);
     });
 
     this.cape.init(
