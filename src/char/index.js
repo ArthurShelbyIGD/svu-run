@@ -302,7 +302,13 @@ export default class Character {
     // the field bright and even, while F0 is still 0.20 — five times a normal
     // dielectric — so the tables that do face a lamp blow out to a pinpoint.
     // Bright continuous glitter with sparks in it, which is the brief.
-    const m = mat.enamel('paveStone', { r: 0.955, g: 0.948, b: 0.936 }, 0.130);
+    //
+    // AND IT IS COOL, NOT NEUTRAL. See the WHITE POINT note above _bedMat(): in
+    // a black hall the viewer has no white to adapt to, so a character lit by a
+    // c = 0.117 rig has to carry the inverse in its albedo or it renders cream.
+    // 0.930/0.945/0.975 is c = -0.047, half the rig's warmth, applied to the
+    // largest surface on the figure.
+    const m = mat.enamel('paveStone', { r: 0.930, g: 0.945, b: 0.975 }, 0.130);
     mat.mutate('paveStone', (mm) => {
       mm.metallic = 0.18;
       mm.environmentIntensity = 1.15;
@@ -325,11 +331,52 @@ export default class Character {
   }
 
   /**
-   * The setting the stones sit in. CHAMPAGNE GOLD, and mid-value — see the
-   * pitch note in init(). Warm so the pavé reads as jewellery rather than as
-   * grey, and mostly DIELECTRIC for the same reason as the stones: a metallic
-   * bed in a black hall is a black bed, which is the golf-ball look again. It
-   * is only ever seen through 5 mm gaps, so all it has to be is a warm value.
+   * THE WHITE POINT NOTE. Read this before warming anything on the character up
+   * again, because the obvious measurement gives the wrong answer.
+   *
+   * Grading "our figure reads cream, the reference reads silver" by comparing
+   * RGB directly says we are FINE, and that is a trap. Sampled:
+   *
+   *                        head mid          head highlight
+   *     reference        187/171/154 c=.19   235/227/218 c=.075
+   *     ours (r6)        148/139/125 c=.16   230/219/200 c=.138
+   *
+   * — our midtones are actually LESS warm than the reference's. Normalise each
+   * image by its own brightest 1% and both figures come out neutral. By every
+   * relative measure we matched.
+   *
+   * The relative measure is the wrong one HERE, and the reason is the set, not
+   * the character. docs/reference-rear.png is shot on a cream sweep filling the
+   * frame at 250/239/229, so the eye adapts to that paper and reads anything
+   * neutral-against-it as silver. Our character stands in a black hall. There
+   * is no white in the frame to adapt to, so the viewer reads the figure's
+   * ABSOLUTE chroma — and absolute chroma is what makes it beige.
+   *
+   * So the character has to be cooler than neutral in albedo to land neutral on
+   * screen, and the number to beat is the light rig's. world/attachPortraitRig
+   * is four point lights whose intensity-weighted colour is (73.1, 69.0, 65.0),
+   * c = 0.117, on top of an already warm environment cubemap. Roughly half of
+   * that goes into the albedos below as a negative; the rest is left alone,
+   * because a figure that measures dead neutral in a gold hall reads as a
+   * cut-out.
+   *
+   * The one thing that STAYS warm is _goldMat — the prong web, the hood rim,
+   * the cuffs. In the reference those are the only warm elements on the piece,
+   * and they only work as warm accents if everything around them is not.
+   */
+  /**
+   * The setting the stones sit in.
+   *
+   * It was champagne gold (0.740/0.630/0.440), on the argument that the
+   * reference's setting metal is warm. That is true of the reference and false
+   * of this model, because AREA FRACTION differs: the reference's prongs are
+   * thin lines between stones that nearly touch, while at our pitch the bed
+   * shows as a continuous web. A c = 0.507 albedo over that much of the surface
+   * drives the whole read, which is exactly what the lead saw.
+   *
+   * It is now a cool silver-grey at c = -0.031, a hair darker so the stones
+   * keep the value lead. Mostly DIELECTRIC still: a metallic bed in a black
+   * hall is a black bed, which is the golf-ball look again.
    */
   /**
    * The character's gold. PALE CHAMPAGNE, not the world's saturated rail gold.
@@ -352,7 +399,7 @@ export default class Character {
 
   _bedMat(mat) {
     if (this._msBed) return this._msBed;
-    const m = mat.enamel('paveBed', { r: 0.740, g: 0.630, b: 0.440 }, 0.34);
+    const m = mat.enamel('paveBed', { r: 0.630, g: 0.640, b: 0.650 }, 0.34);
     mat.mutate('paveBed', (mm) => { mm.metallic = 0.25; });
     this._msBed = m;
     return m;
@@ -1283,7 +1330,16 @@ export default class Character {
       // rasteriser is the one thing the capture harness is known to lie about,
       // so this number is matched on the MEAN, which is robust, and not on the
       // highlights, which are not.
-      { r: 0.263, g: 0.248, b: 0.229 },
+      // ...and third measurement, this one on CHROMA rather than value. The
+      // skirt's lit 15% came out at 167/148/120, c = 0.324, against the
+      // reference skirt's 208/195/183, c = 0.130 — two and a half times as warm
+      // in the highlights, which is the single biggest source of the "beige"
+      // read because the skirt is the largest unbroken area on the figure. A
+      // mirror's highlight is a reflection of a source and should desaturate
+      // toward white; ours was multiplying a warm albedo by a warm rig twice
+      // over. Same mean value (0.252 against 0.247, inside the noise), chroma
+      // flipped to -0.069. See the WHITE POINT note above _bedMat().
+      { r: 0.245, g: 0.248, b: 0.262 },
       0.060,                              // mirror
       3,                                  // micro-polish tiling
       // KEEP the portrait rig, and then some. Measured, the mean is now right
@@ -1305,7 +1361,7 @@ export default class Character {
       // outline drawn round a bedsheet. Plain polished rhodium is a stop
       // brighter than `capeMirror`, which draws the scallop as a bright line
       // without turning it into jewellery in its own right.
-      mat.polished('capeWire', { r: 0.640, g: 0.605, b: 0.560 }, 0.055, 4, 1.1),
+      mat.polished('capeWire', { r: 0.595, g: 0.605, b: 0.625 }, 0.055, 4, 1.1),
       capeRoot, 3, 2,
       mat.get('darkChrome'),     // inside: the dark cavity
     );
