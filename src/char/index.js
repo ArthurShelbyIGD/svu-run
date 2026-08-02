@@ -438,10 +438,16 @@ export default class Character {
    * placed and visible, because a black boot under a black hem in a black hall
    * is not visible. Same failure mode the pavé had, same fix as the pavé had:
    *
-   *   * metallic 1.0 -> 0.30, so most of the response is a
+   *   * metallic 1.0 -> 0.42, so a bit under two thirds of the response is a
    *     view-INDEPENDENT diffuse body the portrait lamps can light, instead of
    *     100% of it being a reflection of nothing. The specular is still there
    *     and still takes the lamps, so it keeps reading as metal.
+   *
+   *     AND NO LOWER. 0.30 was tried and the boot got DARKER (p50 0.401 ->
+   *     0.350, p90 0.795 -> 0.651), because dropping metallic also drops F0
+   *     toward a dielectric's 0.04 — the diffuse it buys is worth less than the
+   *     specular it sells when the diffuse is lit by four lamps and the
+   *     specular is lit by those same four lamps at five times the weight.
    *   * a cool emissive floor, for the same light-tent reason as the stones.
    *
    * Cool, not neutral — see the WHITE POINT note above.
@@ -450,7 +456,7 @@ export default class Character {
     if (this._msRhod) return this._msRhod;
     const m = mat.polished('charRhodium', { r: 0.880, g: 0.900, b: 0.935 }, 0.085, 2, 1.15);
     mat.mutate('charRhodium', (mm) => {
-      mm.metallic = 0.30;
+      mm.metallic = 0.42;
       mm.environmentIntensity = 1.15;
       mm.emissiveColor.set(0.076, 0.081, 0.090);
     });
