@@ -192,11 +192,20 @@ export default class Character {
     // is still merged per part, so the DRAW CALL count is unchanged — this is
     // vertices only, and vertices are the cheap axis on a phone.
     this.pitch = low ? 0.056 : (high ? 0.041 : 0.046);
-    // SIX, not five. At five the flat table is a visible PENTAGON and a field of
-    // pentagons reads as chain mail. Six is the cheapest polygon that reads as a
-    // circle at this size, and the round brilliant it is standing in for is
-    // round. One extra vertex ring per stone, no extra draw call.
-    this.facets = low ? 5 : 6;
+    // SIX WAS STILL A HEXAGON. Crop the rear capture to the crown and every
+    // stone is an unmistakable flat-topped hex — with the girdle ring, the
+    // table ring and the outline all six-sided and all in register, the shape
+    // reads before the material does, and a field of hexagons is a honeycomb.
+    // The reference's stones are round. Nine sides on `high` and seven on
+    // `medium` is the point where the outline stops naming a polygon.
+    //
+    // Cost is 3 triangles and 3 vertices per side per stone, so at 2,990 stones
+    // on `high` this is 6 -> 9 = +27k triangles (108k -> 135k on a desktop
+    // preset), and 6 -> 7 = +6.6k on `medium`. `low` STAYS AT FIVE: it is the
+    // preset that has to hold 60fps on a phone, its stones are four pixels
+    // across there, and no one has ever counted the sides of a four-pixel
+    // polygon. ARCHITECTURE §6 — performance beats diamonds.
+    this.facets = low ? 5 : (high ? 9 : 7);
 
     // Gold grains: one per Nth stone. An octahedron is 6 verts and 8 tris and
     // merges into a gold mesh the part already owns, so this is vertices only —

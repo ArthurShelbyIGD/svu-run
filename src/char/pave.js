@@ -136,13 +136,29 @@ export function stoneField(surf, o) {
   // silhouette; too small and we are back to a smooth arc with a texture on it.
   // Too large and each stone shades its neighbour, which is the other half of
   // why the field read as dark lumps rather than as a bright continuous glitter.
-  const rise = o.rise === undefined ? pitch * 0.085 : o.rise;
-  // Fraction of the stone that is flat TABLE. A round brilliant seen from above
-  // is mostly table; at 0.76 the crown wall was 42% of the footprint and every
-  // stone had a dark ring round it. 0.84 went the other way and left no crown
-  // at all — the stones became discs. 0.78 keeps a narrow bevel, which is the
-  // ring of secondary glints round each table in the reference.
-  const table = o.table === undefined ? 0.78 : o.table;
+  //
+  // 0.085 with a 0.78 table made the crown a 31-degree chamfer — geometrically
+  // present, optically nothing, because a facet that close to the surface
+  // normal reflects almost the same thing the table does. See `table`.
+  const rise = o.rise === undefined ? pitch * 0.135 : o.rise;
+  // Fraction of the stone that is flat TABLE.
+  //
+  // THE CROWN RING IS THE READ, NOT THE TABLE. This went 0.76 -> 0.78 chasing
+  // "a round brilliant seen from above is mostly table", which is true of a
+  // stone photographed dead-on under a light tent and false of what the eye
+  // uses to recognise one. Crop docs/reference-rear.png to four stones and the
+  // dominant feature of each is a BRIGHT RING of crown facets around a darker,
+  // patterned centre. At 0.78 with a shallow rise we had the opposite: a wide
+  // flat grey plateau with a hairline bevel, and the lead's verdict was exact —
+  // upholstery studs. Rivets, not diamonds.
+  //
+  // 0.60 puts 64% of the footprint in the crown. Together with the deeper rise
+  // above, the crown wall now runs at roughly 42 degrees off the surface
+  // normal, which is close to a real brilliant's 34-degree crown angle and far
+  // enough round that the ring picks up lamps the table cannot see. The table
+  // keeps its split normal and goes dark when it faces the black hall, which is
+  // the darker centre the reference has.
+  const table = o.table === undefined ? 0.60 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
@@ -297,8 +313,11 @@ export function stoneField(surf, o) {
         const a = ph + (k / F) * Math.PI * 2;
         const ca = Math.cos(a), sa = Math.sin(a);
         const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
-        // girdle sunk slightly INTO the setting, so no gap opens at the base
-        const gh = -rise * 0.55;
+        // girdle sunk slightly INTO the setting, so no gap opens at the base.
+        // A smaller fraction than before because `rise` itself grew: the sink
+        // is there to close the joint, and at 0.55 of the new rise the stones
+        // would sit deeper in the bed than they stand out of it.
+        const gh = -rise * 0.32;
         pos.push(px + nx * gh + dx * rr, py + ny * gh + dy * rr, pz + nz * gh + dz * rr);
         uv.push(0.5 + ca * 0.5, 0.5 + sa * 0.5);
       }
