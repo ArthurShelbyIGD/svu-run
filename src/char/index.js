@@ -450,15 +450,21 @@ export default class Character {
    *     specular is lit by those same four lamps at five times the weight.
    *   * a cool emissive floor, for the same light-tent reason as the stones.
    *
-   * Cool, not neutral — see the WHITE POINT note above.
+   * ONLY SLIGHTLY cool — and this is where the cool pass has to stop. At an
+   * albedo of 0.880/0.900/0.935 with a floor of 0.076/0.081/0.090 the boot
+   * measured chroma -0.158, which on a dark part whose shadow is mostly floor
+   * is a BLUE boot, against a reference boot at +0.28. The rest of the figure
+   * carries the cool bias on much larger surfaces (stones, cape); these small
+   * ones only have to avoid being champagne, and overshooting them buys a new
+   * error to replace the old one. See the WHITE POINT note above.
    */
   _rhodMat(mat) {
     if (this._msRhod) return this._msRhod;
-    const m = mat.polished('charRhodium', { r: 0.880, g: 0.900, b: 0.935 }, 0.085, 2, 1.15);
+    const m = mat.polished('charRhodium', { r: 0.897, g: 0.905, b: 0.921 }, 0.085, 2, 1.15);
     mat.mutate('charRhodium', (mm) => {
       mm.metallic = 0.42;
       mm.environmentIntensity = 1.15;
-      mm.emissiveColor.set(0.076, 0.081, 0.090);
+      mm.emissiveColor.set(0.081, 0.081, 0.083);
     });
     this._msRhod = m;
     return m;
