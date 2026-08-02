@@ -379,9 +379,13 @@ export function buildHigh(scene, mat, q, s) {
   // banner's problem and it is not worth reintroducing for a little more mass.
   dark.bevelBox(0, 1.86, 0.06, 0.94, 0.24, 0.055, 0.035);
   for (const sy of [1.635, 2.085]) gold.box(0, sy, -0.020, 0.95, 0.017, 0.030);
-  // The SECOND cord, on the head rail. Two parallel lines is what makes this
-  // object countable against the drum's one and the vitrine's four.
-  glow.box(0, 2.085, -0.058, 0.90, 0.022, 0.012);
+  // The SECOND cord, on the FRONT FACE OF THE BEAM. Two parallel lines is
+  // what makes this object countable against the drum's one and the vitrine's
+  // four. It sits at z -0.199 because the beam is the deepest thing on the
+  // object at z -0.19: put the cord on the valance where it visually belongs
+  // and the beam overhangs it by 12cm, which from a camera looking down at the
+  // track hides it completely. Depth order beats tidiness on this object.
+  glow.box(0, 2.150, -0.199, 0.90, 0.030, 0.010);
 
   // Side stiles, floor-of-the-box to beam. These are what close the shape
   // into a gate rather than leaving a comb of loose sticks.
@@ -494,9 +498,17 @@ export function buildFull(scene, mat, q, s) {
   // whole case — a shape with no gap in it, which is the one thing the player
   // must not read as a clearance line. Four sides, not two: a pair of
   // verticals alone still leaves a horizontal gap for the eye to aim at.
-  for (const sx of [-1, 1]) glow.box(sx * 0.845, 1.30, -0.262, 0.016, 0.86, 0.010);
-  for (const sy of [0.44, 2.16]) glow.box(0, sy, -0.262, 0.861, 0.016, 0.010);
-  if (detail) for (const sy of [0.44, 1.98]) trim.box(0, sy, -0.266, 0.80, 0.022, 0.018);
+  //
+  // GEOMETRY, MEASURED. The rectangle lives on the carcass front face at
+  // z -0.276 and nowhere else. x is +/-0.79 because the rose-gold front
+  // pilasters occupy 0.815..1.005 and swallow a jamb placed at 0.845; the top
+  // rail is at y 1.96 because the crown slab spans y 2.145..2.235 out to
+  // z -0.28 and a bar at y 2.16 is inside it. Neither collision was visible in
+  // the source and both would have shipped as "the glow doesn't work".
+  for (const sy of [0.44, 1.96]) trim.box(0, sy, -0.259, 0.82, 0.026, 0.010);
+  for (const sx of [-1, 1]) trim.box(sx * 0.79, 1.20, -0.259, 0.026, 0.79, 0.010);
+  for (const sy of [0.44, 1.96]) glow.box(0, sy, -0.276, 0.80, 0.016, 0.009);
+  for (const sx of [-1, 1]) glow.box(sx * 0.79, 1.20, -0.276, 0.016, 0.77, 0.009);
   return a.build('obFull');
 }
 
