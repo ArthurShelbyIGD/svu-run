@@ -196,16 +196,16 @@ export default class Character {
     // stone is an unmistakable flat-topped hex — with the girdle ring, the
     // table ring and the outline all six-sided and all in register, the shape
     // reads before the material does, and a field of hexagons is a honeycomb.
-    // The reference's stones are round. Nine sides on `high` and seven on
+    // The reference's stones are round. Eight sides on `high` and seven on
     // `medium` is the point where the outline stops naming a polygon.
     //
-    // Cost is 3 triangles and 3 vertices per side per stone, so at 2,990 stones
-    // on `high` this is 6 -> 9 = +27k triangles (108k -> 135k on a desktop
-    // preset), and 6 -> 7 = +6.6k on `medium`. `low` STAYS AT FIVE: it is the
+    // Cost is 3 triangles and 5 vertices per side per stone, so at 2,990 stones
+    // on `high` this is 6 -> 8 = +18k triangles, and 6 -> 7 = +6.6k on
+    // `medium`. `low` STAYS AT FIVE: it is the
     // preset that has to hold 60fps on a phone, its stones are four pixels
     // across there, and no one has ever counted the sides of a four-pixel
     // polygon. ARCHITECTURE §6 — performance beats diamonds.
-    this.facets = low ? 5 : (high ? 9 : 7);
+    this.facets = low ? 5 : (high ? 8 : 7);
 
     // Gold grains: one per Nth stone. An octahedron is 6 verts and 8 tris and
     // merges into a gold mesh the part already owns, so this is vertices only —

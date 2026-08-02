@@ -152,13 +152,16 @@ export function stoneField(surf, o) {
   // flat grey plateau with a hairline bevel, and the lead's verdict was exact —
   // upholstery studs. Rivets, not diamonds.
   //
-  // 0.60 puts 64% of the footprint in the crown. Together with the deeper rise
-  // above, the crown wall now runs at roughly 42 degrees off the surface
-  // normal, which is close to a real brilliant's 34-degree crown angle and far
-  // enough round that the ring picks up lamps the table cannot see. The table
-  // keeps its split normal and goes dark when it faces the black hall, which is
-  // the darker centre the reference has.
-  const table = o.table === undefined ? 0.60 : o.table;
+  // 0.60 put 64% of the footprint in the crown and, with a SMOOTH crown, that
+  // was too much: the stones read as pearls. With the crown flat-facetted (see
+  // the emit loop below) the ring does its job at a narrower width, and 0.70 is
+  // what measuring the reference actually gives — its bright annulus is a shade
+  // under a third of each stone's radius. Together with the deeper rise above,
+  // the crown wall runs at roughly 47 degrees off the surface normal, close to
+  // a real brilliant's crown angle and far enough round that the ring picks up
+  // lamps the table cannot see. The table keeps its split normal and goes dark
+  // when it faces the black hall, which is the darker centre the reference has.
+  const table = o.table === undefined ? 0.70 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
@@ -278,60 +281,67 @@ export function stoneField(surf, o) {
         }
       }
 
-      // THE TABLE RING IS EMITTED TWICE, AND THAT IS THE WHOLE POINT.
+      // EVERY CROWN FACET IS ITS OWN QUAD, AND THAT IS THE WHOLE POINT.
       //
       // geom.js emits smooth normals (VertexData.ComputeNormals averages every
-      // face that shares a vertex). With one shared table ring, the flat table
-      // and the sloping crown wall average together at the girdle-side edge of
-      // the table, and the stone comes out as a smooth DOME. That is exactly
-      // what the rear capture showed: a head covered in tapioca pearls. A dome
-      // has a highlight that slides; a flat table has a highlight that is either
-      // ON or OFF as the view crosses it, and that snap is what a cut stone
-      // looks like — it is the same argument src/mat/pave.js makes for its
-      // clear-coat facet map, made in geometry instead.
+      // face that shares a vertex). The previous version duplicated only the
+      // TABLE ring — enough to keep the table flat, but the crown wall was one
+      // shared ring of vertices, so ComputeNormals averaged each crown facet
+      // with the two beside it and the wall came out as a smooth cone. With a
+      // round outline and a smooth cone under it, the captured hood was a field
+      // of PEARLS: every stone a little ball bearing with one sliding crescent
+      // highlight. That is not a cut stone. A cut stone is a ring of small flat
+      // mirrors that snap ON and OFF independently as the view moves, and the
+      // snap is the sparkle — it is the same argument src/mat/pave.js makes for
+      // its clear-coat facet map, made in geometry instead.
       //
-      // Duplicating one ring splits the normal there, so the table renders as a
-      // genuinely flat mirror. Cost is F extra vertices per stone — 11 to 16 at
-      // five facets — and no extra triangles at all. Full flat shading would
-      // have cost 45.
+      // So the crown is emitted as F independent quads with no shared vertices.
+      // Cost is 2F extra VERTICES per stone and zero extra triangles; the whole
+      // stone is 1 + 5F vertices and 3F triangles. At eight facets that is 41
+      // and 24. Vertices are the cheap axis — everything here is still merged
+      // per part, so the draw call count does not move.
       const base = pos.length / 3;
       // table centre
       pos.push(px + mx * hi, py + my * hi, pz + mz * hi);
       uv.push(0.5, 0.5);
-      // table ring, twice: once for the flat table fan, once for the crown
-      for (let pass = 0; pass < 2; pass++) {
-        for (let k = 0; k < F; k++) {
-          const a = ph + (k / F) * Math.PI * 2;
-          const ca = Math.cos(a), sa = Math.sin(a);
-          // table sits on the tilted plane
-          const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
-          pos.push(px + mx * hi + dx * rt, py + my * hi + dy * rt, pz + mz * hi + dz * rt);
-          uv.push(0.5 + ca * 0.3, 0.5 + sa * 0.3);
-        }
-      }
+      // table ring — used by the table fan only
       for (let k = 0; k < F; k++) {
         const a = ph + (k / F) * Math.PI * 2;
         const ca = Math.cos(a), sa = Math.sin(a);
+        // table sits on the tilted plane
         const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
-        // girdle sunk slightly INTO the setting, so no gap opens at the base.
-        // A smaller fraction than before because `rise` itself grew: the sink
-        // is there to close the joint, and at 0.55 of the new rise the stones
-        // would sit deeper in the bed than they stand out of it.
-        const gh = -rise * 0.32;
-        pos.push(px + nx * gh + dx * rr, py + ny * gh + dy * rr, pz + nz * gh + dz * rr);
-        uv.push(0.5 + ca * 0.5, 0.5 + sa * 0.5);
+        pos.push(px + mx * hi + dx * rt, py + my * hi + dy * rt, pz + mz * hi + dz * rt);
+        uv.push(0.5 + ca * 0.3, 0.5 + sa * 0.3);
       }
-
-      const T = base + 1, T2 = T + F, G = T2 + F;
+      const T = base + 1;
       // table fan — winding per the rule in geom.js: outward = (p2-p0)x(p1-p0)
       for (let k = 0; k < F; k++) {
         const k2 = (k + 1) % F;
         idx.push(base, T + k2, T + k);
       }
-      // crown facets, on the SECOND copy of the table ring
+
+      // crown: one detached quad per facet, [tk, tk2, gk2, gk]
+      // girdle sunk slightly INTO the setting, so no gap opens at the base. A
+      // smaller fraction than before because `rise` itself grew: the sink is
+      // there to close the joint, and at 0.55 of the new rise the stones would
+      // sit deeper in the bed than they stand out of it.
+      const gh = -rise * 0.32;
       for (let k = 0; k < F; k++) {
-        const k2 = (k + 1) % F;
-        idx.push(T2 + k, T2 + k2, G + k, T2 + k2, G + k2, G + k);
+        const c0 = base + 1 + F + k * 4;
+        for (let e = 0; e < 4; e++) {
+          const kk = (e === 1 || e === 2) ? (k + 1) % F : k;
+          const a = ph + (kk / F) * Math.PI * 2;
+          const ca = Math.cos(a), sa = Math.sin(a);
+          const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
+          if (e < 2) {
+            pos.push(px + mx * hi + dx * rt, py + my * hi + dy * rt, pz + mz * hi + dz * rt);
+            uv.push(0.5 + ca * 0.3, 0.5 + sa * 0.3);
+          } else {
+            pos.push(px + nx * gh + dx * rr, py + ny * gh + dy * rr, pz + nz * gh + dz * rr);
+            uv.push(0.5 + ca * 0.5, 0.5 + sa * 0.5);
+          }
+        }
+        idx.push(c0, c0 + 1, c0 + 3, c0 + 1, c0 + 2, c0 + 3);
       }
       count++;
     }
