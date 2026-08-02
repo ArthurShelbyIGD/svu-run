@@ -1361,8 +1361,19 @@ export default class Character {
       // toward white; ours was multiplying a warm albedo by a warm rig twice
       // over. Same mean value (0.252 against 0.247, inside the noise), chroma
       // flipped to -0.069. See the WHITE POINT note above _bedMat().
-      { r: 0.245, g: 0.248, b: 0.262 },
-      0.060,                              // mirror
+      // Fourth measurement. Raising directIntensity for the streaks took the
+      // MEDIAN with it (p50 0.404 -> 0.553 against the reference's 0.372), so
+      // the albedo comes back down by that ratio. Albedo is the one lever that
+      // moves the whole histogram together, which makes it the right one for a
+      // median and the wrong one for a shape.
+      { r: 0.183, g: 0.186, b: 0.196 },
+      // ROUGHNESS IS THE SHAPE LEVER, and it is the only one here that widens
+      // the histogram without moving its centre. A tighter GGX lobe puts the
+      // same energy into fewer pixels: p95 goes up, p50 and p75 come down, mean
+      // barely moves. That is the difference between satin and mirror stated as
+      // arithmetic. (mat.polished divides this by 0.055 to scale its ORM map,
+      // so 0.038 is an effective roughness around 0.02..0.06 — a real mirror.)
+      0.038,
       3,                                  // micro-polish tiling
       // KEEP the portrait rig, and then some. Measured, the mean is now right
       // (0.439 against the reference's 0.458) but the 95th percentile is only
