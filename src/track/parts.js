@@ -304,11 +304,20 @@ export function buildLow(scene, mat, q, s) {
   for (const sx of [-1, 1]) {
     gold.prismAxis('x', sx * 0.80, 0.265, 0, 0.295, 0.295, 0.15, sides, phase, 0.025);
   }
-  // A gold plate bolted across the front, carrying the lit line. A light
-  // strip glued to bare stone would be nonsense; set into a plate it is a
-  // marker somebody screwed on, which is what it is.
-  gold.bevelBox(0, 0.455, -0.140, 0.74, 0.052, 0.032, 0.016);
-  glow.box(0, 0.462, -0.176, 0.68, 0.021, 0.008);
+  // A gold plate bolted across the front, with the lit line sitting on its
+  // TOP EDGE. A strip glued to bare stone would be nonsense; screwed to a
+  // plate it is a marker somebody fitted, which is what it is.
+  //
+  // NOTHING MAY OVERHANG THE LIT LINE. The first version put the cord in the
+  // middle of the plate's front face, and from a chase camera that looks DOWN
+  // on the track the 5cm of plate above it shaded the cord out almost
+  // completely — the marker was there in the close-up and gone at 26m, which
+  // is the only distance that matters. The cord now has clear air above it,
+  // and enough depth (z -0.174 to -0.082) that it emerges from the drum's
+  // shoulder and shows a top face as well as a front one. Emissive plus bloom
+  // makes two pixels of that read; two pixels in shadow read as nothing.
+  gold.bevelBox(0, 0.400, -0.135, 0.78, 0.070, 0.034, 0.015);
+  glow.box(0, 0.492, -0.128, 0.72, 0.024, 0.046);
   if (detail) {
     // Centre fillet and the gold bosses closing the drum's ends.
     gold.prismAxis('x', 0, 0.265, 0, 0.272, 0.272, 0.11, sides, phase, 0.018);
@@ -359,11 +368,14 @@ export function buildHigh(scene, mat, q, s) {
     gold.bevelBox(sx * 0.945, 1.72, 0, 0.075, 0.55, 0.105, 0.03);
   }
 
-  // The bars. Seven of them, 1.31 to 1.76.
-  const nBar = q.name === 'low' ? 5 : 7;
+  // The bars, 1.31 to 1.76. Nine at r=0.046 fills about half the opening with
+  // gold, which is the point: at 26m the individual bars are sub-pixel and
+  // what survives is their average, so the grille has to be dense enough to
+  // read as a body rather than as a few loose sticks with corridor behind.
+  const nBar = q.name === 'low' ? 6 : 9;
   for (let i = 0; i < nBar; i++) {
     const x = -0.78 + (1.56 * i) / (nBar - 1);
-    gold.prism(x, 1.535, 0, 0.042, 0.042, 0.45, 6, 0, 0.012);
+    gold.prism(x, 1.535, 0, 0.046, 0.046, 0.45, 6, 0, 0.012);
   }
 
   // Bottom rail. Underside at 1.17 — the slide line, drawn as a solid object
@@ -502,7 +514,7 @@ export function buildStar(scene, mat, q) {
     // emissive, so unlike everything else on the star it does not go out when
     // the corridor does.
     a.w(mat.get('catchlight'))
-      .star(0, 0, 0, R * 0.27, r * 0.27, 5, 0.078, 'z', Math.PI / 2);
+      .star(0, 0, 0, R * 0.32, r * 0.32, 5, 0.084, 'z', Math.PI / 2);
   }
   return a.build('star');
 }
