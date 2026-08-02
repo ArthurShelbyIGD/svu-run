@@ -121,11 +121,24 @@ export function stoneField(surf, o) {
   const v1 = o.v1 === undefined ? 1 : o.v1;
   const rng = o.rng;
   const F = o.facets || 6;
-  const rad = o.rad === undefined ? pitch * 0.495 : o.rad;
+  // TIGHT. At 0.495 the stones are exactly tangent on the square axis and leave
+  // a visible triangular hole at every hex junction, and with the setting bed
+  // now champagne rather than black those holes photographed as a web of bright
+  // gold PLATES between the stones — most obvious on the sleeves and the boot
+  // cuffs, where a single ring is only six or seven stones around. Real pavé
+  // stones are set touching; 0.545 makes them overlap by a tenth, which closes
+  // the junctions and lifts the darkest 5% of the hood from 0.10 towards the
+  // reference's 0.51.
+  const rad = o.rad === undefined ? pitch * 0.545 : o.rad;
   // How proud of the setting the stone sits. This number IS the crenellated
   // silhouette; too small and we are back to a smooth arc with a texture on it.
-  const rise = o.rise === undefined ? pitch * 0.135 : o.rise;
-  const table = o.table === undefined ? 0.76 : o.table;
+  // Too large and each stone shades its neighbour, which is the other half of
+  // why the field read as dark lumps rather than as a bright continuous glitter.
+  const rise = o.rise === undefined ? pitch * 0.105 : o.rise;
+  // Fraction of the stone that is flat TABLE. A round brilliant seen from above
+  // is mostly table; at 0.76 the crown wall was 42% of the footprint and every
+  // stone had a dark ring round it.
+  const table = o.table === undefined ? 0.84 : o.table;
   const uOpen = !!o.uOpen;
   const uPad = o.uPad === undefined ? 0 : o.uPad;
   const cx = o.cx || 0, cy = o.cy || 0, cz = o.cz || 0;
@@ -150,8 +163,12 @@ export function stoneField(surf, o) {
   // slightly wider than it is tall; the apex extension is now 0.80, which makes
   // the octahedron a squat dome instead of a pyramid, and the radius is a
   // little smaller so the bead web stays a web rather than a second stone field.
-  const beadR = o.beadR === undefined ? pitch * 0.115 : o.beadR;
-  const beadApex = o.beadApex === undefined ? 0.80 : o.beadApex;
+  // ...and smaller again once the bed went champagne. An octahedron seen from
+  // outside is a four-pointed star, and at 0.115 of the pitch, in gold, sitting
+  // on a gold bed, the boot cuffs came out as a lattice of gold crosses. A
+  // grain only has to be a dot that takes a specular hit.
+  const beadR = o.beadR === undefined ? pitch * 0.085 : o.beadR;
+  const beadApex = o.beadApex === undefined ? 0.65 : o.beadApex;
   const bpos = [], buv = [], bidx = [];
   // (x, y, z) => true to leave this cell bare. The hood uses it to open a face
   // aperture: the test is "inside the face sphere", so the opening is shaped by
@@ -237,18 +254,36 @@ export function stoneField(surf, o) {
         }
       }
 
+      // THE TABLE RING IS EMITTED TWICE, AND THAT IS THE WHOLE POINT.
+      //
+      // geom.js emits smooth normals (VertexData.ComputeNormals averages every
+      // face that shares a vertex). With one shared table ring, the flat table
+      // and the sloping crown wall average together at the girdle-side edge of
+      // the table, and the stone comes out as a smooth DOME. That is exactly
+      // what the rear capture showed: a head covered in tapioca pearls. A dome
+      // has a highlight that slides; a flat table has a highlight that is either
+      // ON or OFF as the view crosses it, and that snap is what a cut stone
+      // looks like — it is the same argument src/mat/pave.js makes for its
+      // clear-coat facet map, made in geometry instead.
+      //
+      // Duplicating one ring splits the normal there, so the table renders as a
+      // genuinely flat mirror. Cost is F extra vertices per stone — 11 to 16 at
+      // five facets — and no extra triangles at all. Full flat shading would
+      // have cost 45.
       const base = pos.length / 3;
       // table centre
       pos.push(px + mx * hi, py + my * hi, pz + mz * hi);
       uv.push(0.5, 0.5);
-      // table ring, then girdle ring
-      for (let k = 0; k < F; k++) {
-        const a = ph + (k / F) * Math.PI * 2;
-        const ca = Math.cos(a), sa = Math.sin(a);
-        // table sits on the tilted plane
-        const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
-        pos.push(px + mx * hi + dx * rt, py + my * hi + dy * rt, pz + mz * hi + dz * rt);
-        uv.push(0.5 + ca * 0.3, 0.5 + sa * 0.3);
+      // table ring, twice: once for the flat table fan, once for the crown
+      for (let pass = 0; pass < 2; pass++) {
+        for (let k = 0; k < F; k++) {
+          const a = ph + (k / F) * Math.PI * 2;
+          const ca = Math.cos(a), sa = Math.sin(a);
+          // table sits on the tilted plane
+          const dx = e1x * ca + e2x * sa, dy = e1y * ca + e2y * sa, dz = e1z * ca + e2z * sa;
+          pos.push(px + mx * hi + dx * rt, py + my * hi + dy * rt, pz + mz * hi + dz * rt);
+          uv.push(0.5 + ca * 0.3, 0.5 + sa * 0.3);
+        }
       }
       for (let k = 0; k < F; k++) {
         const a = ph + (k / F) * Math.PI * 2;
@@ -260,16 +295,16 @@ export function stoneField(surf, o) {
         uv.push(0.5 + ca * 0.5, 0.5 + sa * 0.5);
       }
 
-      const T = base + 1, G = base + 1 + F;
+      const T = base + 1, T2 = T + F, G = T2 + F;
       // table fan — winding per the rule in geom.js: outward = (p2-p0)x(p1-p0)
       for (let k = 0; k < F; k++) {
         const k2 = (k + 1) % F;
         idx.push(base, T + k2, T + k);
       }
-      // crown facets
+      // crown facets, on the SECOND copy of the table ring
       for (let k = 0; k < F; k++) {
         const k2 = (k + 1) % F;
-        idx.push(T + k, T + k2, G + k, T + k2, G + k2, G + k);
+        idx.push(T2 + k, T2 + k2, G + k, T2 + k2, G + k2, G + k);
       }
       count++;
     }

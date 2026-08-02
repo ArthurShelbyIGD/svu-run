@@ -889,7 +889,10 @@ export default class Character {
       // ride in the same mesh, so the whole forearm's gold is one draw call.
       const gc = new Geo();
       gc.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
-      gc.add(torus(P.armR * 0.66, 0.028, this.sd + 6, 6, null, 0.85));
+      // A BAND, not a bracelet. At a 0.028 tube it stood 2.4 cm proud of a 7 cm
+      // wrist and, in champagne on a champagne setting bed, read as a fat ring
+      // hanging loose off the arm.
+      gc.add(torus(P.armR * 0.72, 0.017, this.sd + 6, 6, null, 0.85));
 
       const fs = new Geo();
       fs.at(0, 0, 0);
@@ -920,12 +923,19 @@ export default class Character {
     const g = new Geo();
     const R = P.handR;
 
-    // The elbow cap rides here rather than on the elbow node. It is silver, the
-    // glove is silver, and the wrist node never moves relative to the elbow, so
-    // baking its offset in costs one matrix at build time and saves a draw call
-    // per arm at runtime.
-    g.at(0, P.foreLen + 0.014, -0.006, Math.PI / 2);
-    g.add(torus(P.armR * 0.80, 0.026, this.sd + 6, 6, null, 0.85));
+    // THE ELBOW CAP IS GONE. It rode here (baked into the glove's mesh to save
+    // a draw call) as a 2.6 cm silver torus round the elbow. In `polRhodium` —
+    // a mirror — in a black hall it renders BLACK, and the rear capture showed
+    // exactly that: a dark rubber band clamped round each arm, with the gold
+    // wrist cuff making a second one below it. Two hoops on a 20 cm sleeve is
+    // more hardware than the whole reference arm has. The reference elbow is
+    // just a bend in a pavé sleeve.
+    //
+    // GENERAL RULE, WORTH KEEPING: a small mirror-metal detail in this world is
+    // a BLACK detail, because a mirror shows you the room and the room is
+    // black. Small parts want the pale champagne or the pavé, not `polRhodium`.
+    // polRhodium only works on masses big enough to catch the portrait rig —
+    // the gloves and the boots.
 
     // palm — a rounded slab, wider than deep
     g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
@@ -1036,18 +1046,24 @@ export default class Character {
       lg.toMesh(`legGold${s}`, scene, this._goldMat(mat), pivot);
 
       // --- boot ---
-      // A shaped last with a toe box, an instep and a heel. From behind you see
-      // heels, so the heel gets a form.
+      // NOT A SHOE. The previous version was a last: a squashed superellipsoid
+      // at e = 0.72 stretched 1.30 in z, a separate toe box, a separate heel
+      // wedge and a sole welt flattened 1.42 in z. Every one of those is a
+      // BOX-ish form, and at boot size in the rear capture they stacked up into
+      // two grey clogs with a rectangular flap on the front.
+      //
+      // The reference boot is a turned form, not a cobbled one: a smooth
+      // rounded pod, very slightly longer than it is wide, with two shallow
+      // ring ridges around it and no toe, no heel and no sole. That is three
+      // primitives instead of four and it reads at a tenth of the size.
       const b = new Geo();
-      b.at(0, -P.legLen - P.bootR * 0.40, 0.048, 0, 0, 0, 0.96, 0.74, 1.30);
-      b.add(ellipsoid({ rx: P.bootR, e1: 0.72, e2: 0.70, su: this.sd + 8, sv: this.sd + 3 }));
-      b.at(0, -P.legLen - P.bootR * 0.46, 0.048 + P.bootR * 0.92, 0, 0, 0, 0.80, 0.62, 0.72);
-      b.add(ellipsoid({ rx: P.bootR, e1: 0.8, su: this.sd + 4, sv: this.sd }));
-      b.at(0, -P.legLen - P.bootR * 0.82, 0.048 - P.bootR * 0.78, 0, 0, 0, 0.74, 0.46, 0.56);
-      b.add(ellipsoid({ rx: P.bootR, e1: 0.6, e2: 0.6, su: this.sd + 4, sv: this.sd }));
-      // sole welt
-      b.at(0, -P.legLen - P.bootR * 0.82, 0.055, Math.PI / 2, 0, 0, 1.0, 1.0, 1.42);
-      b.add(torus(P.bootR * 0.80, 0.023, this.sd + 8, 6, null, 0.7));
+      b.at(0, -P.legLen - P.bootR * 0.52, 0.030, 0, 0, 0, 1.0, 0.92, 1.16);
+      b.add(ellipsoid({ rx: P.bootR, e1: 0.90, e2: 0.94, su: this.sd + 8, sv: this.sd + 4 }));
+      // two turned ridges, the boot's only detail
+      for (let i = 0; i < 2; i++) {
+        b.at(0, -P.legLen - P.bootR * (0.34 + i * 0.44), 0.030, Math.PI / 2, 0, 0, 1.0, 1.0, 1.14);
+        b.add(torus(P.bootR * (0.86 - i * 0.10), P.bootR * 0.115, this.sd + 8, 6, null, 0.80));
+      }
       b.toMesh(`boot${s}`, scene, mat.get('polRhodium'), pivot);
 
 
@@ -1232,7 +1248,14 @@ export default class Character {
     // the mean was half a stop too bright, and it was too cool by half.
     const capeMat = mat.polished(
       'capeMirror',
-      { r: 0.395, g: 0.372, b: 0.345 },
+      // Second measurement, after the figure grew and the skirt moved 15 cm
+      // closer to the portrait rig: the same window read 0.587 against the
+      // reference's 0.458, so the albedo comes down by that ratio again. Read
+      // the ARCHITECTURE note before touching this — a mirror in a software
+      // rasteriser is the one thing the capture harness is known to lie about,
+      // so this number is matched on the MEAN, which is robust, and not on the
+      // highlights, which are not.
+      { r: 0.310, g: 0.292, b: 0.270 },
       0.060,                              // mirror
       3,                                  // micro-polish tiling
       1.25,                               // KEEP the portrait rig: it is the streak
