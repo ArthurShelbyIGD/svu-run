@@ -123,6 +123,87 @@ const POSES = [
     framing: [16, 30],
     note: 'the same read, in portrait, where it actually matters',
   },
+  // ---- the obstacle read, posed deterministically ----------------------
+  //
+  // WHY THESE EXIST. The `obstacles` / `phone-obstacles` poses seek until the
+  // nearest obstacle is 16-30m ahead, which sounds like it frames obstacles
+  // and does not: at 30s of game time the run is past FIRST_TURN_AT, and the
+  // seek happily stops with the "nearest obstacle" round a corner behind the
+  // backstop wall. Both shots came back as a picture of a wall. They are kept
+  // because they are an honest sample of the real game, but they cannot be
+  // used to judge whether an obstacle reads.
+  //
+  // The lineup poses below park everything the generator made and place one
+  // of each kind, one per lane, at a fixed distance on a stretch of track
+  // that is guaranteed straight (time is well under the 260m first-turn
+  // distance, so play.x/play.z are still world axes and the camera maths in
+  // this file is valid). That is the shot to squint at.
+  {
+    name: 'lineup',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const z = play.z + 26;
+      track._spawnObstacle(0, 0, z);   // OB.LOW  — jump
+      track._spawnObstacle(1, 1, z);   // OB.HIGH — slide
+      track._spawnObstacle(2, 2, z);   // OB.FULL — dodge
+      for (let i = 0; i < 6; i++) track._spawnStar(1, 1.15, play.z + 10 + i * 2.4);
+    },
+    settle: 0.1,
+    note: 'one of each obstacle, one per lane, 25m out — THE readability test',
+  },
+  {
+    name: 'phone-lineup',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const z = play.z + 26;
+      track._spawnObstacle(0, 0, z);
+      track._spawnObstacle(1, 1, z);
+      track._spawnObstacle(2, 2, z);
+      for (let i = 0; i < 6; i++) track._spawnStar(1, 1.15, play.z + 10 + i * 2.4);
+    },
+    settle: 0.1,
+    note: 'the same lineup in portrait — the read that decides fairness',
+  },
+  {
+    name: 'props-near',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const z = play.z + 12;
+      track._spawnObstacle(0, 0, z);
+      track._spawnObstacle(1, 1, z);
+      track._spawnObstacle(2, 2, z);
+      track._spawnStar(0, 1.4, play.z + 8.2);
+      track._spawnStar(1, 1.4, play.z + 8.2);
+      track._spawnStar(2, 1.4, play.z + 8.2);
+    },
+    settle: 0.1,
+    camera: [0, 1.75, 5.4, 0, 1.15, 12],
+    note: 'the props close up — craft check on obstacles and stars',
+  },
   {
     name: 'gameover',
     viewport: 'phone',
