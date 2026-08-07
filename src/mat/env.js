@@ -336,7 +336,7 @@ export function buildStudioEnvFaces(size, hdr) {
         // of its ribs rather than at zero.
         {
           const CEIL_LO = 0.26, CEIL_HI = 0.99;   // dy, i.e. sin(elevation)
-          const CARDS = 5, DUTY = 0.56;
+          const CARDS = 5, DUTY = 0.28;
           const GAP_L = 0.150, CARD_L = 0.445;
           const band = smooth(CEIL_LO, CEIL_LO + 0.07, dy)
                      * (1 - smooth(CEIL_HI - 0.10, CEIL_HI, dy));

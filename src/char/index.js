@@ -1707,7 +1707,7 @@ export default class Character {
       // of an albedo that needs lowering. Scaled back up to put the median
       // where the reference has it; the ribs were already clipping, so p95
       // barely moves.
-      { r: 0.845, g: 0.856, b: 0.903 },
+      { r: 0.430, g: 0.436, b: 0.460 },
       // DO NOT LOWER THIS AGAIN WITHOUT READING THE NEXT PARAGRAPH.
       //
       // The reasoning that says "a tighter GGX lobe concentrates the same energy
