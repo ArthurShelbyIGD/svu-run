@@ -50,6 +50,31 @@
 
 import { toHalf } from './tex.js';
 
+// DIRECTION PROBE. Set to true, `npm run build`, then
+//
+//     node tools/capture.mjs --only env-back-nodir --out shots/probe
+//
+// and the room becomes a uniform sphere whose colour ENCODES ITS OWN
+// DIRECTION, while that pose zeroes the analytic lights. Every metal surface in
+// the resulting frame is then a false-colour map of WHERE IT LOOKS. Red is +x,
+// green is up, blue is +z — down the corridor, ahead of the runner.
+//
+// This is the most useful thing in this file and it exists because reasoning
+// was wrong twice in one afternoon:
+//
+//   * A hand-built model of the fluted bell (src/mat/envstat.mjs --cape)
+//     predicted the skirt reflects the forward quarters at azimuth 45 and 135.
+//     Two hot cards went exactly there and the cape's environment-only
+//     histogram did not move by one count.
+//   * The reason it did not move is that the cape was receiving NO environment
+//     light at all — see the long roughness note in polished(). The probe is
+//     what showed that: pavé, floor, columns and boots all lit up in false
+//     colour and the cape was a black hole in the middle of them.
+//
+// Guessing where a mirror looks is the same class of mistake as guessing what
+// it looks like. The branch folds away at build time while this is false.
+const PROBE = 0;
+
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const smooth = (a, b, x) => {
   const t = clamp01((x - a) / (b - a));
@@ -184,6 +209,46 @@ export function buildStudioEnvFaces(size, hdr) {
         const inv = 1 / Math.hypot(dx, dy, dz);
         dx *= inv; dy *= inv; dz *= inv;
 
+        if (PROBE) {
+          const o2 = (y * size + x) * 4;
+          const K = 3.0;   // bright enough to read through the tone map, not so
+                           // bright that every channel clips to white
+          let pr, pg, pb;
+          if (PROBE === 2) {
+            // ELEVATION BANDS AS HUES. The smooth version above is prettier and
+            // harder to read: recovering an angle from it means inverting the
+            // tone map, which is not something you can do from a PNG. HUE
+            // survives a neutral tone map, so seven saturated bands at one
+            // radiance decode by eye and by `python3 src/mat/cape.py --probe`
+            // with no calibration at all.
+            //   red zenith, orange, yellow, GREEN AT THE HORIZON, cyan, blue,
+            //   magenta nadir.
+            const t = dy;
+            const c = t >= 0.70 ? [1, 0, 0]
+                    : t >= 0.35 ? [1, 0.5, 0]
+                    : t >= 0.05 ? [1, 1, 0]
+                    : t >= -0.05 ? [0, 1, 0]
+                    : t >= -0.35 ? [0, 1, 1]
+                    : t >= -0.70 ? [0, 0.35, 1]
+                    : [1, 0, 1];
+            pr = K * c[0]; pg = K * c[1]; pb = K * c[2];
+          } else {
+            pr = K * (0.5 + 0.5 * dx);
+            pg = K * (0.5 + 0.5 * dy);
+            pb = K * (0.5 + 0.5 * dz);
+          }
+          if (hdr) {
+            data[o2] = toHalf(pr); data[o2 + 1] = toHalf(pg);
+            data[o2 + 2] = toHalf(pb); data[o2 + 3] = 0x3c00;
+          } else {
+            data[o2] = Math.min(255, pr * 60) | 0;
+            data[o2 + 1] = Math.min(255, pg * 60) | 0;
+            data[o2 + 2] = Math.min(255, pb * 60) | 0;
+            data[o2 + 3] = 255;
+          }
+          continue;
+        }
+
         // --- the dark shell ------------------------------------------------
         // Six times darker than the map this replaces. The old floor of 0.07
         // rising to 0.20 was, after the per-zone environmentIntensity of ~1.9
@@ -233,6 +298,55 @@ export function buildStudioEnvFaces(size, hdr) {
             const s = wA * wE * P[4];
             if (s <= 0) continue;
             r += s * (1 + P[5]); g += s; b += s * (1 - P[5]);
+          }
+        }
+
+        // --- THE CEILING CARD ----------------------------------------------
+        // The big white card of the light tent, and the only part of this room
+        // the cape can actually see.
+        //
+        // WHERE IT GOES WAS MEASURED, and every guess before the measurement
+        // was wrong. Set PROBE = 2 at the top of this file and shoot
+        // `--only env-back-nodir`: the room becomes seven saturated hue bands
+        // by elevation and every mirror in the frame reports which band it is
+        // looking at. The skirt came back ORANGE with RED down the flute
+        // valleys and a thread of yellow along its top hem — elevation 20 to 45
+        // degrees over most of its area, 45 to 90 in the valleys, almost
+        // nothing at the horizon and NOTHING AT ALL below it. The cape is
+        // looking at the ceiling. Not at the room behind the runner (the
+        // intuitive answer), and not at the forward quarters (the answer a
+        // hand-built model of the bell gave, which was tested with two hot
+        // cards there and moved the histogram by zero).
+        //
+        // That is also why this had to be a new feature and not a tweak.
+        // Everything bright in this room was already either at the horizon (the
+        // slot), in a vertical strip (the panels, which do span this elevation
+        // but are three degrees wide), or a point (the key, the pin, the ring).
+        // Between them the band from 15 to 75 degrees was bare shell, and the
+        // shell is 0.04. A mirror pointed there renders black: 48% of the
+        // cape's pixels below luminance 32, against 2% in the reference.
+        //
+        // MODULATED, NOT UNIFORM. A uniform dome here would lift the median and
+        // flatten the swing in the same stroke — it is exactly the "broad
+        // horizon smear" this file exists to delete, moved 40 degrees up. So
+        // the tent is cut into hard-edged cards with real gaps, and a flute
+        // crossing a card edge draws the light-against-dark boundary that makes
+        // a mirror read as a mirror. The gap is NOT black: a light tent has no
+        // black in it, and the reference skirt's creases sit at about a fifth
+        // of its ribs rather than at zero.
+        {
+          const CEIL_LO = 0.26, CEIL_HI = 0.99;   // dy, i.e. sin(elevation)
+          const CARDS = 5, DUTY = 0.56;
+          const GAP_L = 0.150, CARD_L = 0.445;
+          const band = smooth(CEIL_LO, CEIL_LO + 0.07, dy)
+                     * (1 - smooth(CEIL_HI - 0.10, CEIL_HI, dy));
+          if (band > 0) {
+            const azm = Math.atan2(dz, dx);
+            const ph = ((azm / (Math.PI * 2)) * CARDS + 8) % 1;
+            // hard edge, smoothed over 3% of a card so it survives mip filtering
+            const on = smooth(0, 0.03, ph) * (1 - smooth(DUTY - 0.03, DUTY, ph));
+            const s = band * (GAP_L + (CARD_L - GAP_L) * on);
+            r += s * 0.99; g += s; b += s * 1.05;   // cool, like a daylight card
           }
         }
 
