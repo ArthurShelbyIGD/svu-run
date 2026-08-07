@@ -53,6 +53,18 @@
 //     budget to the compositor. The panels are near-opaque gradients instead,
 //     which is both cheaper and a better read against a black hall.
 //
+//  6. `visibility` IS INHERITED AND A CHILD CAN OVERRIDE IT. `.svu-hud` goes
+//     `opacity:0; visibility:hidden` off-phase, and every powerup chip carries
+//     its own `visibility:visible` when active. MEASURED with the panels up:
+//     phase 'paused', hud visibility 'hidden', chip visibility 'visible',
+//     chip rect 18,703 112x35 — the chips are still laid out and still
+//     visible in their own right. THE ONLY THING KEEPING THEM OFF THE PAUSE
+//     PANEL IS THE HUD'S opacity:0, which clips the whole subtree. That is
+//     deliberate, because it lets the chips fade out with the rest of the HUD
+//     instead of popping. But if anyone ever drops the HUD's opacity and
+//     leaves only the visibility toggle, three powerup chips will float over
+//     the pause panel and the results screen. Keep the opacity.
+//
 // Also: env(safe-area-inset-*) has never been observed non-zero in this
 // harness (no notch), so every use of it is `calc(env(...) + a real number)`
 // and never relied on alone. And storage APIs are NOT available where this
