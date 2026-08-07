@@ -863,6 +863,27 @@ try {
       const S = window.SVU;
       S.loop.setPaused(true);
 
+      // KILL THE BOOT SPLASH BEFORE EVERY GRAB.
+      //
+      // The shell fades #boot out on a chain of WALL-CLOCK timers that starts
+      // when SVU.ready flips — and openGame returns at exactly that instant,
+      // after which every capture step is a long synchronous page.evaluate that
+      // starves those timers. So a capture can come back as the loading splash
+      // and still exit 0.
+      //
+      // A fully-covered frame is obvious once you look (and is ~20KB rather
+      // than ~1.6MB). THE DANGEROUS CASE IS THE HALF-FADED ONE: a milky cream
+      // wash over an otherwise real frame, which does not look like a bug at
+      // all — it looks like the lighting is wrong. That is the worst possible
+      // failure for a project that grades lighting off screenshots, and it has
+      // already produced at least one bogus frame.
+      //
+      // Individual poses had started removing #boot defensively in their own
+      // setup, which only protects poses that HAVE a setup. Doing it here
+      // covers every pose, including the plain ones.
+      const boot = document.getElementById('boot');
+      if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+
       // Collectibles are not obstacles, so the framing seek above ignores them,
       // and capture mode disables collision — so the player parks INSIDE a
       // star. A full-size gold star then sits on the character and reads as
