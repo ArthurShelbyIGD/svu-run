@@ -89,6 +89,8 @@ const GAP_MAX = 700;
 const SPAWN_AHEAD = 140;
 /** Metres behind the player before an uncollected hoop is retired. */
 const RETIRE_BEHIND = 24;
+/** Metres of clear track a hoop needs either side of a junction. */
+const JUNCTION_CLEAR = 16;
 
 /**
  * Hoop centre height, and the grab box around it.
@@ -328,6 +330,19 @@ export default class Powerups {
 
     const track = this.ctx.tryGet('track');
     if (!track || track.path.end < this._nextS + 1) return;
+
+    // NEVER ON A CORNER. Lane offsets either side of a junction belong to two
+    // perpendicular frames, and static geometry is placed with the unblended
+    // toWorldExact — so a hoop landing inside the corner would sit in the
+    // backstop wall or off the edge of the pad, unreachable and looking
+    // broken. track/ keeps its own obstacles off corners for the same reason.
+    // Slide past rather than skipping: a missed spawn would silently double
+    // the gap.
+    const j = track.nextJunction(this._nextS - JUNCTION_CLEAR);
+    if (j && j.s < this._nextS + JUNCTION_CLEAR) {
+      this._nextS = j.s + JUNCTION_CLEAR + 6;
+      return;
+    }
 
     let n = 0;
     for (let k = 0; k < PW_COUNT; k++) {
