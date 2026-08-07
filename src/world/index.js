@@ -19,6 +19,18 @@ import { ZONES, zoneAt } from './zones.js';
 import Sky from './sky.js';
 import Props from './props.js';
 
+/**
+ * Blend a Color3 between two [r,g,b] literals, in place.
+ * Called several times a frame from renderUpdate, so it allocates nothing.
+ */
+function lerp3(out, a, b, t) {
+  out.set(
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  );
+}
+
 export default class World {
   constructor(ctx) {
     this.ctx = ctx;
@@ -76,6 +88,12 @@ export default class World {
     // almost fully across the corridor, the same column lays a hard bar right
     // across the running surface — which is the single cheapest way to prove
     // to the eye that the light is real and the geometry is in it.
+    //
+    // The vector, the intensity and both colours are now PER ZONE and live in
+    // zones.js; these are only the values the light is born with, and
+    // _applyZone overwrites them on the first frame. Zone 1's entry in that
+    // table is these exact numbers, deliberately, so the signed-off hall is
+    // bit-for-bit what it was.
     this.key = new DirectionalLight('key', new Vector3(-0.80, -0.53, 0.28), scene);
     this.key.intensity = 6.4;
     this.key.diffuse = new Color3(1.0, 0.91, 0.78);
@@ -258,6 +276,33 @@ export default class World {
       const q = this.ctx.config.q;
       pipe.bloomWeight = (a.bloom + (b.bloom - a.bloom) * blend) * (q.bloomScale / 0.6);
     }
+
+    // ---- the light itself -------------------------------------------------
+    //
+    // RE-NORMALISE. A component-wise lerp between two unit vectors is shorter
+    // than either of them — halfway between Ruby's key and Sapphire's the raw
+    // lerp is 0.79 long — and Babylon multiplies by the direction as given, so
+    // an un-normalised crossfade is a light that dips by twenty percent in the
+    // middle of every zone boundary and comes back. That reads as a flicker,
+    // and it would have been blamed on the sky.
+    const d = this.key.direction;
+    let dx = a.key[0] + (b.key[0] - a.key[0]) * blend;
+    let dy = a.key[1] + (b.key[1] - a.key[1]) * blend;
+    let dz = a.key[2] + (b.key[2] - a.key[2]) * blend;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    d.set(dx / len, dy / len, dz / len);
+    this.key.intensity = a.keyI + (b.keyI - a.keyI) * blend;
+    lerp3(this.key.diffuse, a.keyC, b.keyC, blend);
+    lerp3(this.key.specular, a.keyS, b.keyS, blend);
+
+    this.ambient.intensity = a.ambI + (b.ambI - a.ambI) * blend;
+    lerp3(this.ambient.diffuse, a.ambC, b.ambC, blend);
+    lerp3(this.ambient.groundColor, a.ambG, b.ambG, blend);
+
+    if (this.shadowGen) {
+      this.shadowGen.darkness = a.shadow + (b.shadow - a.shadow) * blend;
+    }
+    scene.fogDensity = a.fogD + (b.fogD - a.fogD) * blend;
   }
 
   /** Register a node (and its descendants) as a shadow caster. */

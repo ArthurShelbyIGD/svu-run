@@ -47,6 +47,47 @@ export const BLEND_LENGTH = 150;  // metres of crossfade into the next
  *          clearing the bloom threshold, which turned the bright end of the
  *          corridor into a featureless white oval and every particle into a
  *          soft white disc that read as dirt on the lens.
+ *
+ * ---------------------------------------------------------------------------
+ * THE ROOM, NOT JUST THE SKY.
+ *
+ * For two rounds a zone was a sky swap and nothing else, and 3000 metres felt
+ * like running the same 600 five times with the lights gelled. Everything
+ * below is what makes zone 3 a different PLACE rather than a different filter:
+ *
+ * key    : [x,y,z] direction the key light travels. RE-NORMALISED after
+ *          lerping — a component-wise lerp between two unit vectors is not a
+ *          unit vector, and a directional light whose direction is 0.93 long
+ *          is a directional light that quietly dims mid-crossfade.
+ * keyI   : key intensity.
+ * keyC   : key diffuse. See THE READABILITY BUDGET below.
+ * keyS   : key specular.
+ * ambI/ambC/ambG : hemispheric fill — intensity, sky colour, ground colour.
+ *          This is where a zone is allowed to be saturated, because ambient
+ *          light lifts everything equally and so cannot destroy the value
+ *          separation the player reads obstacles by.
+ * shadow : ShadowGenerator.darkness. 0 is a black shadow, 1 is no shadow.
+ * fogD   : scene.fogDensity. The single strongest "how big is this room" dial
+ *          in the file: 0.007 is cold clear air and a hundred visible metres,
+ *          0.019 is a humid green murk that closes at fifty.
+ * rise   : vertical scale of the transverse vault, about its springing line.
+ *          0.8 is a squat barrel you want to duck under, 1.4 a lancet.
+ * every  : place that vault on one bay in N. 2 opens the ceiling to the sky.
+ * open   : lateral scale of the distant silhouette bands — how far away the
+ *          far side of the hall is.
+ * high   : vertical scale of the same. Together with `open` this is the
+ *          difference between a tight gallery and a cathedral nave.
+ *
+ * THE READABILITY BUDGET, and it is the reason `keyC` is so timid next to
+ * `ambC`. The track speaks three colours (see src/mat/index.js): gold you
+ * collect, red you die on, white diamond you ignore. Those three have to
+ * survive in all five rooms. A saturated red key in Ruby paints red light on
+ * gold stars and on white bezels alike, and the hazard cords stop being the
+ * only red thing in frame — which is a gameplay bug wearing an art hat. So
+ * the KEY is where the readability budget is spent and it never leaves a
+ * narrow warm-to-cool temperature band; the ZONE's colour lives in the air:
+ * ambient, fog, the panorama, the glow. Direction and intensity are free —
+ * they cost nothing in hue and they change the room completely.
  */
 export const ZONES = [
   {
@@ -63,6 +104,15 @@ export const ZONES = [
     fog: [0.055, 0.050, 0.070],
     env: 1.02, bloom: 0.42,
     gem: [1.00, 0.78, 0.36],
+    // The black-marble-and-gold hall the owner signed off. These are the
+    // numbers that were already in world/index.js, moved here unchanged, and
+    // zone 1 is the regression baseline for every other zone: whole-frame mean
+    // and p50 must not move.
+    key: [-0.80, -0.53, 0.28], keyI: 6.4,
+    keyC: [1.00, 0.91, 0.78], keyS: [1.00, 0.96, 0.88],
+    ambI: 0.10, ambC: [0.66, 0.74, 0.95], ambG: [0.14, 0.11, 0.09],
+    shadow: 0.18, fogD: 0.0115,
+    rise: 1.00, every: 1, open: 1.00, high: 1.00,
   },
   {
     name: 'Ruby',
@@ -78,6 +128,19 @@ export const ZONES = [
     fog: [0.090, 0.030, 0.048],
     env: 0.98, bloom: 0.46,
     gem: [1.00, 0.32, 0.42],
+    // THE FORGE. A low, tight, smoky room. The key is dropped to seventeen
+    // degrees of elevation and swung to the other side, so every column throws
+    // a long bar the full width of the road and the lit face of the colonnade
+    // changes sides as you cross the boundary — which is the cheapest possible
+    // proof to the eye that it has gone somewhere. The red is all in the air:
+    // a strong red hemispheric bounce and the densest fog after Emerald. The
+    // key itself stays warm-white, or the hazard cords would stop being the
+    // only red thing in the frame.
+    key: [0.86, -0.30, -0.42], keyI: 7.4,
+    keyC: [1.00, 0.86, 0.72], keyS: [1.00, 0.90, 0.80],
+    ambI: 0.17, ambC: [0.95, 0.40, 0.40], ambG: [0.26, 0.06, 0.07],
+    shadow: 0.10, fogD: 0.0166,
+    rise: 0.80, every: 1, open: 0.80, high: 0.84,
   },
   {
     name: 'Sapphire',
@@ -93,6 +156,17 @@ export const ZONES = [
     fog: [0.035, 0.055, 0.105],
     env: 1.08, bloom: 0.42,
     gem: [0.44, 0.66, 1.00],
+    // THE CISTERN. The opposite of Ruby in every dial. A steep, weak, cold key
+    // almost straight down, so shadows are short pools rather than bars and
+    // the room stops having a side; a big cold ambient doing most of the
+    // lifting; the thinnest fog in the game, which is what actually makes it
+    // feel vast — you can see the far end. Ceiling lifted to a lancet and the
+    // vault only on every other bay, so most of what is overhead is sky.
+    key: [-0.34, -0.90, 0.28], keyI: 5.0,
+    keyC: [0.86, 0.93, 1.00], keyS: [0.90, 0.96, 1.00],
+    ambI: 0.23, ambC: [0.54, 0.72, 1.00], ambG: [0.09, 0.13, 0.22],
+    shadow: 0.34, fogD: 0.0072,
+    rise: 1.42, every: 2, open: 1.32, high: 1.34,
   },
   {
     name: 'Emerald',
@@ -108,6 +182,18 @@ export const ZONES = [
     fog: [0.035, 0.080, 0.070],
     env: 1.05, bloom: 0.40,
     gem: [0.36, 1.00, 0.74],
+    // THE OVERGROWN HALL. Humid: the thickest fog in the game, so the far end
+    // is gone by fifty metres and the room reads as a clearing rather than a
+    // corridor. The key comes back down and swings right again, but only to
+    // forty degrees, and it is a shade green — the one place a tint is safe,
+    // because green is not one of the three contract colours and pushing green
+    // light onto gold and onto red moves neither of them towards the other.
+    // Low ceiling, low silhouettes: everything here has sagged.
+    key: [0.62, -0.66, -0.42], keyI: 5.9,
+    keyC: [0.92, 1.00, 0.88], keyS: [0.94, 1.00, 0.92],
+    ambI: 0.19, ambC: [0.40, 0.90, 0.68], ambG: [0.06, 0.17, 0.12],
+    shadow: 0.14, fogD: 0.0188,
+    rise: 0.90, every: 1, open: 0.92, high: 0.76,
   },
   {
     name: 'Gilt',
@@ -123,6 +209,22 @@ export const ZONES = [
     fog: [0.130, 0.098, 0.048],
     env: 0.92, bloom: 0.48,
     gem: [1.00, 0.82, 0.40],
+    // THE TREASURY. The last zone, and the only one lit from behind the
+    // camera: the key travels forward down the corridor, so the faces turned
+    // towards the player are the lit ones and the whole room is a wall of
+    // light rather than a raking silhouette. Brightest key in the game.
+    //
+    // This is the zone that can break the colour contract, because a gold room
+    // full of gold light is a room where a gold star is not a star. Two things
+    // stop it: the key is the COOLEST warm in the set — flatter and whiter
+    // than Vault's — so gold reads by its specular, not by being the only warm
+    // thing; and the ambient carries the brass instead. Checked by sampling
+    // the star and the hazard cord in the lineup shot, not by eye.
+    key: [-0.28, -0.62, 0.73], keyI: 8.2,
+    keyC: [1.00, 0.96, 0.90], keyS: [1.00, 0.98, 0.94],
+    ambI: 0.13, ambC: [1.00, 0.80, 0.48], ambG: [0.22, 0.16, 0.07],
+    shadow: 0.22, fogD: 0.0132,
+    rise: 1.16, every: 1, open: 1.14, high: 1.18,
   },
 ];
 

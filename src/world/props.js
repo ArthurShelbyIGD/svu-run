@@ -29,6 +29,7 @@ import {
   DynamicTexture, Texture, Color3, Constants,
 } from '../core/bjs.js';
 import { box, cyl, gem, slab, flutedShaft, arch, star, mergeBucket } from './geo.js';
+import { ZONES, zoneAt } from './zones.js';
 
 export const BAY_LEN = 24;
 const COL_X = 4.95;              // matches the track's own column offset
@@ -57,6 +58,8 @@ export default class Props {
     this.colBufs = [];
     this.accentBufs = [];
     this.runnerBufs = [];
+    this.vaultBufs = [];
+    this.silBufs = [];
     this._nextRunnerS = 0;
     this._runnerSlot = 0;
     this._nextColS = 0;
@@ -240,6 +243,8 @@ export default class Props {
     const G = [];   // goldTrim     — rings, abaci, keystones, dentils, chains
     const M = [];   // emissive     — lantern gems
     const F = [];   // marbleDark   — the hall floor, placed on its own rules
+    const V = [];   // marbleLight  — the transverse vault, its own matrix
+    const VG = [];  // goldTrim     — its keystone
 
     // --- the floor of the hall ---
     // Without this the colonnade stands on nothing: the wide shot showed the
@@ -276,9 +281,24 @@ export default class Props {
     // level, which in a runner looks like an obstacle.
 
     // --- the one transverse arch that vaults the track, at the bay centre ---
-    arch(scene, L, G, {
+    //
+    // THIS IS THE OBJECT AT THE VANISHING POINT, so it is the strongest thing
+    // in the frame and it used to be identical in all five zones. It is now
+    // built in its OWN bucket, springing from y = 0 rather than from SPRING_Y,
+    // and placed with its own matrix — which buys two per-zone dials for two
+    // draw calls: a vertical scale about the springing line (a squat barrel in
+    // Ruby, a lancet in Sapphire) and a cadence, so Sapphire vaults only every
+    // other bay and its ceiling is mostly sky. See _placeBay.
+    //
+    // Scaling y about the springing keeps the arch's feet exactly where the
+    // abaci are, so the junction with the capital never opens up. It does put
+    // a non-uniform scale on the instance matrix, which Babylon transforms
+    // normals by directly rather than by its inverse transpose; at the 0.80 to
+    // 1.42 used here that is a few degrees of shading error on a voussoir and
+    // nothing you can see.
+    arch(scene, V, VG, {
       axis: 'x', x: 0, z: 0,
-      radius: COL_X, springY: SPRING_Y,
+      radius: COL_X, springY: 0,
       voussoirs: low ? 9 : 13, thickness: 0.62, width: 1.20,
     });
 
@@ -461,6 +481,22 @@ export default class Props {
     for (const m of [this.baySil, this.baySilFar]) {
       if (m) m.receiveShadows = false;
     }
+    // The depth bands get their own matrix so a zone can push the far side of
+    // the hall out and up (Sapphire, 1.32 x 1.34) or pull it in and squash it
+    // (Ruby, 0.80 x 0.84). Same meshes, same draw calls, and because they are
+    // unlit fills the non-uniform scale costs nothing at all — there is no
+    // normal to get wrong. This is the cheapest "how big is this room" lever
+    // in the file and it works because those three stacked rooflines are what
+    // the eye was reading as scale in the first place.
+    for (const m of [this.baySil, this.baySilFar]) {
+      if (m) this.silBufs.push(this._alloc(m, BAY_SLOTS));
+    }
+
+    this.vaultStone = mergeBucket(scene, 'vaultStone', V, mat.get('marbleLight'));
+    this.vaultGold = mergeBucket(scene, 'vaultGold', VG, mat.get('goldTrim'));
+    for (const m of [this.vaultStone, this.vaultGold]) {
+      if (m) this.vaultBufs.push(this._alloc(m, BAY_SLOTS));
+    }
 
     // --- contact darkening where the walls meet the floor ---
     // Two bands per side, running the whole bay. This is what turns a set of
@@ -476,7 +512,7 @@ export default class Props {
     if (this.bayAO) this.bayAO.receiveShadows = false;
 
     for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem,
-      this.baySil, this.baySilFar, this.bayAO]) {
+      this.bayAO]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
 
@@ -728,6 +764,8 @@ export default class Props {
     for (const b of this.colBufs) b.fill(0);
     for (const b of this.accentBufs) b.fill(0);
     for (const b of this.runnerBufs) b.fill(0);
+    for (const b of this.vaultBufs) b.fill(0);
+    for (const b of this.silBufs) b.fill(0);
     if (this.floorBuf) this.floorBuf.fill(0);
     if (this.shaftBuf) this.shaftBuf.fill(0);
     this._flush();
@@ -834,11 +872,58 @@ export default class Props {
 
     if (hidden) {
       for (const b of this.bayBufs) b.fill(0, o, o + 16);
+      for (const b of this.vaultBufs) b.fill(0, o, o + 16);
+      for (const b of this.silBufs) b.fill(0, o, o + 16);
       if (this.shaftBuf) this.shaftBuf.fill(0, o, o + 16);
       return;
     }
     this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
     for (const b of this.bayBufs) this._m.copyToArray(b, o);
+
+    // ---- the parts of a bay whose PROPORTIONS belong to the zone ----------
+    //
+    // THE ZONE IS LOOKED UP AT THE BAY'S OWN DISTANCE, not at the player's.
+    // A bay is placed once, up to 184m ahead, and never revisited — so asking
+    // "what zone is the player in" would build the last 184m of every zone in
+    // the previous zone's proportions and then leave the player to run through
+    // the mistake. Asking at `mid` means the architecture changes exactly
+    // where the light does, and because the blend is continuous the ceiling
+    // creeps up or down over 150m instead of stepping.
+    const { index, next, blend } = zoneAt(mid + this.zoneBias);
+    const za = ZONES[index];
+    const zb = ZONES[next];
+    const rise = za.rise + (zb.rise - za.rise) * blend;
+    const open = za.open + (zb.open - za.open) * blend;
+    const high = za.high + (zb.high - za.high) * blend;
+    // `every` is a count and cannot be lerped. It does not need to be: the
+    // vault is already a per-bay yes/no, so switching the rule at the halfway
+    // point of the crossfade changes one arch in a row of arches that are all
+    // slowly changing height anyway, and there is nothing to see.
+    const every = (blend < 0.5 ? za.every : zb.every) | 0;
+
+    Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, this._q);
+
+    if (this.vaultBufs.length) {
+      if (every > 1 && (this._baySlot % every) !== 0) {
+        for (const b of this.vaultBufs) b.fill(0, o, o + 16);
+      } else {
+        this._s.set(1, rise, 1);
+        this._p.set(this._w[0], this._w[1] + SPRING_Y, this._w[2]);
+        Matrix.ComposeToRef(this._s, this._q, this._p, this._m);
+        for (const b of this.vaultBufs) this._m.copyToArray(b, o);
+      }
+    }
+
+    if (this.silBufs.length) {
+      this._s.set(open, high, 1);
+      this._p.set(this._w[0], this._w[1], this._w[2]);
+      Matrix.ComposeToRef(this._s, this._q, this._p, this._m);
+      for (const b of this.silBufs) this._m.copyToArray(b, o);
+    }
+
+    // restore _m for the shaft below, which wants the plain bay transform
+    Matrix.RotationYToRef(yaw, this._m);
+    this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
     if (this.shaftBuf) {
       // Every third bay gets a shaft. Every bay is a fog machine; every third
       // is a cathedral.
@@ -937,7 +1022,8 @@ export default class Props {
    * small, self-shadowing or flat on the ground.
    */
   casters() {
-    return [this.colLight, this.colDark, this.bayLight, this.accentStone];
+    return [this.colLight, this.colDark, this.bayLight, this.vaultStone,
+      this.accentStone];
   }
 
   dispose() {
