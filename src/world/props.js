@@ -618,10 +618,46 @@ export default class Props {
     const tex = new DynamicTexture('lightShaft', { width: size, height: size }, scene, true);
     const c = tex.getContext();
     c.clearRect(0, 0, size, size);
+
+    // THE HARD LINE ACROSS THE TOP OF THE PORTRAIT FRAME WAS THIS TEXTURE.
+    //
+    // Reported for three rounds, blamed on the HUD twice and on the sky once,
+    // and it was neither. Measured, not argued:
+    //
+    //   * with the sky domes disabled the step is STILL there and twice as
+    //     strong (-44.5 row-mean, 100% of columns); with only the sky domes
+    //     enabled it is completely absent. So: not the panorama, not the HUD.
+    //   * disabling this one mesh removes it (-20.8 at 99% of columns -> -6.6
+    //     at 47%, i.e. down into the ordinary texture of the frame).
+    //   * and the arithmetic closes. Camera y=2.8, pitch 0.1138 rad, vertical
+    //     fov 0.9996 rad; nearest shaft instance 17.43m ahead; the quad's
+    //     BOTTOM edge is at world y=5.45. That edge lands at 8.647 degrees of
+    //     elevation, which is device row 425.3 of 1688. Measured row: 426.
+    //
+    // Canvas row 0 maps to the plane's BOTTOM edge (DynamicTexture uploads
+    // inverted), so the 0.42 stop was sitting exactly on the quad's lower
+    // boundary: a screen-filling additive quad going from 42% opaque to
+    // nothing in zero pixels. That is a straight bright-to-dark line across
+    // the whole frame, and no amount of it being "only a light shaft" stops
+    // the eye reading it as a seam in the picture.
+    //
+    // THE RULE, and it is general: a large additive billboard must reach zero
+    // alpha at EVERY edge of its own quad. The horizontal edges were already
+    // faded (see the destination-in pass below) — which is why this only ever
+    // showed as a horizontal line. The vertical ones were not.
+    //
+    // The profile is otherwise deliberately unchanged: the beam is still
+    // brightest low and fades upward, because that is the look zone 1 was
+    // signed off with. All that is added is a foot — the bottom 16% of the
+    // quad, about 1.2m of world height, ramps in from nothing. At the
+    // distances a shaft is actually seen that is a couple of hundred pixels of
+    // gradient, which is far too gradual to read as an edge.
     const v = c.createLinearGradient(0, 0, 0, size);
-    v.addColorStop(0, 'rgba(255,242,215,0.42)');
-    v.addColorStop(0.5, 'rgba(255,232,190,0.16)');
-    v.addColorStop(1, 'rgba(255,225,175,0)');
+    v.addColorStop(0.00, 'rgba(255,244,220,0)');
+    v.addColorStop(0.06, 'rgba(255,243,218,0.13)');
+    v.addColorStop(0.16, 'rgba(255,242,215,0.42)');
+    v.addColorStop(0.50, 'rgba(255,232,190,0.16)');
+    v.addColorStop(1.00, 'rgba(255,225,175,0)');
     c.fillStyle = v;
     c.fillRect(0, 0, size, size);
     // soften the vertical edges so the quad has no visible boundary
