@@ -249,8 +249,12 @@ function wings(root, tip, steps) {
     for (let k = 0; k <= steps; k++) {
       const t = k / steps;
       const x = side * (root + (tip - root) * t);
-      A.push([x, 0.050 + 0.200 * Math.pow(t, 1.15)]);     // leading edge
-      B.push([x, -0.105 + 0.290 * Math.pow(t, 1.50)]);    // trailing edge
+      // Rake, not a chevron. The first split version rose at 38 degrees and
+      // the close-up read it as a tick, not as a pair of wings; the blade
+      // centreline now climbs about 30 degrees and the root is three times the
+      // thickness of the tip, which is what makes it a wing rather than a bar.
+      A.push([x, 0.075 + 0.095 * t]);                     // leading edge
+      B.push([x, -0.130 + 0.220 * Math.pow(t, 1.60)]);    // trailing edge
     }
     out.push([A, B]);
   }
@@ -386,7 +390,9 @@ export function buildHoop(scene, mat, q, emblem) {
  */
 export function buildCage(scene, mat, q, radius) {
   const tess = q.name === 'low' ? 14 : 22;
-  const tube = 0.030;
+  // 0.072m of gold wire. At 0.060 the cage was legible but weedy against the
+  // bloom coming off the character in the chase shot.
+  const tube = 0.036;
   const m = mat.get('goldLeaf');
   const parts = [];
   for (let i = 0; i < 3; i++) {

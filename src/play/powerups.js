@@ -117,8 +117,22 @@ const THROB_AMP = 0.075;
 const BOB_HZ = 0.42;       // glide: a long, slow 0.26m rise and fall
 const BOB_AMP = 0.26;
 
-const CAGE_RADIUS = 1.05;
-const CAGE_Y = 0.88;
+/**
+ * The cage is a sphere TANGENT TO THE TRACK, which is why the radius and the
+ * centre height are the same number.
+ *
+ * Measured character bounds at t=14s, seed 1, relative to the player's feet:
+ * x -0.90..0.88, y -0.03..2.66 — and the 2.66 is the antenna's ruby orb, whose
+ * centre is at 2.36. The body and head stop around 1.95.
+ *
+ * The first cage was r=1.05 centred at 0.88, so its underside sat 0.17m BELOW
+ * the floor and the chase-camera shot showed gold rings passing through the
+ * paving. At r = y = 1.10 the sphere rests on the track, clears the widest
+ * part of the body by 0.20m, and closes over the head with 0.25m to spare.
+ * The antenna orb pokes through the top, which is correct — it is an aerial.
+ */
+const CAGE_RADIUS = 1.10;
+const CAGE_Y = 1.10;
 const CAGE_SPIN = 1.10;    // rad/s about Y
 
 export default class Powerups {
