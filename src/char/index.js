@@ -26,6 +26,36 @@
 //
 // Parts are MERGED per material (geom.js), so the whole character is about a
 // dozen draw calls despite carrying ~600 individually cut stones.
+//
+// FOUR RULES THIS DIRECTORY KEEPS RE-LEARNING THE HARD WAY. Every one of them
+// cost at least a round, and all four are the same mistake wearing different
+// hats: reasoning about a rendered frame instead of measuring it.
+//
+//   1. GEOMETRY CAN BE PRESENT AND VISUALLY ABSENT. The cape read as a hole in
+//      the screen; the boots were "missing" while built, placed and visible; an
+//      elbow had an open pipe mouth aimed at the camera and was called "an
+//      elbow pad" for rounds; the hands "lost their fingers" that had never
+//      stopped being built. Before rebuilding anything that looks wrong, check
+//      whether it is there, and SAMPLE PIXELS before blaming the lighting.
+//
+//   2. surface() EMITS AN OPEN GRID. No caps, ever. Anything built from it is a
+//      PIPE, and both of its mouths will eventually point at a camera that sits
+//      19 degrees above and directly behind. Close them deliberately — see the
+//      shoulder and elbow domes in _buildArms — and never with a separate
+//      smooth cap, because a smooth mirror cap in a black hall is a blob, which
+//      is the complaint that started this round.
+//
+//   3. DO THE SUBTRACTION. The fingers were welded into one slab because a
+//      57 mm diameter was laid on a 38 mm pitch: a gap of MINUS 19 mm. Nobody
+//      had subtracted the two numbers in four review passes. Any time two parts
+//      are meant to have daylight between them, write the arithmetic down in a
+//      comment next to them, in millimetres.
+//
+//   4. IF A PART IS INVISIBLE, PRINT ITS BOUNDING BOX BEFORE YOU RESIZE IT. The
+//      gold wrist cuff had been treated as "too small" for a round. It was
+//      side-on: a torus rotated onto the wrong axis, 177 x 179 x 25 mm, a hoop
+//      threaded through the wrist rather than a band around it. One extent an
+//      order of magnitude smaller than the other two is the tell.
 
 import { TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
@@ -548,12 +578,26 @@ export default class Character {
     g.toMesh('onesieStones', this.ctx.scene, this._stoneMat(mat), body);
 
     // --- metal garment furniture ---
+    //
+    // THE SHOULDER CAPS ARE GONE. Two `polRhodium` ellipsoids used to sit here,
+    // "small masses where the sleeves meet the body", and they are the other
+    // half of the owner's complaint: "the same goes for the shoulders — some
+    // kind of shape with rounded edges". Crop docs/reference-rear.png to a
+    // shoulder and there is NO shoulder hardware at all: the pavé sleeve runs
+    // straight up and meets the pavé yoke, and the sleeve's own top is a
+    // rounded pavé dome. Two smooth mirror blobs interrupting that was a
+    // fourth-order restatement of this project's oldest mistake — putting a
+    // small mirror part in a black hall and expecting it to read as jewellery.
+    //
+    // THEY WERE LOAD-BEARING, THOUGH, so do not just delete them: surface()
+    // emits an OPEN grid, which makes the sleeve a pipe, and the cap was what
+    // capped it. Removing the cap alone leaves a tube with its mouth pointing
+    // at the ceiling. The sleeve now closes itself — see the dome at the top of
+    // upperSurf in _buildArms, which is also wider than the shaft (1.20 armR)
+    // so it covers the ~6 cm slot between the arm and the torso. Measured:
+    // the body's half-width at shoulderY is 0.252 and the arm's inner edge is
+    // 0.314; the hood, which is 0.40 wide at that height, backs the rest.
     const t = new Geo();
-    // shoulder caps: small masses where the sleeves meet the body
-    for (const s of [-1, 1]) {
-      t.at(s * P.shoulderX * 0.90, P.shoulderY - 0.010, 0, 0, 0, s * -0.30);
-      t.add(ellipsoid({ rx: 0.104, ry: 0.092, rz: 0.100, e1: 0.85, su: this.sd + 4, sv: this.sd }));
-    }
     // hem band at the bottom of the onesie
     t.at(0, P.bodyY - P.bodyH * 0.965, 0, Math.PI / 2, 0, 0, 1.0, 1.0, 0.90);
     t.add(torus(P.bodyW * 0.845, 0.030, this.su, this.sd, null, 0.75));
@@ -995,21 +1039,60 @@ export default class Character {
       pivot.parent = body;
       pivot.position.set(s * P.shoulderX, P.shoulderY, 0);
 
+      // BOTH SLEEVES ARE CLOSED SOLIDS NOW, and that is the whole point of the
+      // piecewise form below. surface() emits an OPEN grid — no caps, ever — so
+      // a sleeve built as a simple tapered cylinder is a PIPE with a mouth at
+      // each end. The shoulder mouth pointed at the ceiling and was hidden by a
+      // smooth mirror cap that the owner then read as a blob (see _buildTorso);
+      // the elbow mouth pointed up-and-back at a camera that sits 19 degrees
+      // ABOVE the character and rendered as a hard dark ellipse on the outside
+      // of each elbow, which had been read as "an elbow pad" for several rounds
+      // and never named. Nobody had named it because a pipe mouth in shadow
+      // looks exactly like a part you meant to put there.
+      //
+      // Each sleeve therefore ends in a DOME, expressed in its own surface so
+      // the stone field walks over it from the same definition and the pavé
+      // runs unbroken across the joint — which is also what
+      // docs/reference-rear.png shows.
+      //
+      // SH IS AN ARC SHARE, NOT A GUESS. stoneField lays rows at uniform v but
+      // COUNTS them from arc length, so a piecewise surface whose v is not
+      // arc-proportional gets a bald patch wherever v moves fastest. See the
+      // row loop in pave.js. Measured on these numbers, the dome is 0.156 m of
+      // a 0.384 m meridian: 0.41. Give it 0.41 of v. If rTop, the taper or
+      // upperLen move, RECOMPUTE IT — at the naive 0.17 the crown came out
+      // with a bare 128 mm cap that lowering v0 does not fix.
+      const SH = 0.41;
+      const rTop = P.armR * 1.20;   // wider than the shaft, so it also closes
+                                    // the ~6 cm slot between arm and torso
       const upperSurf = (u, v, out) => {
-        const y = -P.upperLen * v;
-        const r = P.armR * (1.06 - 0.20 * v);
         const ph = u * TWO_PI;
+        let r, y, bow = 0;
+        if (v < SH) {
+          const a = (v / SH) * (Math.PI / 2);   // 0 at the pole, pi/2 at the equator
+          r = rTop * Math.sin(a);
+          y = rTop * 0.65 * Math.cos(a);
+        } else {
+          const w = (v - SH) / (1 - SH);
+          r = rTop + (P.armR * 0.88 - rTop) * w;
+          y = -P.upperLen * w;
+          bow = Math.sin(w * Math.PI) * 0.012;
+        }
         out[0] = r * Math.sin(ph);
         out[1] = y;
-        out[2] = r * 0.94 * Math.cos(ph) + Math.sin(v * Math.PI) * 0.012;
+        out[2] = r * 0.94 * Math.cos(ph) + bow;
       };
       const ub = new Geo();
       ub.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
-      ub.add(surface(upperSurf, this.sd + 8, this.sd + 2, 2, 1));
+      ub.add(surface(upperSurf, this.sd + 8, this.sd + 6, 2, 1));
       ub.toMesh(`upperBed${s}`, scene, this._bedMat(mat), pivot);
       const us = new Geo();
       us.at(0, 0, 0);
-      this._stones(us, upperSurf, { v0: 0.10, v1: 0.94, cy: -P.upperLen * 0.5 });
+      // v0 0.10 -> 0.015. v0 is now measured from the POLE of the dome, not
+      // from the top of a cylinder, and 0.10 of the meridian at the pole is a
+      // 59 mm bald disc on top of the shoulder — pointed straight at a camera
+      // that looks down at it.
+      this._stones(us, upperSurf, { v0: 0.015, v1: 0.93, cy: -P.upperLen * 0.5 });
       us.toMesh(`upperStones${s}`, scene, this._stoneMat(mat), pivot);
 
       // elbow joint
@@ -1017,17 +1100,32 @@ export default class Character {
       elbow.parent = pivot;
       elbow.position.set(0, -P.upperLen, 0);
 
+      // The elbow crown. Same construction, same reason, its own arc share:
+      // the dome here is 0.122 m of a 0.340 m meridian, so EH = 0.35. It is
+      // centred on the elbow node's ORIGIN, which is also where the upper
+      // arm's lower mouth sits, so one dome closes both pipes at every bend
+      // angle the animation asks for.
+      const EH = 0.35;
+      const rElb = P.armR * 1.05;
       const foreSurf = (u, v, out) => {
-        const y = -P.foreLen * v;
-        const r = P.armR * (0.94 - 0.24 * v);
         const ph = u * TWO_PI;
+        let r, y;
+        if (v < EH) {
+          const a = (v / EH) * (Math.PI / 2);
+          r = rElb * Math.sin(a);
+          y = rElb * 0.35 * Math.cos(a);
+        } else {
+          const w = (v - EH) / (1 - EH);
+          r = rElb + (P.armR * 0.70 - rElb) * w;
+          y = -P.foreLen * w;
+        }
         out[0] = r * Math.sin(ph);
         out[1] = y;
         out[2] = r * 0.94 * Math.cos(ph);
       };
       const fb = new Geo();
       fb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
-      fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
+      fb.add(surface(foreSurf, this.sd + 8, this.sd + 6, 2, 1));
       fb.toMesh(`foreBed${s}`, scene, this._bedMat(mat), elbow);
       // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
       // each pavé sleeve meets the silver hand, and from behind it is one of
@@ -1035,16 +1133,40 @@ export default class Character {
       // being the yoke edge and the hem wire. In silver the sleeve ran straight
       // into the glove as one undifferentiated pale mass. The sleeve's grains
       // ride in the same mesh, so the whole forearm's gold is one draw call.
+      // ...except that for several rounds it was not visible at all, and the
+      // reason is a one-token bug worth naming because the same token appears
+      // elsewhere in this file. torus() in geom.js builds its centreline circle
+      // in the XZ PLANE — its axis is ALREADY Y — so a band round a limb that
+      // hangs down the Y axis needs NO rotation. The `Math.PI / 2` that used to
+      // be here tipped the axis onto Z, which turns the band into a hoop
+      // standing up in the plane of the screen: measured local bbox
+      // 177 x 179 x 25 mm, i.e. a flat annulus 18 cm tall threaded through the
+      // wrist rather than a 3 cm band around it. Almost all of it was inside
+      // the sleeve and the palm, so what reached the camera was two gold
+      // slivers at the edges, and every capture read as "the gold cuff is too
+      // small" rather than "the gold cuff is side-on".
+      // THE TELL: if a torus is invisible, print its bounding box before you
+      // resize it. A hoop seen edge-on has one extent an order of magnitude
+      // smaller than the other two.
+      // (The onesie hem band near the end of _buildTorso has the same rotation
+      // and the same problem. It is left alone here only because the skirt
+      // covers it completely — it is on the list, not forgiven.)
       const gc = new Geo();
-      gc.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
+      gc.at(0, -P.foreLen + 0.020, 0, 0, 0, 0, 1, 1, 0.94);
       // A BAND, not a bracelet. At a 0.028 tube it stood 2.4 cm proud of a 7 cm
       // wrist and, in champagne on a champagne setting bed, read as a fat ring
-      // hanging loose off the arm.
-      gc.add(torus(P.armR * 0.72, 0.017, this.sd + 6, 6, null, 0.85));
+      // hanging loose off the arm. The sleeve is 74 mm across where this sits,
+      // so R*0.73 with a 14 mm tube stands 14 mm proud — a rim on the sleeve,
+      // which is what the reference has. The z scale matches the sleeve's own
+      // 0.94 so the band is the same ellipse the arm is.
+      gc.add(torus(P.armR * 0.73, 0.014, this.sd + 6, 6, null, 0.80));
 
       const fs = new Geo();
       fs.at(0, 0, 0);
-      this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
+      // v0 0.06 -> 0.015: same reason as the shoulder. 0.06 of the meridian
+      // measured from the elbow crown's pole leaves a 56 mm bald cap on the
+      // outside of the elbow, which is the exact spot the camera looks at.
+      this._stones(fs, foreSurf, { v0: 0.015, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
       fs.toMesh(`foreStones${s}`, scene, this._stoneMat(mat), elbow);
       gc.toMesh(`cuff${s}`, scene, this._goldMat(mat), elbow);
 
@@ -1052,6 +1174,15 @@ export default class Character {
       const wrist = new TransformNode(`wrist${s}`, scene);
       wrist.parent = elbow;
       wrist.position.set(0, -P.foreLen - 0.010, 0.010);
+      // THE HAND IS COCKED BACK AT THE WRIST, and this is a camera decision,
+      // not an anatomy one. The elbow is held at -0.58 to -0.90 rad through the
+      // whole run cycle, so a hand in line with the forearm points its fingers
+      // forward and DOWN — i.e. away from the only camera this game has — and
+      // the first fixed version still photographed as a palm with four short
+      // stubs under it, because the fingers were foreshortened to a third of
+      // their length. 0.34 rad of wrist counter-rotation swings the tips back
+      // towards the lens without making the arm look broken from the side.
+      wrist.rotation.x = 0.34;
       this._buildGlove(wrist, s, mat, scene);
 
       this.parts.arms.push(pivot);
@@ -1085,47 +1216,106 @@ export default class Character {
     // polRhodium only works on masses big enough to catch the portrait rig —
     // the gloves and the boots.
 
-    // palm — a rounded slab, wider than deep
-    g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
+    // WHY THIS HAND WAS ONE SMOOTH EGG FOR SEVERAL ROUNDS, and how to not do it
+    // again. The owner played the build and said "we lost the hands with
+    // fingers along the way, they seem to be like the boots, some kind of shape
+    // with rounded edges". The fingers had never been lost. They were built,
+    // placed, lit and BRIGHT — luminance sampled across the glove ran 150-226
+    // of 255, among the brightest things in frame. Two hypotheses were chased
+    // and both are wrong, so do not chase them a third time:
+    //   * NOT lighting. See the luminance above.
+    //   * NOT normal averaging across the merge. Geo.add gives every part its
+    //     own vertex range and only offsets indices, so ComputeNormals cannot
+    //     average across parts. Splitting the fingers out changes nothing.
+    // It was arithmetic, in two places, and both are now spelled out below.
+    // The pose that shows it is `char-hand` in tools/capture.mjs — the hands
+    // are 40 px in every other shot, which is exactly why this survived.
+
+    // THE PALM WAS EATING THE FINGERS. It ran from +R*0.42 down to -R*1.74
+    // while the longest fingertip only reached -R*2.15, so 44 mm of an 85 mm
+    // finger was ever outside the palm and the knuckle tori at -R*1.34 were
+    // entirely inside it — five rings a hand rendering nothing. The palm is
+    // now 55% of the hand and the fingers are the other 45%, which is what
+    // docs/reference-rear.png shows: a paw whose lower half is lobes.
+    g.at(0, -R * 0.42, 0.004, 0, 0, 0, 1.10, 0.66, 0.64);
     g.add(ellipsoid({ rx: R, e1: 0.72, e2: 0.66, su: this.sd + 6, sv: this.sd + 2 }));
 
-    const fl = R * 0.72;
+    // THE SUBTRACTION THAT WELDED THEM TOGETHER. Finger radius was R*0.265 —
+    // 57.2 mm across — laid on a 4-finger span of R*1.06, which is a 38.2 mm
+    // centre pitch. GAP = MINUS 19.1 mm. Every finger interpenetrated its
+    // neighbour by a third of its own diameter, so four fingers were one welded
+    // slab with four faint ripples down it.
+    //   radius R*0.225 -> 48.6 mm across
+    //   span   R*1.62  -> 58.3 mm pitch
+    //   gap    +9.7 mm at the knuckle, ~33 mm at the tips once splay opens them
+    // DO THAT SUBTRACTION before touching either number.
+    //
+    // AND THEN CHECK THE ASPECT RATIO, because "separated" is not the same as
+    // "right". At R*0.200 on a span of R*1.50 with fl = R*1.45 the fingers came
+    // out 3.5 times longer than wide and the paw read as a human hand in a
+    // glove. Crop docs/reference-rear.png to a paw and measure: the visible
+    // lobes are about 1.5 times longer than wide. Fatter and shorter, with the
+    // span opened to keep the gap, is what makes it a bear's mitten.
+    const SPAN = R * 1.62;
+    const FR = R * 0.225;
+    const fl = R * 1.34;
     for (let i = 0; i < 4; i++) {
       const t = i / 3;
-      const fx = (t - 0.5) * R * 1.06;
-      const len = fl * (0.80 + 0.30 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.26;
-      const curl = 0.46;
+      const fx = (t - 0.5) * SPAN;
+      const len = fl * (0.86 + 0.20 * Math.sin(Math.PI * (0.25 + t * 0.6)));
+      // SPLAY GROUPS THEM, IT DOES NOT FAN THEM. At 0.24 the tips ended 33 mm
+      // apart and the straight-on rear elevation read as a fork. The reference
+      // paw's lobes stay a bundle and only their TIPS part; 0.18 keeps ~27 mm
+      // at the tips, which is still four times the knuckle gap.
+      const splay = (t - 0.5) * 0.18;
+      // CURL POINTS THE TIPS AT +z, AND +z IS AWAY FROM THE ONLY CAMERA THIS
+      // GAME HAS. At 0.46 the tips swung 21 mm behind the palm and hid inside
+      // its own silhouette from directly behind. 0.18 keeps the paw's forward
+      // curl and leaves the tips somewhere they can be seen.
+      const curl = 0.18;
+      const rTip = FR * 0.80;
+      const shaft = len - rTip;
       const rings = [];
-      const n = 5;
-      for (let k = 0; k <= n; k++) {
-        const f = k / n;
-        const ang = curl * f * f;
-        rings.push([
-          0,
-          -len * f,
-          Math.sin(ang) * len * 0.55,
-          R * 0.265 * (1 - 0.20 * f),
-          R * 0.265 * (1 - 0.20 * f),
-        ]);
+      const ring = (a, r) => {
+        const f = a / len;
+        rings.push([0, -a, Math.sin(curl * f * f) * len * 0.55, r, r]);
+      };
+      const nS = 5, nC = 3;
+      for (let k = 0; k <= nS; k++) ring(shaft * (k / nS), FR + (rTip - FR) * (k / nS));
+      // HEMISPHERICAL TIPS. A linear taper into tube()'s flat end cap leaves a
+      // 35 mm disc across the end of every finger, and four discs pointed down
+      // the camera's axis read as four CLAWS. The last three rings are a
+      // hemisphere of the tip radius, so each finger ends in a dome instead.
+      for (let k = 1; k <= nC; k++) {
+        const c = (k / nC) * (Math.PI / 2);
+        ring(shaft + rTip * Math.sin(c), Math.max(rTip * 0.10, rTip * Math.cos(c)));
       }
-      g.at(fx * s, -R * 1.36, 0.012, 0, 0, splay * s);
+      // Rooted at -R*0.58, which is 19 mm INSIDE the palm shell even at the
+      // outer finger's outboard EDGE (x = 0.112, where the shell is only at
+      // -0.082, not at the -0.117 the centre line would suggest) — the roots
+      // have to be buried THERE or the base cap's rim shows as a step. The knuckle tori that used to sit at
+      // -R*1.34 are deleted: they were inside the old palm and rendered nothing.
+      g.at(fx * s, -R * 0.58, 0.010, 0, 0, splay * s);
       g.add(tube(rings, this.sd, true, true, 1, 3));
-      if (!this.lowQ) {
-        g.at(fx * s, -R * 1.34, 0.014, Math.PI / 2, 0, splay * s);
-        g.add(torus(R * 0.21, 0.013, this.sd, 5, null, 0.8));
-      }
     }
 
-    // thumb — shorter, thicker, swung out and forward
+    // THUMB — A LOBE, NOT A SPUR. Swung 1.05 rad off a base at R*0.76 it threw
+    // a tapered stick 29 mm clear of the palm's outline, and in the hand
+    // capture it read as a horn growing out of the wrist. Shorter, thicker,
+    // rooted further in and swung less: it now breaks the palm's outline by
+    // about 9 mm, which is a thumb on a mitten.
     const trings = [];
-    const tn = 4, tl = R * 0.76;
-    for (let k = 0; k <= tn; k++) {
-      const f = k / tn;
-      trings.push([0, -tl * f, Math.sin(0.5 * f * f) * tl * 0.5,
-        R * 0.27 * (1 - 0.24 * f), R * 0.27 * (1 - 0.24 * f)]);
+    const tl = R * 0.60, tR = R * 0.30, tTip = tR * 0.78, tShaft = tl - tTip;
+    const tring = (a, r) => {
+      const f = a / tl;
+      trings.push([0, -a, Math.sin(0.5 * f * f) * tl * 0.5, r, r]);
+    };
+    for (let k = 0; k <= 3; k++) tring(tShaft * (k / 3), tR + (tTip - tR) * (k / 3));
+    for (let k = 1; k <= 3; k++) {
+      const c = (k / 3) * (Math.PI / 2);
+      tring(tShaft + tTip * Math.sin(c), Math.max(tTip * 0.10, tTip * Math.cos(c)));
     }
-    g.at(s * R * 0.76, -R * 0.88, 0.030, -0.30, 0, s * 1.05);
+    g.at(s * R * 0.46, -R * 0.72, 0.026, -0.26, 0, s * 0.70);
     g.add(tube(trings, this.sd, true, true, 1, 3));
 
     g.toMesh(`glove${s}`, scene, this._rhodMat(mat), wrist);
