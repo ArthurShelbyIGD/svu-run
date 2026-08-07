@@ -735,6 +735,40 @@ try {
     moveOnly.stillDown === true && moveOnly.target === 0,
     `queued ${moveOnly.queuedNow} intent(s) with the finger still down, lane -> ${moveOnly.target}`);
 
+  // ---- how many RENDERED FRAMES from the touch event to the state change --
+  //
+  // The only latency number this harness is entitled to quote. Wall-clock
+  // timings here are software-rendered and meaningless; a count of presented
+  // frames is not, and it is the same count on a real device. Driven by the
+  // real render loop rather than loop.advance(), so it measures the actual
+  // event -> fixedUpdate -> state path.
+  const latency = await m.page.evaluate(() => new Promise((resolve) => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    S.ctx.restart();
+    S.ctx.get('coll').enabled = false;
+    play._touchId = null;
+    play._qLen = 0;
+    const inTurn = play.inTurnZone;
+    const f0 = S.loop.frameCount;
+    const was = play.laneTarget;
+    window.__mkTouch('touchstart', 300, 500);
+    window.__mkTouch('touchmove', 258, 500);
+    const poll = () => {
+      if (play.laneTarget !== was) {
+        resolve({ frames: S.loop.frameCount - f0, inTurn, ok: true });
+        return;
+      }
+      if (S.loop.frameCount - f0 > 20) { resolve({ frames: -1, inTurn, ok: false }); return; }
+      requestAnimationFrame(poll);
+    };
+    requestAnimationFrame(poll);
+  }));
+  check('a swipe reaches the simulation within a frame or two of the event',
+    latency.ok && latency.inTurn === false && latency.frames <= 3,
+    `${latency.frames} rendered frames from touchmove to lane change ` +
+    `(no touchend; frame COUNT is portable, frame TIME here is not)`);
+
   // ---- two swipes in one gesture, both land ----
   //
   // "I can't change lanes quickly." The origin re-arms where the first swipe
