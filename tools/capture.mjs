@@ -369,6 +369,65 @@ const POSES = [
     settle: 0.2,
     note: 'the shield cage in portrait',
   },
+  // ---- the powerup HUD -------------------------------------------------
+  //
+  // All three chips at once is not the common case, it is the WORST case: the
+  // only state in which the stack is as tall as it can get, and the only one
+  // that can crowd anything. The two clocks are deliberately put at very
+  // different fills — a shot in which both bars happen to be full says nothing
+  // about whether a bar drains.
+  {
+    name: 'phone-hud-pw',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const pw = window.SVU.ctx.get('play').pw;
+      pw.grant(0);
+      pw.grant(1);
+      pw.grant(2);
+      pw._magnetT = 1.6;    // late in a 7.0s clock — bar nearly run out
+      pw._glideT = 6.8;     // early in a 9.0s clock — bar nearly full
+    },
+    settle: 0.2,
+    note: 'all three powerup chips in portrait — the worst case for the HUD stack',
+  },
+  {
+    name: 'hud-pw',
+    viewport: 'desktop',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const pw = window.SVU.ctx.get('play').pw;
+      pw.grant(0);
+      pw.grant(1);
+      pw.grant(2);
+      pw._magnetT = 1.6;
+      pw._glideT = 6.8;
+    },
+    settle: 0.2,
+    note: 'all three powerup chips on a laptop',
+  },
+  {
+    // The shield is spent for REAL here — grant, then absorb — so what is
+    // photographed is the poll path that runs in play, not a special case that
+    // exists only for the camera. previewSpend() only holds it open.
+    name: 'phone-pw-spend',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const S = window.SVU;
+      const pw = S.ctx.get('play').pw;
+      pw.grant(2);
+      pw._glideT = 6.8;
+      pw.grant(1);
+      pw.absorb();
+      S.ctx.get('ui').previewSpend();
+    },
+    settle: 0.2,
+    note: 'the instant the shield is spent, held open — gold flash and ABSORBED',
+  },
   {
     name: 'gameover',
     viewport: 'phone',
