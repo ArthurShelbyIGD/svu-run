@@ -61,7 +61,21 @@ export const TUNE = {
   slideTime: 0.7,          // seconds
   slideHeight: 0.75,       // collision height while sliding
   coyoteTime: 0.09,        // grace period to still jump after leaving ground
-  inputBuffer: 0.14,       // how early an input still counts
+  // How early an input still counts. THREE numbers, because one was wrong.
+  //
+  // A flat 0.14s is about eight rendered frames on a fast phone and two on a
+  // slow one, so the device that needs the most forgiveness was given the
+  // least — which is most of what "slide and jump are very hit and miss" was.
+  // play/ takes the LARGER of the fixed floor and `inputBufferFrames` frames of
+  // the device's measured frame time, capped at `inputBufferMax`.
+  //
+  // At 60fps the floor wins and nothing changes (4 frames = 0.067s). At 15fps
+  // the window roughly doubles to 0.27s. The cap exists because a window much
+  // longer than that stops reading as forgiveness and starts reading as the
+  // game doing things by itself.
+  inputBuffer: 0.14,       // seconds — floor
+  inputBufferFrames: 4,    // rendered frames — the scaling term
+  inputBufferMax: 0.30,    // seconds — ceiling
 
   // --- junction turns ---
   // Within this distance of a corner, left/right means TURN, not lane change.
@@ -125,6 +139,43 @@ export const TUNE = {
  * binding constraint on the whole project.
  */
 export const QUALITY = {
+  /**
+   * Below 'low'. For the phones that 'low' was still too much for — the owner
+   * plays on a Ulefone Armor X12 (Helio A22, four A53s, PowerVR GE8320, 3GB)
+   * and reported the game as rough there with 'low' forced.
+   *
+   * WHAT THIS TIER TRADES, AND WHY THAT IS ALLOWED.
+   * Half render scale is a 4x cut in every per-pixel cost in the frame, which
+   * is where a GE8320 dies, and bloom is a full-screen downsample-blur-upsample
+   * chain — the single most expensive thing left once shadows and AO are gone.
+   * Both cost image quality and nothing else. The owner has said explicitly
+   * that he wants responsive over crisp, so this tier takes him at his word.
+   *
+   * `name` IS THE DETAIL TIER, NOT THE KEY. Every subsystem outside core/
+   * asks `config.q.name === 'low'` to decide whether to build the cheap
+   * version of a prop, a mesh or an effect — there are about twenty such
+   * tests in track/, world/, mat/, char/ and fx/, none of them mine to edit.
+   * Reporting 'low' here makes every one of them take the cheap branch, which
+   * is exactly what this tier wants. The identity of the preset lives in
+   * `config.presetName`, which is what post/ and the HUD read.
+   */
+  potato: {
+    name: 'low',
+    scale: 0.5,
+    shadows: false,
+    shadowMapSize: 0,
+    bloom: false,           // a full-screen pass; the biggest thing left
+    bloomScale: 0,
+    ssao: false,
+    fxaa: false,            // measured at 44ms/frame on the phone viewport
+    envSize: 32,
+    maxParticles: 40,
+    maxDecals: 0,
+    propDensity: 0.3,
+    glint: false,
+    reflectionFloor: false,
+    anisotropy: 1,
+  },
   low: {
     name: 'low',
     scale: 0.75,            // render scale multiplier
@@ -180,14 +231,32 @@ export const QUALITY = {
   },
 };
 
-/** Heuristic first guess, refined by the runtime benchmark in main.js. */
+/**
+ * Set by guessPreset() and consumed by the next Config constructed, which is
+ * how a Config knows whether its preset was GUESSED or FORCED.
+ *
+ * main.js does `opts.preset || guessPreset()`, so if the preset was forced
+ * (`?q=low`, or the capture harness) guessPreset is never called and this stays
+ * null. A forced preset is an instruction and the runtime governor leaves it
+ * alone; a guessed one is an opening bid the governor is free to revise.
+ */
+let _guess = null;
+
+/** Heuristic first guess, refined by the runtime governor in core/quality.js. */
 export function guessPreset() {
   const ua = navigator.userAgent || '';
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
   const cores = navigator.hardwareConcurrency || 4;
   const mem = navigator.deviceMemory || 4;
-  if (mobile) return cores >= 8 && mem >= 6 ? 'medium' : 'low';
-  return cores >= 8 ? 'high' : 'medium';
+  // NOT changed to guess 'potato' for weak hardware, on purpose. The reported
+  // numbers do not separate a Helio A22 from a decent midrange well enough to
+  // risk it (deviceMemory is rounded to a power of two and hardwareConcurrency
+  // says 4 for both a 2016 budget phone and a 2013 flagship), and the governor
+  // now measures the real thing within the first second. Guess conservatively,
+  // measure quickly.
+  _guess = mobile ? (cores >= 8 && mem >= 6 ? 'medium' : 'low')
+    : (cores >= 8 ? 'high' : 'medium');
+  return _guess;
 }
 
 export class Config {
@@ -195,6 +264,12 @@ export class Config {
     this.tune = TUNE;
     this.presetName = presetName;
     this.q = QUALITY[presetName] || QUALITY.medium;
+    /**
+     * True when this preset came from guessPreset() rather than from `?q=`.
+     * The runtime governor only steps down when this is true.
+     */
+    this.autoQuality = _guess !== null && presetName === _guess;
+    _guess = null;
     /** Set true by tools/capture.mjs so runs are deterministic and posed. */
     this.captureMode = false;
     /** Forced seed for reproducible runs. */

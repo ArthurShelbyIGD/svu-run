@@ -29,6 +29,7 @@ import {
   DefaultRenderingPipeline, SSAO2RenderingPipeline, ColorCurves,
 } from './bjs.js';
 import { EV } from './ctx.js';
+import { QUALITY } from './config.js';
 
 /**
  * The look, per quality preset.
@@ -429,6 +430,30 @@ const LOOKS = {
     sharpenEdge: 0.62,
     ssao: null,
   },
+  /**
+   * Below 'low'. Everything that costs a full-screen pass is gone: no bloom,
+   * no FXAA, no sharpen, no AO, one sample. What is left is the tonemap, the
+   * grade and the vignette, which ride along inside the image-processing pass
+   * the frame already pays for and are what stop the picture looking like a
+   * different game.
+   *
+   * Graded a little brighter and flatter still than 'low': this tier renders
+   * at half scale, and a hard grade on a soft image reads as mush.
+   */
+  potato: {
+    exposure: 1.78,
+    contrast: 1.06,
+    vignetteWeight: 2.8,
+    vignetteK: 0.34,
+    bloomThreshold: 0.85,
+    bloomKernel: 16,
+    bloomScale: 0.4,
+    samples: 1,
+    dither: true,
+    sharpen: false,
+    sharpenEdge: 0.62,
+    ssao: null,
+  },
 };
 
 /**
@@ -500,7 +525,10 @@ export class Post {
   init() {
     const scene = this.ctx.scene;
     const q = this.ctx.config.q;
-    const look = LOOKS[q.name] || LOOKS.medium;
+    // By presetName first, then by tier. They differ for 'potato', whose
+    // `q.name` reports the 'low' DETAIL tier so the rest of the project takes
+    // its cheap branches — see QUALITY.potato in core/config.js.
+    const look = LOOKS[this.ctx.config.presetName] || LOOKS[q.name] || LOOKS.medium;
     this._look = look;
 
     // --- ambient occlusion -------------------------------------------------
@@ -718,9 +746,17 @@ export class Post {
   /** Called when the runtime benchmark steps quality down. */
   setPreset(name) {
     const look = LOOKS[name] || LOOKS.medium;
+    const q = QUALITY[name] || this.ctx.config.q;
     this._look = look;
     if (this.pipeline) {
       this.pipeline.samples = look.samples;
+      // Bloom and FXAA are switched, not just retuned. Both are full-screen
+      // passes and the whole point of stepping down is to stop paying for
+      // them; the old version left bloom running whatever the preset said,
+      // which meant the most expensive remaining pass survived every
+      // step-down.
+      this.pipeline.fxaaEnabled = !!q.fxaa;
+      this.pipeline.bloomEnabled = !!q.bloom;
       this.pipeline.bloomThreshold = look.bloomThreshold;
       this.pipeline.bloomKernel = look.bloomKernel;
       this.pipeline.sharpenEnabled = !!look.sharpen;

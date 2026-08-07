@@ -14,6 +14,9 @@ import { EV } from '../core/ctx.js';
 export const INTENT = { NONE: 0, LEFT: 1, RIGHT: 2, JUMP: 3, SLIDE: 4 };
 export const STATE = { RUN: 0, AIR: 1, SLIDE: 2, STUMBLE: 3, DEAD: 4 };
 
+/** Depth of the intent queue. See the comment on `_q` in the constructor. */
+const Q_MAX = 3;
+
 export default class Play {
   constructor(ctx) {
     this.ctx = ctx;
@@ -36,8 +39,17 @@ export default class Play {
     this.alive = true;
 
     // --- input ---
-    this._buffered = INTENT.NONE;
-    this._bufferAge = 0;
+    //
+    // A SMALL QUEUE, NOT A SINGLE SLOT.
+    // This used to be one `_buffered` field, so a second input inside the
+    // buffer window silently overwrote the first: swipe left-then-jump quickly
+    // and the left vanished. Fixed depth, fixed-size typed arrays, no
+    // allocation anywhere on the input path. Depth 3 is enough for any human
+    // burst inside a 0.15-0.30s window; a fourth input drops the OLDEST, which
+    // is the one least likely to still be wanted.
+    this._q = new Uint8Array(Q_MAX);
+    this._qAge = new Float32Array(Q_MAX);
+    this._qLen = 0;
     // junction state
     this.junction = null;    // the corner currently being approached
     this._turnOkAt = -1;     // path distance of the corner the player has earned
@@ -60,6 +72,9 @@ export default class Play {
     // pooled event payloads
     this._pLane = { from: 0, to: 0 };
     this._pLand = { hard: false };
+    // Was two object literals emitted per slide. Small, but it is allocation
+    // on the hot path and the rule is the rule.
+    this._pSlide = { active: false };
   }
 
   init() {
@@ -86,63 +101,188 @@ export default class Play {
     this._handlers.push(() => window.removeEventListener('keydown', onKey));
   }
 
+  /**
+   * Touch and mouse.
+   *
+   * THE SWIPE IS RECOGNISED ON MOVE, NOT ON LIFT. This is the single largest
+   * latency win in the game and it is worth spelling out why.
+   *
+   * The previous version only decided what a gesture meant in `touchend`.
+   * Nothing at all happened until the finger left the glass, so the floor on
+   * input latency was the whole duration of the gesture — 150-250ms of finger
+   * travel — and everything else piled on top of that: the intent buffer, the
+   * wait for the next fixed step, the wait for the next presented frame (up to
+   * 66ms on a 15fps device), Android's own touch sampling, then the
+   * compositor. Measured end to end that is 270-400ms, and it is why the game
+   * was reported as "very laggy" on a low-end phone. Almost none of it was
+   * frame rate.
+   *
+   * Deciding the moment the finger crosses `swipeMinDistance` removes the
+   * whole first term on every device, phone and desktop alike. touchmove was
+   * already bound non-passively to swallow page scrolling, so listening costs
+   * nothing.
+   *
+   * The gesture origin is then RE-ARMED where the swipe was recognised, so a
+   * second swipe can start immediately without the finger coming up. That is
+   * the other half of "I can't change lanes quickly": before, two lane changes
+   * required two complete down-move-up cycles.
+   */
   _bindTouch() {
     const canvas = this.ctx.canvas;
-    const T = this.ctx.config.tune;
 
     const down = (e) => {
       if (this._touchId !== null) return;
       const t = e.changedTouches ? e.changedTouches[0] : e;
       this._touchId = e.changedTouches ? t.identifier : 'mouse';
-      this._touchStart.x = t.clientX;
-      this._touchStart.y = t.clientY;
-      this._touchStart.t = performance.now();
+      this._arm(t.clientX, t.clientY);
+    };
+
+    const move = (e) => {
+      // Unconditional, and before any early-out: this listener is also what
+      // stops the page scrolling and rubber-banding under the finger.
+      if (e.cancelable) e.preventDefault();
+      if (this._touchId === null) return;
+      const t = this._pickTouch(e);
+      if (t) this._recognise(t.clientX, t.clientY);
     };
 
     const up = (e) => {
       if (this._touchId === null) return;
-      let t = e.changedTouches ? null : e;
-      if (e.changedTouches) {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          if (e.changedTouches[i].identifier === this._touchId) t = e.changedTouches[i];
-        }
-      }
+      const t = this._pickTouch(e);
       if (!t) return;
       this._touchId = null;
-
-      const dx = t.clientX - this._touchStart.x;
-      const dy = t.clientY - this._touchStart.y;
-      const dt = (performance.now() - this._touchStart.t) / 1000;
-      if (dt > T.swipeMaxTime) return;
-
-      const adx = Math.abs(dx), ady = Math.abs(dy);
-      if (Math.max(adx, ady) < T.swipeMinDistance) return;
-
-      if (adx > ady) this.pushIntent(dx > 0 ? INTENT.RIGHT : INTENT.LEFT);
-      else this.pushIntent(dy > 0 ? INTENT.SLIDE : INTENT.JUMP);
+      // A flick fast enough to produce no touchmove at all still has to work,
+      // and so does a mouse drag on desktop. If the move handler already fired
+      // this gesture it re-armed the origin there, so this second look sees a
+      // sub-threshold delta and does nothing — no double fire.
+      this._recognise(t.clientX, t.clientY);
     };
 
-    const prevent = (e) => e.preventDefault();
+    const cancel = () => { this._touchId = null; };
 
-    canvas.addEventListener('touchstart', down, { passive: true });
+    // passive:false on touchstart too — Chrome will not let a non-passive
+    // touchmove cancel scrolling that a passive touchstart already conceded.
+    canvas.addEventListener('touchstart', down, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
     canvas.addEventListener('touchend', up, { passive: true });
-    canvas.addEventListener('touchmove', prevent, { passive: false });
+    canvas.addEventListener('touchcancel', cancel, { passive: true });
     canvas.addEventListener('mousedown', down);
+    canvas.addEventListener('mousemove', move);
     canvas.addEventListener('mouseup', up);
     this._handlers.push(() => {
       canvas.removeEventListener('touchstart', down);
+      canvas.removeEventListener('touchmove', move);
       canvas.removeEventListener('touchend', up);
-      canvas.removeEventListener('touchmove', prevent);
+      canvas.removeEventListener('touchcancel', cancel);
       canvas.removeEventListener('mousedown', down);
+      canvas.removeEventListener('mousemove', move);
       canvas.removeEventListener('mouseup', up);
     });
   }
 
+  /** The touch this gesture is tracking, or null. Allocation-free. */
+  _pickTouch(e) {
+    if (!e.changedTouches) return this._touchId === 'mouse' ? e : null;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === this._touchId) return e.changedTouches[i];
+    }
+    return null;
+  }
+
+  _arm(x, y) {
+    this._touchStart.x = x;
+    this._touchStart.y = y;
+    this._touchStart.t = performance.now();
+  }
+
+  /**
+   * Test the live gesture against the swipe threshold and fire if it crosses.
+   * Returns true if an intent was produced. Called from both touchmove and
+   * touchend, and safe to call as often as the browser delivers events.
+   */
+  _recognise(x, y) {
+    const T = this.ctx.config.tune;
+    const g = this._touchStart;
+    const now = performance.now();
+
+    // A ROLLING window rather than a hard reject. If the finger has been down
+    // longer than swipeMaxTime the gesture is not a swipe *yet* — re-arm where
+    // it currently sits so a rest-then-flick still reads as a flick. The old
+    // code discarded the whole gesture instead, which meant a finger resting
+    // on the screen was input-dead until it lifted.
+    if ((now - g.t) / 1000 > T.swipeMaxTime) {
+      g.x = x; g.y = y; g.t = now;
+      return false;
+    }
+
+    const dx = x - g.x, dy = y - g.y;
+    const adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+    if (adx < T.swipeMinDistance && ady < T.swipeMinDistance) return false;
+
+    if (adx > ady) this.pushIntent(dx > 0 ? INTENT.RIGHT : INTENT.LEFT);
+    else this.pushIntent(dy > 0 ? INTENT.SLIDE : INTENT.JUMP);
+
+    // Re-arm at the point of recognition: the next swipe starts here, now.
+    g.x = x; g.y = y; g.t = now;
+    return true;
+  }
+
   /** Queue an intent. Buffered briefly so slightly-early inputs still land. */
   pushIntent(intent) {
-    this._buffered = intent;
-    this._bufferAge = 0;
+    if (!intent) return;
+    if (this._qLen === Q_MAX) {
+      // Full. Drop the oldest — three unserved inputs inside one buffer window
+      // means the player is ahead of the game, and the stalest is the least
+      // likely to still be wanted.
+      for (let i = 1; i < Q_MAX; i++) {
+        this._q[i - 1] = this._q[i];
+        this._qAge[i - 1] = this._qAge[i];
+      }
+      this._qLen--;
+    }
+    this._q[this._qLen] = intent;
+    this._qAge[this._qLen] = 0;
+    this._qLen++;
   }
+
+  /** Drop queue entry `i`, keeping the rest in order. Allocation-free. */
+  _dropIntent(i) {
+    for (let k = i + 1; k < this._qLen; k++) {
+      this._q[k - 1] = this._q[k];
+      this._qAge[k - 1] = this._qAge[k];
+    }
+    this._qLen--;
+  }
+
+  /**
+   * How long an unserved intent survives, in seconds of game time.
+   *
+   * `tune.inputBuffer` alone is a fixed 0.14s, which is about eight rendered
+   * frames on a fast phone and TWO on a slow one — so the device that needs
+   * the most forgiveness got the least. The window is now also expressed in
+   * FRAMES of the device's measured frame time, and the larger of the two
+   * wins. On a 60fps device this changes nothing (4 frames = 0.067s, under the
+   * 0.14 floor); on a 15fps device it roughly doubles, which is most of "slide
+   * and jump are hit and miss".
+   *
+   * Capped, because an arbitrarily long window turns a late input into a
+   * mysterious one — and because the software renderer in the test harness
+   * would otherwise buffer for over a second.
+   *
+   * Pinned to the base value in capture mode so posed screenshots stay
+   * bit-identical regardless of how slowly the harness renders.
+   */
+  get bufferWindow() {
+    const T = this.ctx.config.tune;
+    if (this.ctx.config.captureMode) return T.inputBuffer;
+    const loop = this.ctx.loop;
+    const f = loop && loop.avgFrameSec > 0 ? loop.avgFrameSec : 1 / 60;
+    const scaled = T.inputBufferFrames * f;
+    return Math.min(T.inputBufferMax, scaled > T.inputBuffer ? scaled : T.inputBuffer);
+  }
+
+  /** Head of the intent queue, for tools and tests. INTENT.NONE when empty. */
+  get buffered() { return this._qLen > 0 ? this._q[0] : INTENT.NONE; }
 
   // ---- simulation ------------------------------------------------------
 
@@ -151,8 +291,12 @@ export default class Play {
     const T = this.ctx.config.tune;
 
     this.stateTime += dt;
-    this._bufferAge += dt;
-    if (this._bufferAge > T.inputBuffer) this._buffered = INTENT.NONE;
+    const win = this.bufferWindow;
+    for (let i = 0; i < this._qLen;) {
+      this._qAge[i] += dt;
+      if (this._qAge[i] > win) this._dropIntent(i);
+      else i++;
+    }
 
     // speed ramp
     const ramp = Math.min(1, this.ctx.time / T.speedRampTime);
@@ -245,10 +389,29 @@ export default class Play {
     this.junction = null;
   }
 
+  /**
+   * Serve at most one intent per simulation step.
+   *
+   * Walks the queue rather than looking only at the head, so an intent that
+   * cannot be served yet — a jump while airborne, say — does not block the
+   * lane change queued behind it. The blocked one stays queued until it
+   * becomes servable or ages out; that IS the input buffer, and it is the
+   * reason a jump pressed a few frames before landing still fires.
+   *
+   * One per step, not one per frame: at 15fps the loop runs four fixed steps
+   * per frame, so a two-swipe burst still drains inside a single frame.
+   */
   _consumeIntent(T) {
-    const i = this._buffered;
-    if (i === INTENT.NONE) return;
+    for (let i = 0; i < this._qLen; i++) {
+      if (this._serveIntent(this._q[i], T)) {
+        this._dropIntent(i);
+        return;
+      }
+    }
+  }
 
+  /** Attempt one intent. Returns true if it was acted on (or discarded). */
+  _serveIntent(i, T) {
     if (i === INTENT.LEFT || i === INTENT.RIGHT) {
       const dir = i === INTENT.LEFT ? -1 : 1;
 
@@ -264,8 +427,7 @@ export default class Play {
         }
         // A wrong-way input is ignored rather than fatal, so the player can
         // correct. Failing to turn at all is what kills.
-        this._buffered = INTENT.NONE;
-        return;
+        return true;
       }
 
       const next = this.laneTarget + dir;
@@ -276,34 +438,37 @@ export default class Play {
         this.laneT = 0;
         this.ctx.emit(EV.PLAYER_LANE, this._pLane);
       }
-      this._buffered = INTENT.NONE;
-      return;
+      // Consumed either way. Re-queueing a left at the leftmost lane would
+      // fire it the instant the player moved right again, which is a lane
+      // change nobody asked for.
+      return true;
     }
 
     if (i === INTENT.JUMP) {
       const canJump = this.state === STATE.RUN ||
         this.state === STATE.SLIDE ||
         (this.state === STATE.AIR && this.groundedTime < T.coyoteTime);
-      if (canJump) {
-        // v chosen so the apex is exactly jumpHeight
-        const g = (8 * T.jumpHeight) / (T.jumpTime * T.jumpTime);
-        this.vy = Math.sqrt(2 * g * T.jumpHeight);
-        this._setState(STATE.AIR);
-        this.ctx.emit(EV.PLAYER_JUMP, null);
-        this._buffered = INTENT.NONE;
-      }
-      return;
+      if (!canJump) return false;   // stays queued — this is the jump buffer
+      // v chosen so the apex is exactly jumpHeight
+      const g = (8 * T.jumpHeight) / (T.jumpTime * T.jumpTime);
+      this.vy = Math.sqrt(2 * g * T.jumpHeight);
+      this._setState(STATE.AIR);
+      this.ctx.emit(EV.PLAYER_JUMP, null);
+      return true;
     }
 
     if (i === INTENT.SLIDE) {
       if (this.state === STATE.RUN) {
         this._setState(STATE.SLIDE);
-        this.ctx.emit(EV.PLAYER_SLIDE, { active: true });
+        this._pSlide.active = true;
+        this.ctx.emit(EV.PLAYER_SLIDE, this._pSlide);
       } else if (this.state === STATE.AIR) {
         this.vy = Math.min(this.vy, -12); // fast-fall into a slide
       }
-      this._buffered = INTENT.NONE;
+      return true;
     }
+
+    return true;
   }
 
   _advanceLane(dt, T) {
@@ -339,7 +504,8 @@ export default class Play {
       this.groundedTime = 0;
       if (this.state === STATE.SLIDE && this.stateTime >= T.slideTime) {
         this._setState(STATE.RUN);
-        this.ctx.emit(EV.PLAYER_SLIDE, { active: false });
+        this._pSlide.active = false;
+        this.ctx.emit(EV.PLAYER_SLIDE, this._pSlide);
       }
     }
   }
@@ -376,8 +542,8 @@ export default class Play {
     this.stateTime = 0;
     this.groundedTime = 0;
     this.alive = true;
-    this._buffered = INTENT.NONE;
-    this._bufferAge = 0;
+    this._qLen = 0;
+    this._touchId = null;
     this.junction = null;
     this._turnOkAt = -1;
     this.turnsMade = 0;

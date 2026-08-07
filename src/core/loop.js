@@ -5,6 +5,8 @@
 // happens once per animation frame with an interpolation alpha available for
 // smoothing visual positions between simulation steps.
 
+import { QualityGovernor } from './quality.js';
+
 const STEP = 1 / 60;
 const MAX_STEPS_PER_FRAME = 5; // spiral-of-death guard
 
@@ -23,6 +25,22 @@ export class Loop {
     this.frameMs = new Float32Array(120);
     this._frameIdx = 0;
     this.frameCount = 0;
+    /**
+     * Smoothed frame time in SECONDS. An EMA rather than a median because it
+     * is read from the simulation every step and `medianFrameMs()` sorts a
+     * copy of the ring — fine once per benchmark, not fine at 60Hz.
+     * play/ scales the input buffer off this. Seeded at 60fps.
+     */
+    this.avgFrameSec = 1 / 60;
+    /** How many times the step budget was blown. Diagnostic only. */
+    this.backlogDrops = 0;
+
+    /**
+     * Steps quality DOWN on a struggling device. Driven from tick() off real
+     * frames rather than from a wall-clock timer, so its first verdict lands
+     * within the first half-second instead of at 2.5s. See core/quality.js.
+     */
+    this.quality = new QualityGovernor(ctx);
 
     this._fixed = [];  // modules with fixedUpdate(dt)
     this._render = []; // modules with renderUpdate(dtReal, alpha)
@@ -73,6 +91,8 @@ export class Loop {
     this.frameMs[this._frameIdx] = deltaMs;
     this._frameIdx = (this._frameIdx + 1) % this.frameMs.length;
     this.frameCount++;
+    this.avgFrameSec += (deltaMs / 1000 - this.avgFrameSec) * 0.1;
+    this.quality.frame(deltaMs);
 
     if (!this.paused) {
       this.accumulator += deltaMs / 1000;
@@ -88,7 +108,18 @@ export class Loop {
       }
 
       // If we blew the step budget, drop the backlog rather than compounding.
-      if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0;
+      //
+      // This is the spiral guard and it is load-bearing on a slow device. A
+      // 66ms frame owes four fixed steps; if a frame ever costs more than five
+      // steps' worth of simulation, running the arrears would make the next
+      // frame later still, which makes the arrears bigger. Dropping the
+      // backlog trades a small, invisible slip in simulated time for a loop
+      // that cannot run away. The counter is here so a real-device profile can
+      // say whether it is happening at all rather than guessing.
+      if (steps === MAX_STEPS_PER_FRAME) {
+        this.accumulator = 0;
+        this.backlogDrops++;
+      }
 
       this.alpha = this.accumulator / STEP;
     }
