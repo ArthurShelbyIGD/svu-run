@@ -409,7 +409,7 @@ export default class Ui {
 
 .svu-hint {
   margin-top: 30px;
-  font-size: clamp(8px, 2.2vw, 10.5px);
+  font-size: clamp(7.8px, 2.0vw, 10.5px);
   letter-spacing: .18em;
   text-indent: .18em;
   color: rgba(242,236,225,.40);
@@ -434,7 +434,13 @@ export default class Ui {
 }
 .svu-quiet:hover { color: rgba(242,236,225,.78); }
 
-.svu-quiet-row { display: flex; gap: 4px; }
+.svu-quiet-row { display: flex; gap: 4px; align-items: center; }
+.svu-quiet-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 12px 0;
+  background: linear-gradient(180deg, rgba(216,169,63,0) 0%, rgba(216,169,63,.40) 50%, rgba(216,169,63,0) 100%);
+}
 
 #svu-ui.svu-nofade .svu-panel,
 #svu-ui.svu-nofade .svu-hud,
@@ -494,6 +500,7 @@ export default class Ui {
   <button class="svu-cta" id="svuResume" type="button">RESUME</button>
   <div class="svu-quiet-row">
     <button class="svu-quiet" id="svuPauseMute" type="button">SOUND ON</button>
+    <span class="svu-quiet-sep"></span>
     <button class="svu-quiet" id="svuPauseEnd" type="button">START AGAIN</button>
   </div>
 </div>
