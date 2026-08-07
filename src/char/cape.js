@@ -21,6 +21,24 @@
 //     just above the boots. It does not wrap over the body and it is not a
 //     billowing flag.
 //
+// MEASURED, NOT YET ACTED ON — the skirt flares harder than the reference's.
+// Both figures rescaled to 573 px ear-top-to-sole, half-widths from the centre
+// line, off the char-back capture and docs/reference-rear.png:
+//
+//                          reference   ours
+//   top, just under the bib   108 px     77 px
+//   hem, widest               179 px    194 px
+//   ratio, top -> hem          1.66      2.52
+//
+// So the reference is closer to a fluted BARREL with a scalloped hem, and ours
+// is a bell: pinched too narrow where the yoke pins it, 8% too wide at the hem.
+// Fixing it means the collar row's radius and the cone's opening rate together,
+// with a capture in hand and not from these two numbers alone. (Measured in r13
+// while re-proportioning the arms; left alone because it is a separate
+// silhouette change. It is now the largest remaining geometric difference from
+// the reference — the rest of the gap is the MATERIAL, which is satin where the
+// reference is mirror, and that is an src/mat/ cubemap job, not this file's.)
+//
 // HOW THIS IS BUILT, AND WHY IT IS NOT A CLOTH SIM
 //
 // A cloth sim cannot hold this silhouette. Distance constraints plus gravity

@@ -118,6 +118,32 @@ const POSES = [
     note: 'ONE hand, filling the frame — the only pose in which fingers are gradeable',
   },
   {
+    // THE SHOULDER, WHICH IS WHERE THREE ROUNDS HAVE GONE. "Two smooth blobs",
+    // then "two pavé lumps flanking the head", then a bib argued to be too
+    // narrow when it was half again too wide — every one of those verdicts was
+    // reached from a frame in which the whole shoulder was 60 px across. The
+    // question this pose exists to answer is a junction, not a mass: does the
+    // sleeve's top go UNDER the yoke's corner, or stand outboard and above it?
+    //
+    // MEASURED, NOT GUESSED, from the same instant it freezes (t = 4 s,
+    // seed = 1, player-relative world coordinates):
+    //     armPivot1  (0.282, 1.113, 0.122)
+    //     wrist1     (0.579, 0.817, 0.223)
+    //     yokeEdge    x .. 0.390,  y 1.048 .. 1.226
+    //     upperStones x 0.110 .. 0.532,  y 0.847 .. 1.306
+    // so the junction sits near (0.36, 1.15, 0.05) and the arm runs 0.70 m
+    // down-and-out from it. Camera 1.30 m back, 0.24 m up and 0.22 m outboard,
+    // which is the chase camera's own 19-degree pitch carried in close, so
+    // what this shows is what a player would see if they could lean in.
+    // If shoulderX, shoulderY or the yoke's ax/dip move, RE-MEASURE: dump
+    // those four bounding boxes after a 4-second fastForward and re-derive.
+    name: 'char-shoulder',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0.58, 1.39, -1.28, 0.36, 1.15, 0.05],
+    note: 'the sleeve-into-yoke junction, close — is the shoulder UNDER the collar?',
+  },
+  {
     name: 'jump',
     viewport: 'desktop',
     time: 5,
