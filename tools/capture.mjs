@@ -92,6 +92,145 @@ const POSES = [
     note: 'straight-on rear elevation — the direct A/B against docs/reference-rear.png',
   },
   {
+    // `char-back` WITH THE BOOT SPLASH KILLED, and that is the whole difference.
+    //
+    // char-back has no `framing` and no `setup`, so it is one of the FASTEST
+    // poses in this file: ready -> fastForward -> pose -> grab. shell/template
+    // removes #boot on a chain of wall-clock timers (60 ms poll, then a hold to
+    // t0+500 ms, then a 500 ms opacity transition, then a 600 ms removal), and
+    // this pose reaches the screenshot before any of that has run. Captured on
+    // 2026-08-07 it came back as the LOADING SPLASH, whole: a 17 KB cream PNG
+    // with "SVU RUN" in the middle. The dangerous version is not that one — a
+    // pure splash is obvious. It is the HALF-FADED one, a cream wash at 40%
+    // over a real frame, which grades as "the lighting is milky and wrong" and
+    // has cost this project at least one round of chasing a lighting bug that
+    // was a screenshot bug.
+    //
+    // The poses that survive are the ones that happen to run something slow
+    // first: hero, phone and lineup all seek with `framing`, which burns enough
+    // wall clock for the timers to fire. That is luck, not design.
+    //
+    // Sanity check on any frame from this file: a real 1600x900 frame of this
+    // scene is 1.5-2.8 MB of PNG. Anything under ~100 KB is the splash.
+    name: 'env-back',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0, 1.30, -3.85, 0, 1.02, 0],
+    setup: () => { const b = document.getElementById('boot'); if (b) b.remove(); },
+    settle: 0.2,
+    note: 'char-back, splash-proofed — the cape/environment A/B shot',
+  },
+  {
+    // THE CAPE, FLOOD-FILLED MAGENTA, from exactly the `env-back` camera.
+    //
+    // The cape's p95/p50 contrast ratio is the number the environment work is
+    // graded on, and it is meaningless if the sample window includes pavé,
+    // boots, gold trim or floor. A hand-drawn rectangle inside the skirt cannot
+    // avoid all four at once — the skirt is a bell with a scalloped hem and the
+    // sleeves overlap its top corners.
+    //
+    // So: same camera, same frozen instant, one mesh flooded with emissive
+    // green. Nothing is hidden and no mesh is disabled, because char/ and
+    // track/ both re-enable meshes in renderUpdate and the settle step after
+    // `setup` would undo it.
+    //
+    // NOT `renderOverlay`. That was the first attempt and it drew nothing: the
+    // overlay is implemented by Babylon's OutlineRenderer, which is a
+    // side-effect import this bundle tree-shakes away. The frame came back with
+    // 39 matching pixels, all of them the ruby. Driving the PBR material's own
+    // emissive works because it is the shader that is already compiled.
+    //
+    // Green, not magenta: it is the channel tone mapping preserves best, and
+    // nothing else in this scene is green (the ruby is, unhelpfully, magenta).
+    // Threshold the result for green and you have an exact per-pixel mask,
+    // which src/mat/cape.py caches as shots/base/cape-mask.png and then applies
+    // to every later env-back frame.
+    //
+    // The mask only needs shooting again if the CAPE GEOMETRY or the camera
+    // moves. Lighting changes do not move a single masked pixel, which is the
+    // whole reason this is a static mask and not a per-run pass.
+    name: 'env-back-mask',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0, 1.30, -3.85, 0, 1.02, 0],
+    setup: () => {
+      const b = document.getElementById('boot'); if (b) b.remove();
+      const c = window.SVU.scene.getMeshByName('cape');
+      if (c && c.material) {
+        const m = c.material;
+        // src/mat/ calls material.freeze() on everything, and a frozen PBR
+        // material ignores every property write — the second failed attempt at
+        // this mask was a frame identical to env-back, because the emissive was
+        // set and silently discarded.
+        if (m.unfreeze) m.unfreeze();
+        // `unlit`, not emissive-plus-zeroed-everything. The third attempt set
+        // emissive green with environmentIntensity 0, metallic 0, roughness 1
+        // and got a mask that was 9854 speckled pixels instead of a solid
+        // skirt: q_capeMirror carries a CLEAR COAT, and the coat's reflection
+        // has its own intensity that none of those properties touch. It painted
+        // the whole cape white and the green only showed through where the coat
+        // happened to be dark. `unlit` bypasses the entire lighting path and
+        // returns albedo, flat.
+        m.unlit = true;
+        if (m.albedoColor) m.albedoColor.set(0, 1, 0);
+        if (m.emissiveColor) m.emissiveColor.set(0, 0, 0);
+      }
+    },
+    settle: 0.2,
+    note: 'cape mask — emissive-green flood on mesh `cape`, same camera as env-back',
+  },
+  {
+    // THE CAPE WITH THE CUBEMAP SWITCHED OFF. Diagnostic, not a grading shot.
+    //
+    // "The cape is satin because the room has nothing worth reflecting" is a
+    // claim about how much of the cape's brightness comes from the ENVIRONMENT
+    // as opposed to from the four analytic lamps world/ hangs off the
+    // character. Nobody had measured the split. This pose and its sibling
+    // `env-back-nodir` measure it: shoot the same frame three times with
+    // environmentIntensity 0, with directIntensity 0, and with both on, mask
+    // the cape, and the three histograms say which term owns the median.
+    //
+    // If the lamps own the median then no cubemap change can reach the
+    // reference ratio, because a cubemap can only ADD light — it can raise p95
+    // and it cannot lower p50 — and that is a finding worth more than a tuning
+    // pass.
+    name: 'env-back-noenv',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0, 1.30, -3.85, 0, 1.02, 0],
+    setup: () => {
+      const b = document.getElementById('boot'); if (b) b.remove();
+      const c = window.SVU.scene.getMeshByName('cape');
+      if (c && c.material) {
+        const m = c.material;
+        if (m.unfreeze) m.unfreeze();
+        m.environmentIntensity = 0;
+        if (m.clearCoat) m.clearCoat.isEnabled = false;
+      }
+    },
+    settle: 0.2,
+    note: 'DIAGNOSTIC: cape with environmentIntensity 0 — the analytic-light half',
+  },
+  {
+    // The other half of the split. See `env-back-noenv`.
+    name: 'env-back-nodir',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0, 1.30, -3.85, 0, 1.02, 0],
+    setup: () => {
+      const b = document.getElementById('boot'); if (b) b.remove();
+      const c = window.SVU.scene.getMeshByName('cape');
+      if (c && c.material) {
+        const m = c.material;
+        if (m.unfreeze) m.unfreeze();
+        m.directIntensity = 0;
+        if (m.emissiveColor) m.emissiveColor.set(0, 0, 0);
+      }
+    },
+    settle: 0.2,
+    note: 'DIAGNOSTIC: cape with directIntensity 0 — the cubemap half',
+  },
+  {
     // THE HANDS ARE 40 PIXELS IN EVERY OTHER POSE. That is exactly why four
     // fingers welded into one slab survived several review passes: at 40px a
     // correct hand and a rounded blob are the same picture. This frames ONE
