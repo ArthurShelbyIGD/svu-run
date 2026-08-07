@@ -351,7 +351,7 @@ export default class Ui {
   justify-content: center;
 }
 .svu-cell {
-  padding: 0 clamp(20px, 8vw, 46px);
+  padding: 0 clamp(20px, 8vw, 68px);
   display: flex;
   flex-direction: column;
   align-items: center;
