@@ -47,6 +47,14 @@ import { Music } from './music.js';
  * ringing, not what is allocated.
  */
 const PRESETS = {
+  // 'potato' is the rung below 'low', added when the owner's own phone — a
+  // Helio A22 with a PowerVR GE8320 — could not hold frames at 'low'. It
+  // exists here because this table is keyed off presetName, and without an
+  // entry a FORCED `?q=potato` fell through to PRESETS.medium and quietly
+  // handed the weakest device the second-heaviest audio graph. Reached via
+  // the quality governor it was already correct, which is exactly the kind
+  // of bug that only shows up on the one path nobody tests.
+  potato: { voices: 8,  musicVoices: 2, irSeconds: 0.35, irChannels: 1, irDecay: 2.8, extras: false, deathGrains: 2, bellDensity: 0.18 },
   low:    { voices: 12, musicVoices: 3, irSeconds: 0.55, irChannels: 1, irDecay: 2.6, extras: false, deathGrains: 3, bellDensity: 0.22 },
   medium: { voices: 18, musicVoices: 4, irSeconds: 1.15, irChannels: 2, irDecay: 2.2, extras: true,  deathGrains: 5, bellDensity: 0.28 },
   high:   { voices: 24, musicVoices: 5, irSeconds: 1.90, irChannels: 2, irDecay: 2.0, extras: true,  deathGrains: 7, bellDensity: 0.32 },
