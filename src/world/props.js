@@ -483,6 +483,16 @@ export default class Props {
     this.gemMat.specularColor = new Color3(1, 0.94, 0.82);
     this.gemMat.specularPower = 24;
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
+    // DEAD, AND LEFT DELIBERATELY VISIBLE. Nothing anywhere in this file
+    // pushes into `M`, so mergeBucket returns null, `bayGem` is null, and the
+    // per-zone tint setGlow() writes into gemMat every frame lands on a
+    // material attached to no mesh. The lantern gems were removed at some
+    // point and their plumbing was not. Do not "fix" it by adding glowing
+    // gems back: a coloured jewel hanging in the arcade is a fourth thing in a
+    // world that speaks exactly three colours (gold you take, red you die on,
+    // white diamond you ignore), and in Ruby it would be a red glowing object
+    // that is not a hazard. If this band of the room needs a per-zone accent,
+    // it wants to be LIGHT — a lantern, a window — not a stone.
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
     // TWO materials, not one, and this is the whole reason the bands separate.
