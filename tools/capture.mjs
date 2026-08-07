@@ -467,6 +467,105 @@ const POSES = [
     settle: 0.2,
     note: 'the instant the shield is spent, held open — gold flash and ABSORBED',
   },
+  // ---- MOTION, WHICH A STILL FRAME CANNOT SHOW ---------------------------
+  //
+  // The hoops are told apart at range by how they MOVE, not by their emblem —
+  // magnet throbs at 1.6Hz, glide bobs at 0.42Hz, shield is dead still. That
+  // was measured in metres and never once watched, because every tool in this
+  // project produces one frozen frame.
+  //
+  // THE PATTERN: two poses identical in every respect except the MOTION PHASE,
+  // then diff the PNGs.
+  //     npm run shots -- --match pw-bob
+  //
+  // FOUR THINGS TO KNOW BEFORE COPYING THIS FOR THE OTHER TWO KINDS.
+  //
+  //  1. THE IDLE MOTION ONLY EVER TOUCHES hoops[_liveKind], and poseHoop()
+  //     calls _retire(), which sets _liveKind to -1. A hoop placed with
+  //     poseHoop alone IS FROZEN — the pw-lineup poses photograph three dead
+  //     hoops. Set _liveKind/_liveS/_liveX by hand, as below, or there is no
+  //     motion to capture. Only one hoop can be live, so a motion pair can
+  //     only ever be about ONE kind.
+  //
+  //  2. SET THE PHASE, DO NOT OFFSET IT. The first version of this pair put B
+  //     half a bob period after A, reasoning that half a period inverts the
+  //     sine. It does — sin(x+pi) = -sin(x) — and the displacement is therefore
+  //     2*A*|sin(x)|, which is ZERO when the base phase happens to sit at the
+  //     middle of the swing. It did. Cross-correlating the two frames gave a
+  //     displacement of exactly 0 device pixels and the pair proved nothing.
+  //     Both poses now snap ctx.time to an ABSOLUTE phase — A to the top of
+  //     the bob, B to the bottom — so the travel is the full 2*BOB_AMP every
+  //     time, whatever the pose's base time is.
+  //
+  //  3. READ THE PAIR BY CROSS-CORRELATION IN A WINDOW, NOT BY DIFFING THE
+  //     WHOLE FRAME. `compare -metric AE` returns 837227 and means nothing:
+  //     the software renderer's own jitter changes 1.9% of the frame by
+  //     itself, and snapping ctx.time also moves everything else that is time
+  //     driven, the run cycle included. Slide one frame over the other inside
+  //     a box around the hoop and take the offset that minimises the mean
+  //     absolute difference. That returned a clean 28 device px with the
+  //     next-best offsets 1px either side, i.e. an unambiguous answer:
+  //
+  //       a = L(shots/pw-bob-a.png); b = L(shots/pw-bob-b.png)
+  //       win = a[640:880, 330:450]
+  //       min over dy of |win - b[640+dy:880+dy, 330:450]|.mean()
+  //
+  //  4. MEASURED SCREEN AMPLITUDES at 23m in portrait, taken FROM THE RENDERED
+  //     PIXELS. Do not take them from a projection: Babylon only refreshes
+  //     boundingBox.vectorsWorld as part of a render, so projecting it from
+  //     outside the render loop reports the 1.55m hoop as 3 pixels tall, and
+  //     V3.Project already returns CSS pixels — dividing by devicePixelRatio
+  //     on top of that halves every number.
+  {
+    name: 'pw-bob-a',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(2, s, play.x);
+      pw._liveKind = 2; pw._liveS = s; pw._liveX = play.x;
+      const P = 1 / 0.42;
+      S.ctx.time = Math.ceil(S.ctx.time / P) * P + P * 0.25;
+      pw.renderUpdate();
+    },
+    settle: 0.02,
+    note: 'glide hoop at 23m, bob phase A — diff against pw-bob-b',
+  },
+  {
+    name: 'pw-bob-b',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(2, s, play.x);
+      pw._liveKind = 2; pw._liveS = s; pw._liveX = play.x;
+      const P = 1 / 0.42;
+      S.ctx.time = Math.ceil(S.ctx.time / P) * P + P * 0.75;
+      pw.renderUpdate();
+    },
+    settle: 0.02,
+    note: 'the same frame half a bob later — the diff is the motion',
+  },
   {
     name: 'gameover',
     viewport: 'phone',
