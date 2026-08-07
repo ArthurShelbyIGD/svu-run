@@ -51,10 +51,27 @@ const KIND = {
 
 const GRAVITY = -13.5;
 
-/** Lateral clearance, in metres beyond the hit box, that counts as "close". */
-const NEAR_LATERAL = 0.55;
-/** Vertical clearance over or under an obstacle that counts as "close". */
-const NEAR_VERTICAL = 0.30;
+// THESE NUMBERS ARE MEASURED, NOT GUESSED, and the first guesses were both
+// wrong in the same silent way — they never fired once in a 900m driven run.
+// Sampled clearances at the moment an obstacle passes the player:
+//
+//   every obstacle is hx 1.02 and the player is pr 0.42, so the hit box is
+//   1.44m wide against a 2.4m lane pitch. A pass in the ADJACENT LANE is
+//   therefore 0.96m of clearance and that is the tightest lateral value the
+//   game can ever produce. A threshold under 0.96 can never fire.
+//
+//   a hurdle jumped on a fixed lead clears by 0.42m.
+//
+// So the thresholds sit just above the measured values, and the lateral case
+// additionally requires a RECENT LANE CHANGE. Without that it fires on every
+// single dodge, which is most obstacles in the game — and a "near miss" that
+// happens forty times a minute is not a near miss, it is wallpaper.
+/** Lateral clearance beyond the hit box that counts as close, in metres. */
+const NEAR_LATERAL = 1.10;
+/** Vertical clearance over or under an obstacle that counts as close. */
+const NEAR_VERTICAL = 0.45;
+/** How recently the lane must have changed for a lateral pass to count. */
+const NEAR_LANE_WINDOW = 0.45;
 /** Minimum gap between reported near misses, so a cluster reads as one beat. */
 const NEAR_COOLDOWN = 0.35;
 /** Distance between milestone flourishes, in metres. Matches ui/'s toast. */
@@ -86,6 +103,7 @@ export default class Fx {
     this.nearMissSide = 0;
     this._nmPrevZ = 0;
     this._nmCool = 0;
+    this._nmLaneAt = -99;
 
     // ---- milestones ----
     this._milestone = 0;
@@ -125,10 +143,12 @@ export default class Fx {
     this._offs.push(this.ctx.on(EV.PLAYER_LAND, (p) => this.burstLand(p)));
     this._offs.push(this.ctx.on(EV.PLAYER_DEATH, () => this.burstDeath()));
     this._offs.push(this.ctx.on(EV.PLAYER_TURN, () => this.burstTurn()));
+    this._offs.push(this.ctx.on(EV.PLAYER_LANE, () => { this._nmLaneAt = this.ctx.time; }));
     this._offs.push(this.ctx.on(EV.RUN_START, () => {
       this.clear();
       this._nmPrevZ = 0;
       this._nmCool = 0;
+      this._nmLaneAt = -99;
       this._milestone = 0;
     }));
   }
@@ -298,7 +318,8 @@ export default class Fx {
       const lat = Math.abs(px - o.x) - (pr + s.hx);
       let side = 2;                        // 2 == not a near miss
       if (lat >= 0) {
-        if (lat < NEAR_LATERAL) side = o.x > px ? 1 : -1;
+        const late = this.ctx.time - this._nmLaneAt < NEAR_LANE_WINDOW;
+        if (late && lat < NEAR_LATERAL) side = o.x > px ? 1 : -1;
       } else {
         // Laterally overlapping, so it was cleared vertically. How narrowly?
         const oy0 = s.cy - s.hy;

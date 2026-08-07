@@ -648,6 +648,22 @@ export default class Ui {
     this._applyPhase();
   }
 
+  /**
+   * Capture affordance, never used in play: hold the transient feedback up so
+   * tools/capture.mjs can photograph it. Both of these last a fifth of a
+   * second in the game, which is exactly long enough to be ungradeable and
+   * exactly the sort of thing that ships wrong because nobody ever saw it.
+   */
+  preview(side, text) {
+    if (side <= 0) this.els.edgeL.classList.add('svu-on');
+    if (side >= 0) this.els.edgeR.classList.add('svu-on');
+    this._edgeT = 1e6;
+    if (text) {
+      this._toast(text);
+      this._toastT = 1e6;
+    }
+  }
+
   setPaused(v) {
     if (v && this.phase !== 'run') return;
     if (!v && this.phase !== 'paused') return;

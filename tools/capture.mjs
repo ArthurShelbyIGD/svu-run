@@ -255,6 +255,18 @@ const POSES = [
     note: 'the pause panel in portrait',
   },
   {
+    // The near-miss hairline and the milestone toast both last about a fifth
+    // of a second in play, which is long enough to matter and far too short to
+    // grade. ui.preview() holds them up. It is a capture affordance only.
+    name: 'feedback',
+    viewport: 'phone',
+    time: 6,
+    framing: [26, 45],
+    setup: () => { window.SVU.ctx.get('ui').preview(1, '500 METRES'); },
+    settle: 0.1,
+    note: 'near-miss hairline and the milestone toast, held open',
+  },
+  {
     name: 'gameover-wide',
     viewport: 'desktop',
     time: 8,
