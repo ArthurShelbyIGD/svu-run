@@ -71,6 +71,10 @@ export default class Props {
     this._baySlot = 0;
     this._accentSlot = 0;
     this._rng = null;
+    // Capture affordance only — see World.setZoneBias. Shifts the distance the
+    // zone lookup reads so a shot can be posed inside zone 4 without running
+    // 2500 metres to get there. Zero in play.
+    this.zoneBias = 0;
   }
 
   init() {

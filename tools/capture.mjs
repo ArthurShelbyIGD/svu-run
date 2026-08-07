@@ -10,8 +10,11 @@
 //   node tools/capture.mjs --preset low    force a quality preset
 //   node tools/capture.mjs --only hero     one pose
 //   node tools/capture.mjs --out shots/b   write somewhere else
+//   node tools/capture.mjs --only zone4    one pose
+//   node tools/capture.mjs --match zone    every pose whose name contains it
 
 import { launch, openGame, fastForward, ROOT } from './harness.mjs';
+import { ZONES, ZONE_LENGTH } from '../src/world/zones.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -24,6 +27,7 @@ const arg = (name, def) => {
 const OUT = join(ROOT, arg('out', 'shots'));
 const PRESET = arg('preset', 'high');
 const ONLY = arg('only', null);
+const MATCH = arg('match', null);
 
 /**
  * A pose is a named, reproducible camera + game state.
@@ -337,7 +341,63 @@ const POSES = [
     camera: [7.5, 5.2, -9.0, 0, 1.2, 12],
     note: 'wide establishing shot — reads the track and the world silhouette',
   },
+  ...zonePoses(),
 ];
+
+/**
+ * THE ZONE LINEUP — five shots of one stretch of track, one per zone.
+ *
+ * WHY THESE EXIST, AND WHY EVERY EARLIER ZONE VERDICT WAS UNSOUND. A zone is
+ * chosen by distance; zones 2-5 begin at 620, 1240, 1860 and 2480 metres, and
+ * fourteen seconds of game time is about two hundred. Every other pose in this
+ * file therefore shoots ZONE 1, and two rounds of "the zones all feel the same"
+ * were graded off frames physically incapable of showing four fifths of them.
+ *
+ * Simulating 2800m per pose costs minutes under software rendering and lands
+ * the player at an arbitrary point in the turn grammar, so no two shots frame
+ * the same thing. Instead each pose parks the generated obstacles, plants one
+ * of each kind at a fixed 26m, and then offsets the distance the ZONE SYSTEM
+ * reads (World.setZoneBias) to land exactly 310m into the wanted zone — the
+ * middle, where the crossfade to the next zone is zero. Same seed, same
+ * straight, same lineup, same camera. The zone is the only variable.
+ *
+ * WHY new Function AND NOT A CLOSURE. page.evaluate serialises a function with
+ * toString(), which carries the source text and NOT the scope it came from, so
+ * a closed-over `k` arrives in the page as a ReferenceError. The index has to
+ * be baked into the source as a literal. This bites once per project.
+ */
+function zonePoses() {
+  const out = [];
+  for (let k = 0; k < ZONES.length; k++) {
+    for (const vp of ['desktop', 'phone']) {
+      const body = `
+        const S = window.SVU;
+        const track = S.ctx.get('track');
+        const play = S.ctx.get('play');
+        for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+        track.obstacles.length = 0;
+        for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+        track.stars.length = 0;
+        const z = play.z + 26;
+        track._spawnObstacle(0, 0, z);   // OB.LOW  — jump
+        track._spawnObstacle(1, 1, z);   // OB.HIGH — slide
+        track._spawnObstacle(2, 2, z);   // OB.FULL — dodge
+        for (let i = 0; i < 6; i++) track._spawnStar(1, 1.15, play.z + 10 + i * 2.4);
+        // 310m into zone ${k}: the middle of the zone, blend to the next = 0.
+        S.ctx.get('world').setZoneBias(${k} * ${ZONE_LENGTH} + 310 - play.z);
+      `;
+      out.push({
+        name: `${vp === 'phone' ? 'phone-' : ''}zone${k + 1}`,
+        viewport: vp,
+        time: 14,
+        setup: new Function(body),
+        settle: 0.1,
+        note: `zone ${k + 1} ${ZONES[k].name} — same straight, same lineup at 26m, ${vp}`,
+      });
+    }
+  }
+  return out;
+}
 
 await mkdir(OUT, { recursive: true });
 const browser = await launch();
@@ -346,6 +406,7 @@ const manifest = [];
 try {
   for (const pose of POSES) {
     if (ONLY && pose.name !== ONLY) continue;
+    if (MATCH && !pose.name.includes(MATCH)) continue;
 
     const { page, context, errors } = await openGame(browser, {
       viewport: pose.viewport,

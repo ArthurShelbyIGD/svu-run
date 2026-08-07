@@ -30,6 +30,7 @@ export default class World {
     this._fog = new Color3();
     this._haze = new Color3();
     this._zoneIndex = -1;
+    this.zoneBias = 0;   // see setZoneBias — a capture affordance, 0 in play
     this._offs = [];
     this._w = [0, 0, 0];   // scratch for path->world, never reallocated
   }
@@ -169,9 +170,43 @@ export default class World {
     }
   }
 
+  /**
+   * ZONE BIAS — a capture affordance, and the reason zone grading was wrong
+   * for two rounds.
+   *
+   * A zone is chosen by distance. Zones 2-5 begin at 620, 1240, 1860 and
+   * 2480m, and fourteen seconds of game time is about two hundred metres — so
+   * EVERY pose in tools/capture.mjs shoots zone 1, and every "the zones all
+   * feel the same" verdict so far was reached from screenshots physically
+   * incapable of showing four fifths of the game.
+   *
+   * Simulating 2800m per pose is slow and lands the player at an arbitrary
+   * point in the turn grammar, which makes two shots non-comparable. Biasing
+   * the distance the zone system READS instead keeps the player on one known
+   * straight, with one seed and one obstacle lineup, and leaves the zone as
+   * the only variable in the frame.
+   *
+   * It re-lays the architecture as well as the lighting, because a bay's
+   * proportions are now a function of the zone it stands in (see props.js) and
+   * bays are placed once, ahead of the player, and never revisited.
+   *
+   * Nothing in the game calls this. It is safe in play — the bias is 0 — and
+   * it exists so a critic can see zone 4.
+   */
+  setZoneBias(metres) {
+    this.zoneBias = metres;
+    this.props.zoneBias = metres;
+    this.props.reset();
+    const play = this.ctx.tryGet('play');
+    const track = this.ctx.tryGet('track');
+    if (play && track && track.path) this.props.update(play.z, track);
+    this._zoneIndex = -1;
+    this._applyZone(play ? play.z : 0);
+  }
+
   /** Set everything a zone controls, blending into the next by `t`. */
   _applyZone(distance) {
-    const { index, next, blend } = zoneAt(distance);
+    const { index, next, blend } = zoneAt(distance + this.zoneBias);
     const a = ZONES[index];
     const b = ZONES[next];
     const scene = this.ctx.scene;
