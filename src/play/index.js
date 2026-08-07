@@ -7,9 +7,18 @@
 // Input is normalised into four intents — LEFT, RIGHT, JUMP, SLIDE — so that
 // keyboard and touch are completely interchangeable and neither is a
 // second-class citizen.
+//
+// POWERUPS live in ./powerups.js and hang off this module as `play.pw`, not as
+// a registered module: main.js is lead-owned and its MODULES array cannot grow
+// from here. Play drives pw's whole lifecycle by hand — init, fixedUpdate,
+// renderUpdate, reset, dispose. Everything else reaches it as
+//     ctx.get('play').pw
+// The state and event contract it exposes is documented at the top of
+// powerups.js and ui/ is written against it.
 
 import { Vector3, Scalar } from '../core/bjs.js';
 import { EV } from '../core/ctx.js';
+import Powerups from './powerups.js';
 
 export const INTENT = { NONE: 0, LEFT: 1, RIGHT: 2, JUMP: 3, SLIDE: 4 };
 export const STATE = { RUN: 0, AIR: 1, SLIDE: 2, STUMBLE: 3, DEAD: 4 };
@@ -69,6 +78,9 @@ export default class Play {
     this._camS = 0; this._camLat = 0; this._camY = T.camHeight;
     this._tgtS = 0; this._tgtLat = 0; this._tgtY = 1.2;
 
+    /** Powerups. See the header — `play.pw` is the public path to them. */
+    this.pw = new Powerups(ctx);
+
     // pooled event payloads
     this._pLane = { from: 0, to: 0 };
     this._pLand = { hard: false };
@@ -80,6 +92,7 @@ export default class Play {
   init() {
     this._bindKeyboard();
     this._bindTouch();
+    this.pw.init();
   }
 
   // ---- input binding ---------------------------------------------------
@@ -317,6 +330,8 @@ export default class Play {
     this._advanceLane(dt, T);
     this._advanceVertical(dt, T);
     this._checkJunctionCrossed();
+    // Last, so the pickup test and the timers see this step's final position.
+    this.pw.fixedUpdate(dt);
   }
 
   /**
@@ -494,7 +509,13 @@ export default class Play {
     const g = (8 * T.jumpHeight) / (T.jumpTime * T.jumpTime);
 
     if (this.state === STATE.AIR) {
-      this.vy -= g * dt;
+      // WING GLIDE scales gravity — 0.70 going up, 0.55 coming down — which
+      // turns the base 2.30m/0.62s hop into 3.29m over 0.94s and lands at
+      // 13.2 m/s, just under the 14 m/s hard-landing threshold below. Take-off
+      // velocity is deliberately still computed from the UNSCALED g in
+      // _serveIntent: scaling the launch too would make the glide jump twice
+      // as high again and clear obstacles it has no business clearing.
+      this.vy -= g * this.pw.gravityScale(this.vy) * dt;
       this.y += this.vy * dt;
       this.groundedTime += dt;
       if (this.y <= 0) {
@@ -555,6 +576,7 @@ export default class Play {
     this.turnsMade = 0;
     this.camLocked = false;
     this._camInit = false;
+    this.pw.reset();
     // _camInit=false makes the next renderUpdate snap rather than glide in
     // from wherever the previous run ended.
   }
@@ -562,6 +584,11 @@ export default class Play {
   // ---- camera ----------------------------------------------------------
 
   renderUpdate(dtReal) {
+    // Before every early return below: the hoop's idle motion and the shield
+    // cage must keep updating even when the capture harness has locked the
+    // camera, or every posed shot of them is a frozen one.
+    this.pw.renderUpdate();
+
     const T = this.ctx.config.tune;
     const cam = this.ctx.scene.activeCamera;
     if (!cam) return;
@@ -635,5 +662,6 @@ export default class Play {
   dispose() {
     for (const off of this._handlers) off();
     this._handlers.length = 0;
+    this.pw.dispose();
   }
 }

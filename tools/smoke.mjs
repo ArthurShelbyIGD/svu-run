@@ -582,6 +582,274 @@ try {
   check('path segments are pruned, not accumulated',
     turnRes.correct.segs < 40, `${turnRes.correct.segs} segments after ${turnRes.correct.z}m`);
 
+  // ---- powerups --------------------------------------------------------
+  //
+  // Four things have to hold, and the last is the one that is easy to get
+  // wrong: the shield must absorb EXACTLY one hit. Without i-frames it absorbs
+  // one per fixed step for as long as the player is inside the box, which is
+  // four or five steps at start speed — so a shield that passes a one-step
+  // test can still make the player immortal for a third of a second a charge.
+  const pwSpawn = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    ctx.restart();
+    // Capture mode autopilots the corners, which is the only way an unsteered
+    // test player survives far enough to see the second and third spawn.
+    ctx.config.captureMode = true;
+    ctx.get('coll').enabled = false;
+    const play = ctx.get('play');
+    const pw = play.pw;
+    const seen = [];
+    let last = -1;
+    for (let i = 0; i < 60 * 200 && play.z < 1700; i++) {
+      S.loop.advance(1 / 60, 0);
+      if (pw._liveKind >= 0 && pw._liveKind !== last) {
+        seen.push({ kind: pw._liveKind, s: pw._liveS, x: pw._liveX });
+      }
+      last = pw._liveKind;
+    }
+    ctx.config.captureMode = false;
+    let repeats = 0, minGap = Infinity, maxGap = 0;
+    for (let i = 1; i < seen.length; i++) {
+      if (seen[i].kind === seen[i - 1].kind) repeats++;
+      const gap = seen[i].s - seen[i - 1].s;
+      if (gap < minGap) minGap = gap;
+      if (gap > maxGap) maxGap = gap;
+    }
+    return {
+      n: seen.length, first: seen.length ? seen[0].s : -1, repeats, minGap, maxGap,
+      z: play.z,
+    };
+  });
+  check('powerups spawn along the run',
+    pwSpawn.n >= 3 && pwSpawn.first === 300,
+    `${pwSpawn.n} spawns to ${pwSpawn.z.toFixed(0)}m, first at ${pwSpawn.first}m`);
+  check('powerup spacing is 420-700m and never repeats a kind',
+    pwSpawn.repeats === 0 && pwSpawn.minGap >= 420 && pwSpawn.maxGap <= 700,
+    `gaps ${pwSpawn.minGap.toFixed(0)}-${pwSpawn.maxGap.toFixed(0)}m, ${pwSpawn.repeats} repeats`);
+
+  // All three kinds must be reachable, which one run does not prove — seed 1
+  // happens to deal glide, magnet, glide, magnet. Draw the sequence straight
+  // from the powerup stream instead, over many seeds.
+  const pwMix = await g.page.evaluate(() => {
+    const Rng = window.SVU.ctx.get('play').pw._rng.constructor;
+    const counts = [0, 0, 0];
+    let repeats = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const rng = new Rng((seed ^ 0x50575250) >>> 0);
+      let last = -1;
+      for (let i = 0; i < 40; i++) {
+        const cand = [];
+        for (let k = 0; k < 3; k++) if (k !== last) cand.push(k);
+        const kind = cand[Math.floor(rng.next() * cand.length)];
+        if (kind === last) repeats++;
+        counts[kind]++; last = kind;
+        rng.int(0, 2); rng.range(420, 700);
+      }
+    }
+    return { counts, repeats };
+  });
+  check('all three powerups are dealt, evenly',
+    pwMix.repeats === 0 && Math.min(pwMix.counts[0], pwMix.counts[1], pwMix.counts[2]) > 120,
+    `480 draws over 12 seeds: ${pwMix.counts.join('/')} magnet/shield/glide`);
+
+  // play/ steps BEFORE track/, so a single draw from ctx.rng inside the
+  // powerup code re-deals the rest of the run's chunk grammar and invalidates
+  // every tuned capture pose. Checking `ctx.rng._s` directly proves nothing —
+  // track/ advances that stream every chunk, legitimately. What has to hold is
+  // that the world is the same whether powerups spawned or not, so run it both
+  // ways and compare the whole layout. The suppressed run also carries a
+  // shield and a magnet, because the spawn draw's candidate list depends on
+  // what the player is holding.
+  const pwDet = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const track = ctx.get('track');
+    const run = (suppress) => {
+      ctx.restart();
+      ctx.config.captureMode = true;
+      ctx.get('coll').enabled = false;
+      if (suppress) { play.pw._nextS = 1e9; play.pw.grant(1); play.pw.grant(0); }
+      for (let i = 0; i < 60 * 200 && play.z < 1200; i++) S.loop.advance(1 / 60, 0);
+      ctx.config.captureMode = false;
+      const rows = [];
+      for (const o of track.obstacles) rows.push(`o${o.kind}:${o.lane}:${o.z.toFixed(3)}`);
+      for (const s of track.stars) rows.push(`s${s.x.toFixed(2)}:${s.y.toFixed(2)}:${s.z.toFixed(3)}`);
+      for (const j of track.junctions) rows.push(`j${j.s.toFixed(3)}:${j.turn}`);
+      return { sig: rows.join('|'), chunks: track.chunkCount, rng: ctx.rng._s, n: rows.length };
+    };
+    const a = run(false);
+    const b = run(true);
+    return { same: a.sig === b.sig, rngSame: a.rng === b.rng, n: a.n, chunks: a.chunks };
+  });
+  check('powerups never touch the shared rng stream',
+    pwDet.same && pwDet.rngSame,
+    `${pwDet.chunks} chunks, ${pwDet.n} placed objects identical with and without powerups`);
+
+  // A pickup that does nothing is worse than no pickup, because the player
+  // spent a lane change on it.
+  const pwHeld = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const pw = play.pw;
+    ctx.restart();
+    ctx.config.captureMode = true;
+    ctx.get('coll').enabled = false;
+    const kinds = [];
+    for (let trial = 0; trial < 8; trial++) {
+      pw.shield = true;                       // holding a shield, always
+      pw._retire();
+      pw._nextS = play.z + 150;
+      for (let i = 0; i < 60 * 60 && pw._liveKind < 0; i++) S.loop.advance(1 / 60, 0);
+      kinds.push(pw._liveKind);
+    }
+    ctx.config.captureMode = false;
+    return { kinds, shields: kinds.filter((k) => k === 1).length };
+  });
+  check('a shield is never offered to a player already holding one',
+    pwHeld.shields === 0 && pwHeld.kinds.length === 8,
+    `8 spawns while shielded, kinds ${pwHeld.kinds.join('')} (1 would be a shield)`);
+
+  const pwCollect = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const pw = play.pw;
+    const out = {};
+    const ev = [];
+    const offA = ctx.on('powerup:start', (p) => ev.push(`+${p.name}:${p.duration}`));
+    const offB = ctx.on('powerup:end', (p) => ev.push(`-${p.name}:${p.spent}`));
+
+    // Run into a hoop planted in the player's own lane.
+    ctx.restart();
+    ctx.get('coll').enabled = false;
+    S.loop.advance(1, 0);
+    pw.poseHoop(0, play.z + 6, play.x);
+    pw._liveKind = 0; pw._liveS = play.z + 6; pw._liveX = play.x;
+    S.loop.advance(1.2, 0);
+    out.collected = { magnet: pw.magnet, remaining: +pw.slots[0].remaining.toFixed(2), live: pw._liveKind };
+
+    // ... and the clock runs out by itself.
+    S.loop.advance(7.2, 0);
+    out.expired = { magnet: pw.magnet, remaining: pw.slots[0].remaining };
+
+    // Glide raises the arc and still lands soft.
+    ctx.restart();
+    ctx.get('coll').enabled = false;
+    S.loop.advance(1, 0);
+    const arc = () => {
+      let apex = 0, t = 0, vLand = 0;
+      play.pushIntent(3);
+      S.loop.advance(1 / 60, 0);
+      while (play.state === 1 && t < 5) {
+        vLand = play.vy; S.loop.advance(1 / 60, 0); t += 1 / 60;
+        if (play.y > apex) apex = play.y;
+      }
+      return { apex, t, vLand };
+    };
+    out.base = arc();
+    pw.grant(2);
+    out.glide = arc();
+
+    offA(); offB();
+    out.events = ev;
+    return out;
+  });
+  check('collecting a hoop grants the powerup',
+    pwCollect.collected.magnet === true && pwCollect.collected.live === -1 &&
+    pwCollect.collected.remaining > 6,
+    `magnet on with ${pwCollect.collected.remaining}s left, hoop retired`);
+  check('a timed powerup expires by itself',
+    pwCollect.expired.magnet === false && pwCollect.expired.remaining === 0,
+    'magnet off, 0s left');
+  check('powerup events carry kind, name and duration',
+    pwCollect.events[0] === '+MAGNET:7' && pwCollect.events[1] === '-MAGNET:false',
+    pwCollect.events.join(' '));
+  check('wing glide raises the jump and softens the landing',
+    pwCollect.glide.apex > pwCollect.base.apex * 1.3 &&
+    pwCollect.glide.t > pwCollect.base.t * 1.4 &&
+    Math.abs(pwCollect.glide.vLand) < 14,
+    `${pwCollect.base.apex.toFixed(2)}m/${pwCollect.base.t.toFixed(2)}s -> ` +
+    `${pwCollect.glide.apex.toFixed(2)}m/${pwCollect.glide.t.toFixed(2)}s, ` +
+    `landing ${Math.abs(pwCollect.glide.vLand).toFixed(1)} m/s (hard is 14)`);
+
+  const pwShield = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const track = ctx.get('track');
+    const pw = play.pw;
+    const clear = () => {
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+    };
+    ctx.restart();
+    ctx.get('coll').enabled = true;
+    S.loop.advance(1, 0);
+    clear();
+    let hits = 0, absorbed = 0;
+    const off = ctx.on('obstacle:hit', (p) => { hits++; if (p.absorbed) absorbed++; });
+    pw.grant(1);
+    track._spawnObstacle(2, play.lane, play.z + 6);      // FULL blocker
+    S.loop.advance(1.2, 0);
+    const first = { alive: play.alive, shield: pw.shield, hits, absorbed, spentAt: pw.lastSpent };
+    clear();
+    track._spawnObstacle(2, play.lane, play.z + 6);
+    S.loop.advance(1.2, 0);
+    off();
+    return { first, second: { alive: play.alive, hits, absorbed } };
+  });
+  check('the shield absorbs a hit instead of killing',
+    pwShield.first.alive === true && pwShield.first.absorbed === 1 &&
+    pwShield.first.shield === false && pwShield.first.spentAt > 0,
+    `survived one hit, charge spent at t=${pwShield.first.spentAt.toFixed(2)}s`);
+  check('the shield absorbs exactly one hit and no more',
+    pwShield.second.alive === false && pwShield.second.absorbed === 1 &&
+    pwShield.second.hits === 2,
+    `${pwShield.second.hits} hits, ${pwShield.second.absorbed} absorbed, the second one fatal`);
+
+  const pwMagnet = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const track = ctx.get('track');
+    const pw = play.pw;
+    const plant = () => {
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      // Both OUTER lanes: unreachable without the magnet, because the test
+      // player sits in the middle lane and never steers.
+      for (let i = 0; i < 4; i++) {
+        track._spawnStar(0, 1.15, play.z + 4 + i * 1.2);
+        track._spawnStar(2, 1.15, play.z + 4 + i * 1.2);
+      }
+    };
+    let picked = 0;
+    const off = ctx.on('pickup:star', () => picked++);
+
+    ctx.restart(); ctx.get('coll').enabled = true; S.loop.advance(1, 0);
+    plant();
+    S.loop.advance(0.7, 0);
+    const without = picked;
+
+    ctx.restart(); ctx.get('coll').enabled = true; S.loop.advance(1, 0);
+    plant();
+    picked = 0;
+    pw.grant(0);
+    S.loop.advance(0.7, 0);
+    off();
+    return { without, taken: picked, left: track.stars.length, flights: ctx.get('coll')._flightN };
+  });
+  check('the ruby magnet collects stars the player never touches',
+    pwMagnet.without === 0 && pwMagnet.taken === 8 && pwMagnet.left === 0,
+    `8 stars in the outer lanes: ${pwMagnet.without} taken without the magnet, ${pwMagnet.taken} with it`);
+  check('magnet flights all finish — nothing is left hanging in mid-air',
+    pwMagnet.flights === 0, `${pwMagnet.flights} flights still open`);
+
   await g.context.close();
 
   // ---------------- high preset boots at all ----------------------------

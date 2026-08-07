@@ -230,6 +230,141 @@ const POSES = [
     camera: [0, 1.75, 5.4, 0, 1.15, 12],
     note: 'the props close up — craft check on obstacles and stars',
   },
+  // ---- the powerups -----------------------------------------------------
+  //
+  // THE ONLY QUESTION THESE POSES ANSWER: at the distance a player must decide
+  // to change lane, can you tell WHICH powerup it is? The hoop itself reads
+  // easily — it is 1.30m of gold against a black hall. The emblem inside it is
+  // the part that failed last build, because a gold emblem inside a gold hoop
+  // has no value difference and value is the only channel that survives 23
+  // metres, a 390px frame and a bloom pass. Hence the dark stone bed.
+  //
+  // All three at once, one per lane, because "visible" is not the test —
+  // "distinguishable from the other two" is.
+  {
+    name: 'pw-lineup',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(0, s, -2.4);   // MAGNET, left lane
+      pw.poseHoop(1, s, 0);      // SHIELD, centre
+      pw.poseHoop(2, s, 2.4);    // GLIDE, right
+      // One star at the same distance for scale: the hoop must not be
+      // mistakable for the thing that is worth ten points.
+      track._spawnStar(1, 1.15, play.z + 14);
+    },
+    settle: 0.1,
+    note: 'all three powerup hoops at 23m — can you tell which is which?',
+  },
+  {
+    name: 'phone-pw-lineup',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(0, s, -2.4);
+      pw.poseHoop(1, s, 0);
+      pw.poseHoop(2, s, 2.4);
+      track._spawnStar(1, 1.15, play.z + 14);
+    },
+    settle: 0.1,
+    note: 'THE emblem test — three hoops at 23m in portrait, where they are 44px across',
+  },
+  {
+    name: 'pw-near',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 12;
+      pw.poseHoop(0, s, -2.4);
+      pw.poseHoop(1, s, 0);
+      pw.poseHoop(2, s, 2.4);
+    },
+    settle: 0.1,
+    camera: [0, 1.75, 5.4, 0, 1.30, 12],
+    note: 'the hoops close up — craft check on the emblems and the bed',
+  },
+  {
+    // FROM THE REAL CHASE CAMERA, deliberately. The previous cage was two
+    // rings in the same plane — a single gold line up the runner's back from
+    // dead astern — and it graded fine from a posed three-quarter view, which
+    // is exactly how it shipped. No `camera` field here: this is what the
+    // player sees.
+    name: 'pw-shield',
+    viewport: 'desktop',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('play').pw.grant(1);
+    },
+    settle: 0.2,
+    note: 'the shield cage on the runner, from the chase camera — the only view that counts',
+  },
+  {
+    // Mid-flight, on purpose. The magnet's whole read is stars leaving their
+    // lanes and converging on the runner; a frame taken before or after shows
+    // either a normal track or an empty one. 0.26s into a 0.40s flight is
+    // halfway there, because the flight eases in on u^2.
+    name: 'pw-magnet',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      for (let i = 0; i < 5; i++) {
+        track._spawnStar(0, 1.15, play.z + 2 + i * 1.6);
+        track._spawnStar(2, 1.15, play.z + 2 + i * 1.6);
+      }
+      S.ctx.get('coll').enabled = true;
+      play.pw.grant(0);
+    },
+    settle: 0.26,
+    keepStars: true,
+    note: 'the ruby magnet mid-pull — stars converging on the runner',
+  },
+  {
+    name: 'phone-pw-shield',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('play').pw.grant(1);
+    },
+    settle: 0.2,
+    note: 'the shield cage in portrait',
+  },
   {
     name: 'gameover',
     viewport: 'phone',
@@ -419,7 +554,7 @@ try {
 
     // Freeze the simulation, then place the camera. Order matters: the camera
     // must be positioned after the last simulation step, or play/ overwrites it.
-    await page.evaluate((cam) => {
+    await page.evaluate(([cam, keepStars]) => {
       const S = window.SVU;
       S.loop.setPaused(true);
 
@@ -432,7 +567,10 @@ try {
       // This must happen AFTER setPaused. Disabling the meshes before the last
       // advance() does nothing: track's renderUpdate re-enables and repositions
       // every live star each frame, so the change is undone before the grab.
-      {
+      //
+      // A pose that is ABOUT the stars near the player — pw-magnet, which
+      // exists to show them being pulled in — opts out with `keepStars`.
+      if (!keepStars) {
         const play = S.ctx.get('play');
         const track = S.ctx.tryGet('track');
         for (const s of ((track && track.stars) || [])) {
@@ -448,7 +586,7 @@ try {
         c.position.set(play.x + cam[0], cam[1], play.z + cam[2]);
         c.setTarget(new (c.position.constructor)(play.x + cam[3], cam[4], play.z + cam[5]));
       }
-    }, pose.camera || null);
+    }, [pose.camera || null, !!pose.keepStars]);
 
     // Render a few frames so post-processing (bloom, TAA history) settles.
     await page.evaluate(() => new Promise((res) => {
