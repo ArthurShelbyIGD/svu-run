@@ -90,6 +90,7 @@ export default class Ui {
     this._muteShown = null;
     this._edgeT = 0;
     this._edgeSeq = -1;
+    this._starT = 0;
   }
 
   // ---- boot ------------------------------------------------------------
@@ -202,6 +203,12 @@ export default class Ui {
   font-size: .62em;
   color: #d8a93f;
   letter-spacing: 0;
+  transition: color .30s ease, text-shadow .30s ease;
+}
+.svu-stars.svu-hit .svu-star {
+  color: #ffe6a6;
+  text-shadow: 0 0 12px rgba(232,201,121,.85);
+  transition: color .04s ease, text-shadow .04s ease;
 }
 
 .svu-tools {
@@ -279,7 +286,7 @@ export default class Ui {
   justify-content: center;
   text-align: center;
   padding: calc(env(safe-area-inset-top, 0px) + 26px) 24px calc(env(safe-area-inset-bottom, 0px) + 26px);
-  background: radial-gradient(130% 92% at 50% 38%, rgba(14,13,12,.90) 0%, rgba(6,6,6,.965) 58%, rgba(3,3,3,.985) 100%);
+  background: radial-gradient(130% 92% at 50% 38%, rgba(14,13,12,.92) 0%, rgba(6,6,6,.972) 58%, rgba(3,3,3,.99) 100%);
   opacity: 0;
   pointer-events: none;
   transition: opacity .38s ease;
@@ -458,7 +465,7 @@ export default class Ui {
       <div class="svu-dist-n" id="svuDist">0</div>
       <div class="svu-dist-l">METRES</div>
     </div>
-    <div class="svu-stars"><span class="svu-star">&#10022;</span><span id="svuStars">0</span></div>
+      <div class="svu-stars" id="svuStarsBox"><span class="svu-star">&#10022;</span><span id="svuStars">0</span></div>
   </div>
   <div class="svu-toast" id="svuToast"></div>
   <div class="svu-edge svu-edge-l" id="svuEdgeL"></div>
@@ -519,6 +526,7 @@ export default class Ui {
       hud: $('#svuHud'),
       dist: $('#svuDist'),
       stars: $('#svuStars'),
+      starsBox: $('#svuStarsBox'),
       toast: $('#svuToast'),
       edgeL: $('#svuEdgeL'),
       edgeR: $('#svuEdgeR'),
@@ -547,6 +555,10 @@ export default class Ui {
       this.starScore += (p && p.value) || 0;
       this.els.stars.textContent = this.stars;
       this._shownStars = this.stars;
+      // A pickup should be felt in the corner of the eye, not read. One class
+      // on one small element: the glyph flares gold-white and eases back.
+      this.els.starsBox.classList.add('svu-hit');
+      this._starT = 0.16;
     }));
     this._offs.push(this.ctx.on(EV.RUN_END, (p) => this._onRunEnd(p)));
     // NOTE: this must NOT set the phase. main.js emits RUN_START during boot,
@@ -620,7 +632,9 @@ export default class Ui {
     this._panel(this.els.start, p === 'start');
     this._panel(this.els.paused, p === 'paused');
     this._panel(this.els.over, p === 'over');
-    this.els.hud.classList.toggle('svu-on', p === 'run' || p === 'paused');
+    // The HUD comes down for every panel, including pause. Leaving it up put a
+    // second, ghosted copy of the distance behind the pause panel's own.
+    this.els.hud.classList.toggle('svu-on', p === 'run');
   }
 
   _panel(el, on) {
@@ -691,6 +705,12 @@ export default class Ui {
     this._shownStars = -1;
     this._milestone = 0;
     this._toastT = 0;
+    this._starT = 0;
+    this._edgeT = 0;
+    this._edgeSeq = -1;
+    this.els.starsBox.classList.remove('svu-hit');
+    this.els.edgeL.classList.remove('svu-on');
+    this.els.edgeR.classList.remove('svu-on');
     this.els.stars.textContent = '0';
     this.els.dist.textContent = '0';
     this.els.toast.classList.remove('svu-on');
@@ -755,6 +775,10 @@ export default class Ui {
       this._toastT -= dtReal;
       if (this._toastT <= 0) this.els.toast.classList.remove('svu-on');
     }
+    if (this._starT > 0) {
+      this._starT -= dtReal;
+      if (this._starT <= 0) this.els.starsBox.classList.remove('svu-hit');
+    }
     if (this._edgeT > 0) {
       this._edgeT -= dtReal;
       if (this._edgeT <= 0) {
@@ -788,8 +812,11 @@ export default class Ui {
     if (this._edgeSeq < 0) { this._edgeSeq = fx.nearMissSeq; return; }
     if (fx.nearMissSeq === this._edgeSeq) return;
     this._edgeSeq = fx.nearMissSeq;
-    const el = fx.nearMissSide < 0 ? this.els.edgeL : this.els.edgeR;
-    el.classList.add('svu-on');
+    const side = fx.nearMissSide;
+    // side 0 means it went straight over or under — the hazard was on both
+    // sides at once, so both edges answer.
+    if (side <= 0) this.els.edgeL.classList.add('svu-on');
+    if (side >= 0) this.els.edgeR.classList.add('svu-on');
     this._edgeT = 0.22;
   }
 

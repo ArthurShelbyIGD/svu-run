@@ -15,6 +15,29 @@
 // Particles are axis-aligned scaled solids written straight into a 4x4 matrix
 // buffer. No rotation, because building a rotation matrix per particle per
 // frame costs more than it buys at this size on screen.
+//
+// ---------------------------------------------------------------------------
+// NEAR MISSES. This module DETECTS them and draws nothing for them. It
+// publishes `nearMissSeq` (monotonic) and `nearMissSide` (-1 the hazard went
+// past on the left, +1 on the right, 0 straight over or under); ui/ polls the
+// sequence and draws the flash.
+//
+// That split is deliberate and it is a measured result, not a preference. A
+// near-miss cue drawn as a wide soft screen wash is INVISIBLE against a black
+// hall — 22vw at 0.22 alpha reads as nothing at all, where a 2px hairline plus
+// a short glow reads immediately. A hairline is a DOM element, so it belongs
+// to ui/; the detection belongs here because this module already walks the
+// obstacle list every frame.
+//
+// The other half of the same lesson: NEVER OBSCURE THE TRACK. There are
+// deliberately no particles on a near miss. The player is mid-commitment when
+// one happens and anything sprayed in front of the camera at that moment costs
+// them the obstacle after it.
+//
+// Detection runs in renderUpdate and touches only fields this module owns, so
+// it cannot perturb the simulation. It uses NO ctx.rng: every angle it needs is
+// derived from a counter, because a presentation-side draw from the simulation
+// RNG would make the same seed produce different runs at different frame rates.
 
 import { MeshBuilder } from '../core/bjs.js';
 import { EV } from '../core/ctx.js';
@@ -27,6 +50,15 @@ const KIND = {
 };
 
 const GRAVITY = -13.5;
+
+/** Lateral clearance, in metres beyond the hit box, that counts as "close". */
+const NEAR_LATERAL = 0.55;
+/** Vertical clearance over or under an obstacle that counts as "close". */
+const NEAR_VERTICAL = 0.30;
+/** Minimum gap between reported near misses, so a cluster reads as one beat. */
+const NEAR_COOLDOWN = 0.35;
+/** Distance between milestone flourishes, in metres. Matches ui/'s toast. */
+const MILESTONE_EVERY = 500;
 
 export default class Fx {
   constructor(ctx) {
@@ -46,6 +78,17 @@ export default class Fx {
     this._w = [0, 0, 0];
     this._streakTimer = 0;
     this._cursor = 0;
+
+    // ---- near miss (published; ui/ polls these) ----
+    /** Increments once per reported near miss. Never decreases within a run. */
+    this.nearMissSeq = 0;
+    /** Which side the hazard went past on: -1 left, +1 right, 0 over/under. */
+    this.nearMissSide = 0;
+    this._nmPrevZ = 0;
+    this._nmCool = 0;
+
+    // ---- milestones ----
+    this._milestone = 0;
   }
 
   init() {
@@ -82,7 +125,12 @@ export default class Fx {
     this._offs.push(this.ctx.on(EV.PLAYER_LAND, (p) => this.burstLand(p)));
     this._offs.push(this.ctx.on(EV.PLAYER_DEATH, () => this.burstDeath()));
     this._offs.push(this.ctx.on(EV.PLAYER_TURN, () => this.burstTurn()));
-    this._offs.push(this.ctx.on(EV.RUN_START, () => this.clear()));
+    this._offs.push(this.ctx.on(EV.RUN_START, () => {
+      this.clear();
+      this._nmPrevZ = 0;
+      this._nmCool = 0;
+      this._milestone = 0;
+    }));
   }
 
   clear() {
@@ -194,6 +242,78 @@ export default class Fx {
     }
   }
 
+  /**
+   * A milestone flourish: a flat ring of sparks thrown outward at ankle
+   * height. Deliberately LOW and WIDE rather than tall and central — the
+   * player is still running and the metre of screen above the track is the
+   * only place the next obstacle can appear.
+   *
+   * Angles come from a counter, not from ctx.rng. See the header.
+   */
+  burstMilestone() {
+    const track = this.ctx.tryGet('track');
+    const play = this.ctx.tryGet('play');
+    if (!track || !play) return;
+    if (this.ctx.config.q.name === 'low') return;  // pure garnish; low holds 60
+    track.path.toWorld(play.z, play.x, 0.10, this._w);
+    const n = 10;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + this._milestone * 0.31;
+      this._spawn(
+        this._w[0], this._w[1], this._w[2],
+        Math.cos(a) * 4.2, 0.9 + (i & 1) * 0.5, Math.sin(a) * 4.2,
+        0.11, 0.52, KIND.SPARK,
+      );
+    }
+  }
+
+  /**
+   * Report near misses. See the header for why nothing is drawn here.
+   *
+   * The test mirrors coll/'s hit test exactly — same `track.sizeOf`, same
+   * `playerRadius` — and then asks how much room was left. Anything else
+   * drifts out of agreement with what actually kills you, and a near-miss cue
+   * that fires where there was no danger is worse than none.
+   */
+  _nearMiss(dt, play, track) {
+    if (this._nmCool > 0) this._nmCool -= dt;
+    const z1 = play.z;
+    const z0 = this._nmPrevZ;
+    this._nmPrevZ = z1;
+    if (!play.alive || z1 <= z0 || this._nmCool > 0) return;
+    if (typeof track.sizeOf !== 'function') return;
+
+    const T = this.ctx.config.tune;
+    const pr = T.playerRadius;
+    const px = play.x;
+    const py0 = play.y;
+    const py1 = play.y + play.collisionHeight;
+    const obs = track.obstacles;
+
+    for (let i = 0; i < obs.length; i++) {
+      const o = obs[i];
+      if (o.z <= z0) continue;
+      if (o.z > z1) break;                 // z-sorted; nothing further passed us
+      const s = track.sizeOf(o.kind);
+      const lat = Math.abs(px - o.x) - (pr + s.hx);
+      let side = 2;                        // 2 == not a near miss
+      if (lat >= 0) {
+        if (lat < NEAR_LATERAL) side = o.x > px ? 1 : -1;
+      } else {
+        // Laterally overlapping, so it was cleared vertically. How narrowly?
+        const oy0 = s.cy - s.hy;
+        const oy1 = s.cy + s.hy;
+        const v = py0 >= oy1 ? py0 - oy1 : oy0 - py1;
+        if (v >= 0 && v < NEAR_VERTICAL) side = 0;
+      }
+      if (side === 2) continue;
+      this.nearMissSide = side;
+      this.nearMissSeq++;
+      this._nmCool = NEAR_COOLDOWN;
+      return;
+    }
+  }
+
   // ---- update ----------------------------------------------------------
 
   renderUpdate(dtReal) {
@@ -222,8 +342,20 @@ export default class Fx {
       }
     }
 
-    let alive = 0;
     const dt = Math.min(dtReal, 0.05); // a long frame must not fling particles
+
+    if (play) {
+      this._nearMiss(dt, play, track);
+      if (play.alive) {
+        const step = (play.z / MILESTONE_EVERY) | 0;
+        if (step > this._milestone) {
+          this._milestone = step;
+          this.burstMilestone();
+        }
+      }
+    }
+
+    let alive = 0;
 
     for (let i = 0; i < this.count; i++) {
       if (this.life[i] <= 0) continue;
