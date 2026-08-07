@@ -114,15 +114,46 @@ const P = {
   earY: 0.610,           // fraction of headR above centre
   bodyW: 0.318, bodyH: 0.352, bodyD: 0.262,
   bodyY: 0.790,
-  upperLen: 0.225, foreLen: 0.215, armR: 0.101,
+  // THE ARM IS A DIAGONAL, NOT A COLUMN — and getting that wrong is what made
+  // the sleeve tops read as "two lumps flanking the head". See the table under
+  // THE SHOULDER IS A CORNER, NOT A BALL below for the measurements.
+  upperLen: 0.194, foreLen: 0.186, armR: 0.101,
   handR: 0.108,
-  // THE SLEEVES MUST HANG OUTSIDE THE HEAD'S SILHOUETTE. In the reference the
-  // outer edge of the sleeve is 274 px from the centre line against a 228 px
-  // head half-width — the arms are the widest thing on the figure after the
-  // skirt. Ours were at 0.408 against a head-and-ears half-width of 0.486, so
-  // they were entirely inside the head's outline from behind and simply could
-  // not be seen. 0.415 + 0.101 = 0.516 puts them back outside it.
-  shoulderX: 0.415, shoulderY: 1.030,
+  // THE SLEEVES MUST HANG OUTSIDE THE HEAD'S SILHOUETTE — AT THE WRIST. That
+  // sentence used to stop three words earlier, and the missing clause cost a
+  // round. In docs/reference-rear.png the sleeve's outer edge is 274 px from
+  // the centre line against a 228 px head half-width, so at the CUFF the arm
+  // is indeed the widest thing on the figure after the skirt. At the SHOULDER
+  // the same measurement is 149 px — 0.66 of a head half-width, i.e. tucked
+  // well inside the head's outline and under the bib. The arm is a diagonal
+  // that starts narrow and ends wide.
+  //
+  //   THE SHOULDER IS A CORNER, NOT A BALL. Measured on the char-back pose,
+  //   as % of figure height (ear top -> sole) and in head half-widths:
+  //
+  //     landmark            reference   before    after
+  //     arm top, height       39.6%      35.6%    39.1%
+  //     arm top, width        0.66       1.15     0.87
+  //     cuff, height          54.4%      56.2%    54.3%
+  //     cuff, width           1.29       1.23     1.18
+  //     hand top, height      54.4%      58.6%    54.4%
+  //     hand outer, width     1.51       1.37     1.42
+  //
+  // Ours was a column: 1.15 head half-widths at the top and 1.23 at the cuff,
+  // so the sleeve tops sat out at nearly full arm width AND 4% of figure
+  // height above the yoke line, which is exactly the "two lumps flanking the
+  // head" complaint. 0.272 + 0.121 (the shoulder dome's radius) puts the
+  // sleeve top at 0.451 m against the yoke corner's 0.479 — inboard of the
+  // bib, the way the reference has it — and the splay in renderUpdate carries
+  // the hand back out to 1.4 head half-widths where the reference wants it.
+  //
+  // shoulderY 1.030 -> 0.962 for the other half of the same defect: the top of
+  // the shoulder dome, not the pivot, is what the silhouette shows, and it sat
+  // at 35.6% of figure height against the reference bib corner's 39.6%.
+  shoulderX: 0.245, shoulderY: 0.942,
+  // Where the cape, the skirt and the pavé yoke hang from. Its own number, not
+  // shoulderY + a bit — see the note on capeRoot.position in _buildCape.
+  collarY: 1.060,
   legR: 0.107, legLen: 0.360,
   bootR: 0.150,
   hipX: 0.152, hipY: 0.602,
@@ -1128,7 +1159,8 @@ export default class Character {
       // centred on the elbow node's ORIGIN, which is also where the upper
       // arm's lower mouth sits, so one dome closes both pipes at every bend
       // angle the animation asks for.
-      const EH = 0.35;
+      // EH likewise: 0.119 m of a 0.308 m meridian now that foreLen is 0.186.
+      const EH = 0.39;
       const rElb = P.armR * 1.05;
       const foreSurf = (u, v, out) => {
         const ph = u * TWO_PI;
@@ -1471,7 +1503,14 @@ export default class Character {
     // is most of why it engulfed the character.
     const capeRoot = new TransformNode('capeRoot', this.ctx.scene);
     capeRoot.parent = body;
-    capeRoot.position.set(0, P.shoulderY + 0.030, -0.030);
+    // COLLAR HEIGHT IS NOT SHOULDER HEIGHT. This used to read
+    // `P.shoulderY + 0.030`, which quietly made the yoke, the skirt and the
+    // whole cape a function of where the ARM JOINT is. Dropping the shoulder
+    // 68 mm to tuck the sleeve tops under the bib therefore dropped the bib
+    // itself by the same amount, and the measured bib corner went from 40.3%
+    // of figure height to 44.8% against a reference at 39.6% — a fix that
+    // undid itself. The collar hangs off the neck; it gets its own number.
+    capeRoot.position.set(0, P.collarY, -0.030);
     this.parts.capeRoot = capeRoot;
 
     this.cape = new Cape({
@@ -1756,7 +1795,11 @@ export default class Character {
       const th = (u - 0.5) * SPREAD;
       // drops lower at the centre back and at the shoulder points, like the
       // scalloped bib in the reference
-      const dip = 0.70 + 0.30 * Math.cos(th * 2.1);
+      // 0.70/0.30 -> 0.62/0.38, which takes the corner's drop from 0.088 of the
+      // band to 0.026. In the reference the bib's two edges MEET at the
+      // shoulder: it is a crescent that comes to a point, not a band of even
+      // depth swept round a cone.
+      const dip = 0.62 + 0.38 * Math.cos(th * 2.1);
       // The collar STARTS AT THE HOOD'S LOWER EDGE and flares from there. It
       // used to start 8 cm up inside the hood at a radius the hood was already
       // wider than, so the only part of it that ever emerged was the last
@@ -1764,16 +1807,36 @@ export default class Character {
       // at y = -0.045 (world 0.865, just above the hood's 0.827 lower edge) and
       // at a radius that already clears the hood means every row of it is
       // visible, which is what makes it a collar rather than a hat band.
-      // Width, measured off the reference rather than chosen: its collar's
-      // lower edge is 0.70 of the hood's width and 0.65 of the cape's. At 0.99
-      // across, this one was as wide as the hood and 0.80 of the cape, and the
-      // silhouette went from "collar" to "sombrero". 0.81 across hits both
-      // reference ratios and still clears the skirt underneath by 7 cm.
-      const ax = 0.250 + 0.155 * v;
-      const az = 0.215 + 0.130 * v;
+      //
+      // WIDTH AND DEPTH, RE-MEASURED IN THE UNITS THAT MATTER. Everything
+      // above was normalised against the HOOD, and the hood is deliberately
+      // 14% oversized relative to the reference, so "0.70 of the hood's width"
+      // silently made the collar 47% too wide. Normalised against FIGURE
+      // HEIGHT — ear top to sole, the only unit that survives a change of head
+      // size — the numbers off docs/reference-rear.png and off the char-back
+      // capture at the same scale were:
+      //
+      //                       reference   ours (before)
+      //   widest half-width     91 px       134 px       (at 573 px figure)
+      //   height of widest      39.6%       46.4%
+      //   lower edge, centre    48.8%       53.8%
+      //   visible band depth     4.8%       12.0%
+      //
+      // A band 2.5x too deep, flaring 47% too wide, with its widest point 7
+      // points of figure height too low, is not a collar: it is a cone running
+      // from the crown of the head to the top of the skirt, which is what the
+      // A/B against the reference showed and what buried the top third of each
+      // sleeve. THE ONE RATIO WORTH KEEPING is the reference's collar against
+      // the head AT THE COLLAR'S OWN HEIGHT — 91 px against a head that has
+      // narrowed to 72 px there, i.e. 1.26. Our hood's lower edge measures
+      // 84 px, so 84 x 1.26 = 106 px = 0.330 m local. It still reads as wider
+      // than the head above it, which is the thing the old note was reaching
+      // for, without being wider than the arms.
+      const ax = 0.250 + 0.080 * v;   // 0.330 at the rim: 106 px, vs a hood
+      const az = 0.215 + 0.066 * v;   // that has come in to 84 px by then
       out[0] = ax * Math.sin(th);
-      out[1] = -0.045 - 0.215 * v * dip;
-      out[2] = -az * Math.cos(th);
+      out[1] = -0.045 - 0.125 * v * dip;   // 0.215 -> 0.125: lower edge lands
+      out[2] = -az * Math.cos(th);         // at 48.9% against the ref's 48.8%
     };
 
     const bed = new Geo();
@@ -1922,15 +1985,32 @@ export default class Character {
         // hem's radius at its own height — the gold cuff and the silver hand
         // sit against the background, which is how the reference reads them.
         //
-        // ...and the splay comes back DOWN to 0.36 now that the shoulder itself
-        // has moved out to 0.415. Splay was doing the shoulder's job: at 0.55 on
-        // a narrow shoulder the arm is a chicken wing held out sideways, which
-        // clears the skirt but does not look like an arm. The reference hangs
-        // its sleeves nearly vertical and gets its width from where they are
-        // ATTACHED. 0.415 + sin(0.36) x 0.44 puts the hand 0.57 out, 0.18 clear
-        // of the hem radius at that height, with the arm still hanging.
-        this.parts.arms[0].rotation.z = -0.36 + swAlt * 0.09;
-        this.parts.arms[1].rotation.z = 0.36 - swAlt * 0.09;
+        // ...and then back UP to 0.60, because the previous note had it exactly
+        // backwards. "The reference hangs its sleeves nearly vertical and gets
+        // its width from where they are ATTACHED" is not what the reference
+        // does. Measured off docs/reference-rear.png: the sleeve's outer edge
+        // runs from 149 px out at the shoulder to 293 px out at the cuff over a
+        // 139 px drop — an arm held about 40 degrees off vertical. Attachment
+        // and splay had been swapped: the shoulder was carrying the width and
+        // the splay was carrying nothing, so the sleeve tops sat out beside the
+        // head and the hands hung straight down at the hem.
+        // The arithmetic, in the pivot's own frame and in metres before the
+        // 1.16 presentation scale. The elbow is held at about -0.58 rad, so the
+        // forearm only contributes foreLen x cos(0.58) = 0.836 of its length to
+        // the drop:  reach = upperLen + 0.836 x foreLen = 0.376.
+        //     drop   = 0.350 x cos(0.82) = 0.239   -> hand top at 54% of figure
+        //     spread = 0.350 x sin(0.82) = 0.256   -> wrist at 0.245 + 0.256
+        //
+        // NORMALISE ARM WIDTHS AGAINST FIGURE HEIGHT, NOT THE HEAD. Measured
+        // in head half-widths our cuff looked 11% short of the reference's and
+        // the fingertips 8% short, which is an argument for a splay of 54
+        // degrees — a chicken wing. In figure-height units, on a capture
+        // rescaled so both figures are 573 px tall, the same two measurements
+        // are cuff 181 px against the reference's 179 and fingertips 220
+        // against 210. The arm is already the right width; only the head is
+        // bigger. Do not chase the head-normalised number again.
+        this.parts.arms[0].rotation.z = -0.82 + swAlt * 0.09;
+        this.parts.arms[1].rotation.z = 0.82 - swAlt * 0.09;
         // The elbow is the whole point of the two-segment arm: a runner's arm
         // is held bent, and a straight one reads as a stick. Eased off from
         // -0.95: that folded the forearm so far forward that from directly
@@ -1949,8 +2029,8 @@ export default class Character {
         this.parts.legs[1].rotation.x = rise ? -0.28 : 0.66;
         this.parts.arms[0].rotation.x = rise ? -1.35 : -0.50;
         this.parts.arms[1].rotation.x = rise ? -1.35 : -0.50;
-        this.parts.arms[0].rotation.z = -0.58;
-        this.parts.arms[1].rotation.z = 0.58;
+        this.parts.arms[0].rotation.z = -0.74;
+        this.parts.arms[1].rotation.z = 0.74;
         bendA = bendB = rise ? -0.55 : -1.10;
         body.position.y = 0;
         body.rotation.x = rise ? -0.16 : 0.22;
@@ -1962,8 +2042,8 @@ export default class Character {
         this.parts.legs[1].rotation.x = 1.10;
         this.parts.arms[0].rotation.x = -1.0;
         this.parts.arms[1].rotation.x = -0.8;
-        this.parts.arms[0].rotation.z = -0.5;
-        this.parts.arms[1].rotation.z = 0.5;
+        this.parts.arms[0].rotation.z = -0.66;
+        this.parts.arms[1].rotation.z = 0.66;
         bendA = bendB = -1.30;
         // scaled with the body, so the slide silhouette stays as low relative
         // to the character as it was before the presentation scale went in
