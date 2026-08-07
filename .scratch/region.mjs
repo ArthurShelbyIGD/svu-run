@@ -79,6 +79,47 @@ if (mode === 'stats') {
       console.log(`   ${k.padEnd(7)} rgb(${v.rgb.join(',')})  lum ${String(v.lum).padStart(6)}  p50 ${String(v.p50).padStart(6)}  p95 ${String(v.p95).padStart(6)}  sat ${v.sat}`);
     }
   }
+} else if (mode === 'hue') {
+  // Within the lineup box, separate the pixels the colour contract cares
+  // about: RED (hazard cords), GOLD (trim and stars), and near-neutral
+  // (marble / diamond). Report each cluster's mean colour and count.
+  for (const f of process.argv.slice(3)) {
+    await load(f);
+    const r = await page.evaluate(([box]) => {
+      const [x, y, w, h] = box;
+      const d = window.__cv.getContext('2d').getImageData(x, y, w, h).data;
+      const acc = { red: [0, 0, 0, 0], gold: [0, 0, 0, 0], pale: [0, 0, 0, 0] };
+      for (let i = 0; i < d.length; i += 4) {
+        const R = d[i], G = d[i + 1], B = d[i + 2];
+        const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+        if (mx < 60) continue;                       // too dark to be a signal
+        const sat = (mx - mn) / mx;
+        let hue;
+        if (mx === mn) hue = 0;
+        else if (mx === R) hue = 60 * (((G - B) / (mx - mn)) % 6);
+        else if (mx === G) hue = 60 * ((B - R) / (mx - mn) + 2);
+        else hue = 60 * ((R - G) / (mx - mn) + 4);
+        if (hue < 0) hue += 360;
+        let k = null;
+        if (sat > 0.45 && (hue >= 320 || hue < 20)) k = 'red';
+        else if (sat > 0.28 && hue >= 34 && hue < 62) k = 'gold';
+        else if (sat < 0.16 && mx > 120) k = 'pale';
+        if (!k) continue;
+        acc[k][0] += R; acc[k][1] += G; acc[k][2] += B; acc[k][3]++;
+      }
+      const out = {};
+      for (const [k, a] of Object.entries(acc)) {
+        out[k] = a[3] ? [Math.round(a[0] / a[3]), Math.round(a[1] / a[3]), Math.round(a[2] / a[3]), a[3]] : null;
+      }
+      return out;
+    }, [BOXES.lineup]);
+    console.log(`\n== ${f}`);
+    for (const [k, v] of Object.entries(r)) {
+      console.log(v
+        ? `   ${k.padEnd(5)} rgb(${v[0]},${v[1]},${v[2]})  ${v[3]} px`
+        : `   ${k.padEnd(5)} none`);
+    }
+  }
 } else if (mode === 'crop') {
   const [f, x, y, w, h, scale, out] = process.argv.slice(3);
   await load(f);

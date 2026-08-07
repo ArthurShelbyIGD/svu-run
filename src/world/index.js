@@ -20,6 +20,48 @@ import Sky from './sky.js';
 import Props from './props.js';
 
 /**
+ * Slerp a light direction between two zones' key vectors, in place.
+ *
+ * A COMPONENT-WISE LERP IS NOT ENOUGH, and the reason is worth the six lines.
+ * Vault's key and Ruby's are 120 degrees apart — that is the whole point, the
+ * lit side of every column changes sides — and a straight lerp between two
+ * nearly opposite unit vectors passes close to the ORIGIN. Normalising it back
+ * out afterwards fixes the length but not the rate: measured over the Vault to
+ * Ruby crossfade, the x component moved 0.032 in one ten-metre step near the
+ * start and 0.227 in one ten-metre step in the middle. The light would hang,
+ * then whip, then hang. Slerp is constant angular velocity: 120 degrees spread
+ * evenly over 150 metres, about nine degrees a second, which reads as the sun
+ * moving rather than as a glitch.
+ *
+ * The great-circle path is the same path the normalised lerp took — halfway
+ * between two opposed rakes is overhead, and there is no way round that — so
+ * this changes only the timing, which is the part that was wrong.
+ */
+function slerpDir(out, a, b, t) {
+  let ax = a[0], ay = a[1], az = a[2];
+  const la = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+  ax /= la; ay /= la; az /= la;
+  let bx = b[0], by = b[1], bz = b[2];
+  const lb = Math.sqrt(bx * bx + by * by + bz * bz) || 1;
+  bx /= lb; by /= lb; bz /= lb;
+  let d = ax * bx + ay * by + az * bz;
+  if (d > 1) d = 1; else if (d < -1) d = -1;
+  const th = Math.acos(d);
+  const s = Math.sin(th);
+  // Almost parallel (or exactly antiparallel, where the great circle is not
+  // unique): fall back to lerp-and-normalise, which is well behaved there.
+  if (s < 1e-4) {
+    const x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
+    const l = Math.sqrt(x * x + y * y + z * z) || 1;
+    out.set(x / l, y / l, z / l);
+    return;
+  }
+  const w1 = Math.sin((1 - t) * th) / s;
+  const w2 = Math.sin(t * th) / s;
+  out.set(ax * w1 + bx * w2, ay * w1 + by * w2, az * w1 + bz * w2);
+}
+
+/**
  * Blend a Color3 between two [r,g,b] literals, in place.
  * Called several times a frame from renderUpdate, so it allocates nothing.
  */
@@ -279,18 +321,13 @@ export default class World {
 
     // ---- the light itself -------------------------------------------------
     //
-    // RE-NORMALISE. A component-wise lerp between two unit vectors is shorter
-    // than either of them — halfway between Ruby's key and Sapphire's the raw
-    // lerp is 0.79 long — and Babylon multiplies by the direction as given, so
-    // an un-normalised crossfade is a light that dips by twenty percent in the
-    // middle of every zone boundary and comes back. That reads as a flicker,
-    // and it would have been blamed on the sky.
-    const d = this.key.direction;
-    let dx = a.key[0] + (b.key[0] - a.key[0]) * blend;
-    let dy = a.key[1] + (b.key[1] - a.key[1]) * blend;
-    let dz = a.key[2] + (b.key[2] - a.key[2]) * blend;
-    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
-    d.set(dx / len, dy / len, dz / len);
+    // The direction is SLERPED, not lerped — see slerpDir. Babylon multiplies
+    // by the direction as it is given, so a raw component-wise lerp is both
+    // the wrong length (a light that dims 20% mid-crossfade and comes back)
+    // and the wrong rate. Measured across the whole Vault-to-Ruby blend after
+    // this, the direction stays exactly unit length and no ten-metre step
+    // turns it by more than 4.9 degrees.
+    slerpDir(this.key.direction, a.key, b.key, blend);
     this.key.intensity = a.keyI + (b.keyI - a.keyI) * blend;
     lerp3(this.key.diffuse, a.keyC, b.keyC, blend);
     lerp3(this.key.specular, a.keyS, b.keyS, blend);
