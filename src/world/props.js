@@ -23,12 +23,31 @@
 // fight that, the bay's shafts are sized to swallow them: minimum shaft radius
 // is 0.37m everywhere against the track cylinder's 0.36m -> 0.275m taper, so
 // the plain cylinder sits entirely inside the fluted one and never shows.
+// THAT IS ALSO WHY COLUMN SPACING IS NOT A ZONE DIAL. COL_STEP is 8m because
+// track/'s COLUMN_SPACING is 8m; move one and the other leaves a bare pink
+// cylinder standing in a carved colonnade at every corner. The rhythm dials a
+// zone does get are the ones nothing else owns: the transverse vault's height
+// and cadence, and the distance and height of the silhouette bands.
+//
+// WHICH PARTS OF A BAY BELONG TO THE ZONE. Three matrices per bay, not one:
+//   bayBufs    everything whose proportions are fixed (cornice, aisle, floor)
+//   vaultBufs  the transverse arch, scaled about its springing and optionally
+//              skipped — this is the object at the vanishing point
+//   silBufs    the mid and far depth bands, scaled out and up
+// All three read zoneAt(bay midpoint), never zoneAt(player), because a bay is
+// placed once up to 184m ahead and is never touched again.
+//
+// A RULE THIS FILE LEARNED THE HARD WAY: a large additive billboard must reach
+// zero alpha at EVERY edge of its own quad. See _buildShafts — one 0.42 stop
+// sitting on a quad boundary was the hard horizontal line across the top of
+// the portrait frame that went unexplained for three rounds.
 
 import {
   MeshBuilder, Mesh, Matrix, Vector3, Quaternion, StandardMaterial,
   DynamicTexture, Texture, Color3, Constants,
 } from '../core/bjs.js';
 import { box, cyl, gem, slab, flutedShaft, arch, star, mergeBucket } from './geo.js';
+import { ZONES, zoneAt } from './zones.js';
 
 export const BAY_LEN = 24;
 const COL_X = 4.95;              // matches the track's own column offset
@@ -57,6 +76,8 @@ export default class Props {
     this.colBufs = [];
     this.accentBufs = [];
     this.runnerBufs = [];
+    this.vaultBufs = [];
+    this.silBufs = [];
     this._nextRunnerS = 0;
     this._runnerSlot = 0;
     this._nextColS = 0;
@@ -71,6 +92,10 @@ export default class Props {
     this._baySlot = 0;
     this._accentSlot = 0;
     this._rng = null;
+    // Capture affordance only — see World.setZoneBias. Shifts the distance the
+    // zone lookup reads so a shot can be posed inside zone 4 without running
+    // 2500 metres to get there. Zero in play.
+    this.zoneBias = 0;
   }
 
   init() {
@@ -236,6 +261,8 @@ export default class Props {
     const G = [];   // goldTrim     — rings, abaci, keystones, dentils, chains
     const M = [];   // emissive     — lantern gems
     const F = [];   // marbleDark   — the hall floor, placed on its own rules
+    const V = [];   // marbleLight  — the transverse vault, its own matrix
+    const VG = [];  // goldTrim     — its keystone
 
     // --- the floor of the hall ---
     // Without this the colonnade stands on nothing: the wide shot showed the
@@ -272,9 +299,24 @@ export default class Props {
     // level, which in a runner looks like an obstacle.
 
     // --- the one transverse arch that vaults the track, at the bay centre ---
-    arch(scene, L, G, {
+    //
+    // THIS IS THE OBJECT AT THE VANISHING POINT, so it is the strongest thing
+    // in the frame and it used to be identical in all five zones. It is now
+    // built in its OWN bucket, springing from y = 0 rather than from SPRING_Y,
+    // and placed with its own matrix — which buys two per-zone dials for two
+    // draw calls: a vertical scale about the springing line (a squat barrel in
+    // Ruby, a lancet in Sapphire) and a cadence, so Sapphire vaults only every
+    // other bay and its ceiling is mostly sky. See _placeBay.
+    //
+    // Scaling y about the springing keeps the arch's feet exactly where the
+    // abaci are, so the junction with the capital never opens up. It does put
+    // a non-uniform scale on the instance matrix, which Babylon transforms
+    // normals by directly rather than by its inverse transpose; at the 0.80 to
+    // 1.42 used here that is a few degrees of shading error on a voussoir and
+    // nothing you can see.
+    arch(scene, V, VG, {
       axis: 'x', x: 0, z: 0,
-      radius: COL_X, springY: SPRING_Y,
+      radius: COL_X, springY: 0,
       voussoirs: low ? 9 : 13, thickness: 0.62, width: 1.20,
     });
 
@@ -441,6 +483,16 @@ export default class Props {
     this.gemMat.specularColor = new Color3(1, 0.94, 0.82);
     this.gemMat.specularPower = 24;
     this.gemMat.emissiveColor = new Color3(1, 0.8, 0.4);
+    // DEAD, AND LEFT DELIBERATELY VISIBLE. Nothing anywhere in this file
+    // pushes into `M`, so mergeBucket returns null, `bayGem` is null, and the
+    // per-zone tint setGlow() writes into gemMat every frame lands on a
+    // material attached to no mesh. The lantern gems were removed at some
+    // point and their plumbing was not. Do not "fix" it by adding glowing
+    // gems back: a coloured jewel hanging in the arcade is a fourth thing in a
+    // world that speaks exactly three colours (gold you take, red you die on,
+    // white diamond you ignore), and in Ruby it would be a red glowing object
+    // that is not a hazard. If this band of the room needs a per-zone accent,
+    // it wants to be LIGHT — a lantern, a window — not a stone.
     this.bayGem = mergeBucket(scene, 'bayGem', M, this.gemMat);
 
     // TWO materials, not one, and this is the whole reason the bands separate.
@@ -457,6 +509,22 @@ export default class Props {
     for (const m of [this.baySil, this.baySilFar]) {
       if (m) m.receiveShadows = false;
     }
+    // The depth bands get their own matrix so a zone can push the far side of
+    // the hall out and up (Sapphire, 1.32 x 1.34) or pull it in and squash it
+    // (Ruby, 0.80 x 0.84). Same meshes, same draw calls, and because they are
+    // unlit fills the non-uniform scale costs nothing at all — there is no
+    // normal to get wrong. This is the cheapest "how big is this room" lever
+    // in the file and it works because those three stacked rooflines are what
+    // the eye was reading as scale in the first place.
+    for (const m of [this.baySil, this.baySilFar]) {
+      if (m) this.silBufs.push(this._alloc(m, BAY_SLOTS));
+    }
+
+    this.vaultStone = mergeBucket(scene, 'vaultStone', V, mat.get('marbleLight'));
+    this.vaultGold = mergeBucket(scene, 'vaultGold', VG, mat.get('goldTrim'));
+    for (const m of [this.vaultStone, this.vaultGold]) {
+      if (m) this.vaultBufs.push(this._alloc(m, BAY_SLOTS));
+    }
 
     // --- contact darkening where the walls meet the floor ---
     // Two bands per side, running the whole bay. This is what turns a set of
@@ -472,7 +540,7 @@ export default class Props {
     if (this.bayAO) this.bayAO.receiveShadows = false;
 
     for (const m of [this.bayLight, this.bayDark, this.bayGold, this.bayGem,
-      this.baySil, this.baySilFar, this.bayAO]) {
+      this.bayAO]) {
       if (m) this.bayBufs.push(this._alloc(m, BAY_SLOTS));
     }
 
@@ -614,10 +682,55 @@ export default class Props {
     const tex = new DynamicTexture('lightShaft', { width: size, height: size }, scene, true);
     const c = tex.getContext();
     c.clearRect(0, 0, size, size);
+
+    // THE HARD LINE ACROSS THE TOP OF THE PORTRAIT FRAME WAS THIS TEXTURE.
+    //
+    // Reported for three rounds, blamed on the HUD twice and on the sky once,
+    // and it was neither. Measured, not argued:
+    //
+    //   * with the sky domes disabled the step is STILL there and twice as
+    //     strong (-44.5 row-mean, 100% of columns); with only the sky domes
+    //     enabled it is completely absent. So: not the panorama, not the HUD.
+    //   * disabling this one mesh removes it (-20.8 at 99% of columns -> -6.6
+    //     at 47%, i.e. down into the ordinary texture of the frame).
+    //   * and the arithmetic closes. Camera y=2.8, pitch 0.1138 rad, vertical
+    //     fov 0.9996 rad; nearest shaft instance 17.43m ahead; the quad's
+    //     BOTTOM edge is at world y=5.45. That edge lands at 8.647 degrees of
+    //     elevation, which is device row 425.3 of 1688. Measured row: 426.
+    //
+    // Canvas row 0 maps to the plane's BOTTOM edge (DynamicTexture uploads
+    // inverted), so the 0.42 stop was sitting exactly on the quad's lower
+    // boundary: a screen-filling additive quad going from 42% opaque to
+    // nothing in zero pixels. That is a straight bright-to-dark line across
+    // the whole frame, and no amount of it being "only a light shaft" stops
+    // the eye reading it as a seam in the picture.
+    //
+    // THE RULE, and it is general: a large additive billboard must reach zero
+    // alpha at EVERY edge of its own quad. The horizontal edges were already
+    // faded (see the destination-in pass below) — which is why this only ever
+    // showed as a horizontal line. The vertical ones were not.
+    //
+    // The profile is otherwise deliberately unchanged: the beam is still
+    // brightest low and fades upward, because that is the look zone 1 was
+    // signed off with. All that is added is a foot — the bottom 16% of the
+    // quad, about 1.2m of world height, ramps in from nothing. At the
+    // distances a shaft is actually seen that is a couple of hundred pixels of
+    // gradient, which is far too gradual to read as an edge.
+    //
+    // The foot costs the beam about eight percent of its total alpha, and in
+    // portrait — where a shaft twelve metres ahead fills the upper half of the
+    // frame — that measured as zone 1's median dropping from 42.9 to 39.7.
+    // Zone 1 is the calling card and does not get to pay for someone else's
+    // bug, so the area is put back ABOVE the foot, by holding the beam's waist
+    // fuller for longer. That is the one part of the quad with no boundary
+    // anywhere near it, so it cannot bring the seam back.
     const v = c.createLinearGradient(0, 0, 0, size);
-    v.addColorStop(0, 'rgba(255,242,215,0.42)');
-    v.addColorStop(0.5, 'rgba(255,232,190,0.16)');
-    v.addColorStop(1, 'rgba(255,225,175,0)');
+    v.addColorStop(0.00, 'rgba(255,244,220,0)');
+    v.addColorStop(0.06, 'rgba(255,243,218,0.13)');
+    v.addColorStop(0.16, 'rgba(255,242,215,0.44)');
+    v.addColorStop(0.34, 'rgba(255,238,205,0.30)');
+    v.addColorStop(0.55, 'rgba(255,232,190,0.16)');
+    v.addColorStop(1.00, 'rgba(255,225,175,0)');
     c.fillStyle = v;
     c.fillRect(0, 0, size, size);
     // soften the vertical edges so the quad has no visible boundary
@@ -688,6 +801,8 @@ export default class Props {
     for (const b of this.colBufs) b.fill(0);
     for (const b of this.accentBufs) b.fill(0);
     for (const b of this.runnerBufs) b.fill(0);
+    for (const b of this.vaultBufs) b.fill(0);
+    for (const b of this.silBufs) b.fill(0);
     if (this.floorBuf) this.floorBuf.fill(0);
     if (this.shaftBuf) this.shaftBuf.fill(0);
     this._flush();
@@ -794,11 +909,58 @@ export default class Props {
 
     if (hidden) {
       for (const b of this.bayBufs) b.fill(0, o, o + 16);
+      for (const b of this.vaultBufs) b.fill(0, o, o + 16);
+      for (const b of this.silBufs) b.fill(0, o, o + 16);
       if (this.shaftBuf) this.shaftBuf.fill(0, o, o + 16);
       return;
     }
     this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
     for (const b of this.bayBufs) this._m.copyToArray(b, o);
+
+    // ---- the parts of a bay whose PROPORTIONS belong to the zone ----------
+    //
+    // THE ZONE IS LOOKED UP AT THE BAY'S OWN DISTANCE, not at the player's.
+    // A bay is placed once, up to 184m ahead, and never revisited — so asking
+    // "what zone is the player in" would build the last 184m of every zone in
+    // the previous zone's proportions and then leave the player to run through
+    // the mistake. Asking at `mid` means the architecture changes exactly
+    // where the light does, and because the blend is continuous the ceiling
+    // creeps up or down over 150m instead of stepping.
+    const { index, next, blend } = zoneAt(mid + this.zoneBias);
+    const za = ZONES[index];
+    const zb = ZONES[next];
+    const rise = za.rise + (zb.rise - za.rise) * blend;
+    const open = za.open + (zb.open - za.open) * blend;
+    const high = za.high + (zb.high - za.high) * blend;
+    // `every` is a count and cannot be lerped. It does not need to be: the
+    // vault is already a per-bay yes/no, so switching the rule at the halfway
+    // point of the crossfade changes one arch in a row of arches that are all
+    // slowly changing height anyway, and there is nothing to see.
+    const every = (blend < 0.5 ? za.every : zb.every) | 0;
+
+    Quaternion.RotationYawPitchRollToRef(yaw, 0, 0, this._q);
+
+    if (this.vaultBufs.length) {
+      if (every > 1 && (this._baySlot % every) !== 0) {
+        for (const b of this.vaultBufs) b.fill(0, o, o + 16);
+      } else {
+        this._s.set(1, rise, 1);
+        this._p.set(this._w[0], this._w[1] + SPRING_Y, this._w[2]);
+        Matrix.ComposeToRef(this._s, this._q, this._p, this._m);
+        for (const b of this.vaultBufs) this._m.copyToArray(b, o);
+      }
+    }
+
+    if (this.silBufs.length) {
+      this._s.set(open, high, 1);
+      this._p.set(this._w[0], this._w[1], this._w[2]);
+      Matrix.ComposeToRef(this._s, this._q, this._p, this._m);
+      for (const b of this.silBufs) this._m.copyToArray(b, o);
+    }
+
+    // restore _m for the shaft below, which wants the plain bay transform
+    Matrix.RotationYToRef(yaw, this._m);
+    this._m.setTranslationFromFloats(this._w[0], this._w[1], this._w[2]);
     if (this.shaftBuf) {
       // Every third bay gets a shaft. Every bay is a fog machine; every third
       // is a cathedral.
@@ -897,7 +1059,8 @@ export default class Props {
    * small, self-shadowing or flat on the ground.
    */
   casters() {
-    return [this.colLight, this.colDark, this.bayLight, this.accentStone];
+    return [this.colLight, this.colDark, this.bayLight, this.vaultStone,
+      this.accentStone];
   }
 
   dispose() {

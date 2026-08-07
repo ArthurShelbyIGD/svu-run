@@ -9,6 +9,43 @@
 //              room swings around the player instead of sitting still
 //   props.js — a 24m bay of procedural architecture, thin-instanced along the
 //              path and recycled behind the player
+//
+// ---------------------------------------------------------------------------
+// A ZONE IS A ROOM, NOT A FILTER. Everything below is data in zones.js, read
+// and blended here: key direction / intensity / colour, ambient, shadow
+// darkness, fog density, and (in props.js, per bay) the height of the vault
+// and how far away the far side of the hall is.
+//
+// THREE THINGS MEASURED WHILE BUILDING IT, so nobody has to argue about them
+// again. All from the five `zoneN` capture poses, which are one straight, one
+// seed and one obstacle lineup with the zone as the only variable:
+//
+// 1. THE CHARACTER DOES NOT TAKE THE ROOM'S COLOUR, and does not need a
+//    neutral key of its own. Head patch across Vault / Ruby / Sapphire /
+//    Emerald / Gilt: rgb(205,196,182) (197,196,180) (206,200,190)
+//    (210,206,188) (235,225,207), saturation 0.115 / 0.141 / 0.080 / 0.103 /
+//    0.122. It is LESS saturated in Emerald than in the zone the owner signed
+//    off. The portrait rig in attachPortraitRig is four point lights at 8-30
+//    against a key of 5-8.6 and it simply wins; the earlier build where the
+//    figure read green did not have it.
+//
+// 2. THE COLOUR CONTRACT SURVIVES ALL FIVE ROOMS. Clustering the 26m lineup
+//    by hue, red-hazard mean vs gold mean:
+//        Vault    (182,40,79)  vs (156,127,58)
+//        Ruby     (120,28,53)  vs (158,126,56)
+//        Sapphire (200,48,94)  vs (161,138,69)
+//        Emerald  (146,37,66)  vs (140,125,55)
+//        Gilt     (217,82,100) vs (145,121,67)
+//    Worst case is Gilt, gold light on gold trim, and even there G/R is 0.38
+//    for the hazard against 0.83 for the gold. They never converge because
+//    `keyC` is not allowed to — see THE READABILITY BUDGET in zones.js.
+//
+// 3. THE Z SIGN OF A KEY IS AN EXPOSURE CONTROL, not a style choice. In a
+//    chase camera a key with negative z lights the faces turned away from the
+//    player. Ruby and Emerald shipped their first pass that way and measured
+//    43.7 and 51.0 whole-frame mean against Vault's 55.8, with the obstacle
+//    lineup at 37.7 and 42.9 against 80. Fixed by raking the key forward:
+//    52.9 and 59.9, lineup 57.9 and 56.7.
 
 import {
   DirectionalLight, HemisphericLight, PointLight, ShadowGenerator,
@@ -18,6 +55,72 @@ import { EV } from '../core/ctx.js';
 import { ZONES, zoneAt } from './zones.js';
 import Sky from './sky.js';
 import Props from './props.js';
+
+/**
+ * Slerp a light direction between two zones' key vectors, in place.
+ *
+ * A COMPONENT-WISE LERP IS NOT ENOUGH, and the reason is worth the six lines.
+ * Vault's key and Ruby's are 120 degrees apart — that is the whole point, the
+ * lit side of every column changes sides — and a straight lerp between two
+ * nearly opposite unit vectors passes close to the ORIGIN. Normalising it back
+ * out afterwards fixes the length but not the rate: measured over the Vault to
+ * Ruby crossfade, the x component moved 0.032 in one ten-metre step near the
+ * start and 0.227 in one ten-metre step in the middle. The light would hang,
+ * then whip, then hang. Slerp is constant angular velocity: 120 degrees spread
+ * evenly over 150 metres, about nine degrees a second, which reads as the sun
+ * moving rather than as a glitch.
+ *
+ * The great-circle path is the same path the normalised lerp took — halfway
+ * between two opposed rakes is overhead, and there is no way round that — so
+ * this changes only the timing, which is the part that was wrong.
+ *
+ * KNOWN TRADE-OFF, visible in the `zone-blend` capture pose. Because the arc
+ * goes over the top, the key is near-vertical for a couple of seconds in the
+ * middle of the Vault-to-Ruby crossfade, and for those seconds the columns
+ * stop laying bars across the road — the exact complaint the raking key was
+ * chosen to answer. It looks like a room at noon rather than like a bug, so it
+ * is left alone. The alternative is interpolating azimuth and elevation
+ * separately, which keeps the rake all the way across; it was not taken
+ * because swinging the azimuth the short way passes through dead front
+ * lighting (shadows hidden behind their own casters) and the long way through
+ * dead back lighting (the whole room in shade, which is the mistake Ruby and
+ * Emerald already made once). Worth revisiting if the flat moment is called.
+ */
+function slerpDir(out, a, b, t) {
+  let ax = a[0], ay = a[1], az = a[2];
+  const la = Math.sqrt(ax * ax + ay * ay + az * az) || 1;
+  ax /= la; ay /= la; az /= la;
+  let bx = b[0], by = b[1], bz = b[2];
+  const lb = Math.sqrt(bx * bx + by * by + bz * bz) || 1;
+  bx /= lb; by /= lb; bz /= lb;
+  let d = ax * bx + ay * by + az * bz;
+  if (d > 1) d = 1; else if (d < -1) d = -1;
+  const th = Math.acos(d);
+  const s = Math.sin(th);
+  // Almost parallel (or exactly antiparallel, where the great circle is not
+  // unique): fall back to lerp-and-normalise, which is well behaved there.
+  if (s < 1e-4) {
+    const x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
+    const l = Math.sqrt(x * x + y * y + z * z) || 1;
+    out.set(x / l, y / l, z / l);
+    return;
+  }
+  const w1 = Math.sin((1 - t) * th) / s;
+  const w2 = Math.sin(t * th) / s;
+  out.set(ax * w1 + bx * w2, ay * w1 + by * w2, az * w1 + bz * w2);
+}
+
+/**
+ * Blend a Color3 between two [r,g,b] literals, in place.
+ * Called several times a frame from renderUpdate, so it allocates nothing.
+ */
+function lerp3(out, a, b, t) {
+  out.set(
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  );
+}
 
 export default class World {
   constructor(ctx) {
@@ -30,6 +133,7 @@ export default class World {
     this._fog = new Color3();
     this._haze = new Color3();
     this._zoneIndex = -1;
+    this.zoneBias = 0;   // see setZoneBias — a capture affordance, 0 in play
     this._offs = [];
     this._w = [0, 0, 0];   // scratch for path->world, never reallocated
   }
@@ -75,6 +179,12 @@ export default class World {
     // almost fully across the corridor, the same column lays a hard bar right
     // across the running surface — which is the single cheapest way to prove
     // to the eye that the light is real and the geometry is in it.
+    //
+    // The vector, the intensity and both colours are now PER ZONE and live in
+    // zones.js; these are only the values the light is born with, and
+    // _applyZone overwrites them on the first frame. Zone 1's entry in that
+    // table is these exact numbers, deliberately, so the signed-off hall is
+    // bit-for-bit what it was.
     this.key = new DirectionalLight('key', new Vector3(-0.80, -0.53, 0.28), scene);
     this.key.intensity = 6.4;
     this.key.diffuse = new Color3(1.0, 0.91, 0.78);
@@ -169,9 +279,43 @@ export default class World {
     }
   }
 
+  /**
+   * ZONE BIAS — a capture affordance, and the reason zone grading was wrong
+   * for two rounds.
+   *
+   * A zone is chosen by distance. Zones 2-5 begin at 620, 1240, 1860 and
+   * 2480m, and fourteen seconds of game time is about two hundred metres — so
+   * EVERY pose in tools/capture.mjs shoots zone 1, and every "the zones all
+   * feel the same" verdict so far was reached from screenshots physically
+   * incapable of showing four fifths of the game.
+   *
+   * Simulating 2800m per pose is slow and lands the player at an arbitrary
+   * point in the turn grammar, which makes two shots non-comparable. Biasing
+   * the distance the zone system READS instead keeps the player on one known
+   * straight, with one seed and one obstacle lineup, and leaves the zone as
+   * the only variable in the frame.
+   *
+   * It re-lays the architecture as well as the lighting, because a bay's
+   * proportions are now a function of the zone it stands in (see props.js) and
+   * bays are placed once, ahead of the player, and never revisited.
+   *
+   * Nothing in the game calls this. It is safe in play — the bias is 0 — and
+   * it exists so a critic can see zone 4.
+   */
+  setZoneBias(metres) {
+    this.zoneBias = metres;
+    this.props.zoneBias = metres;
+    this.props.reset();
+    const play = this.ctx.tryGet('play');
+    const track = this.ctx.tryGet('track');
+    if (play && track && track.path) this.props.update(play.z, track);
+    this._zoneIndex = -1;
+    this._applyZone(play ? play.z : 0);
+  }
+
   /** Set everything a zone controls, blending into the next by `t`. */
   _applyZone(distance) {
-    const { index, next, blend } = zoneAt(distance);
+    const { index, next, blend } = zoneAt(distance + this.zoneBias);
     const a = ZONES[index];
     const b = ZONES[next];
     const scene = this.ctx.scene;
@@ -223,6 +367,28 @@ export default class World {
       const q = this.ctx.config.q;
       pipe.bloomWeight = (a.bloom + (b.bloom - a.bloom) * blend) * (q.bloomScale / 0.6);
     }
+
+    // ---- the light itself -------------------------------------------------
+    //
+    // The direction is SLERPED, not lerped — see slerpDir. Babylon multiplies
+    // by the direction as it is given, so a raw component-wise lerp is both
+    // the wrong length (a light that dims 20% mid-crossfade and comes back)
+    // and the wrong rate. Measured across the whole Vault-to-Ruby blend after
+    // this, the direction stays exactly unit length and no ten-metre step
+    // turns it by more than 4.9 degrees.
+    slerpDir(this.key.direction, a.key, b.key, blend);
+    this.key.intensity = a.keyI + (b.keyI - a.keyI) * blend;
+    lerp3(this.key.diffuse, a.keyC, b.keyC, blend);
+    lerp3(this.key.specular, a.keyS, b.keyS, blend);
+
+    this.ambient.intensity = a.ambI + (b.ambI - a.ambI) * blend;
+    lerp3(this.ambient.diffuse, a.ambC, b.ambC, blend);
+    lerp3(this.ambient.groundColor, a.ambG, b.ambG, blend);
+
+    if (this.shadowGen) {
+      this.shadowGen.darkness = a.shadow + (b.shadow - a.shadow) * blend;
+    }
+    scene.fogDensity = a.fogD + (b.fogD - a.fogD) * blend;
   }
 
   /** Register a node (and its descendants) as a shadow caster. */
