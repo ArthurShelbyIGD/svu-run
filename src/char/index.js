@@ -1052,6 +1052,15 @@ export default class Character {
       const wrist = new TransformNode(`wrist${s}`, scene);
       wrist.parent = elbow;
       wrist.position.set(0, -P.foreLen - 0.010, 0.010);
+      // THE HAND IS COCKED BACK AT THE WRIST, and this is a camera decision,
+      // not an anatomy one. The elbow is held at -0.58 to -0.90 rad through the
+      // whole run cycle, so a hand in line with the forearm points its fingers
+      // forward and DOWN — i.e. away from the only camera this game has — and
+      // the first fixed version still photographed as a palm with four short
+      // stubs under it, because the fingers were foreshortened to a third of
+      // their length. 0.34 rad of wrist counter-rotation swings the tips back
+      // towards the lens without making the arm look broken from the side.
+      wrist.rotation.x = 0.34;
       this._buildGlove(wrist, s, mat, scene);
 
       this.parts.arms.push(pivot);
@@ -1106,7 +1115,7 @@ export default class Character {
     // entirely inside it — five rings a hand rendering nothing. The palm is
     // now 55% of the hand and the fingers are the other 45%, which is what
     // docs/reference-rear.png shows: a paw whose lower half is lobes.
-    g.at(0, -R * 0.44, 0.004, 0, 0, 0, 1.0, 0.72, 0.70);
+    g.at(0, -R * 0.42, 0.004, 0, 0, 0, 1.10, 0.66, 0.64);
     g.add(ellipsoid({ rx: R, e1: 0.72, e2: 0.66, su: this.sd + 6, sv: this.sd + 2 }));
 
     // THE SUBTRACTION THAT WELDED THEM TOGETHER. Finger radius was R*0.265 —
@@ -1114,18 +1123,25 @@ export default class Character {
     // centre pitch. GAP = MINUS 19.1 mm. Every finger interpenetrated its
     // neighbour by a third of its own diameter, so four fingers were one welded
     // slab with four faint ripples down it.
-    //   radius R*0.200 -> 43.2 mm across
-    //   span   R*1.42  -> 51.1 mm pitch
-    //   gap    +7.9 mm at the knuckle, ~33 mm at the tips once splay opens them
+    //   radius R*0.225 -> 48.6 mm across
+    //   span   R*1.62  -> 58.3 mm pitch
+    //   gap    +9.7 mm at the knuckle, ~33 mm at the tips once splay opens them
     // DO THAT SUBTRACTION before touching either number.
-    const SPAN = R * 1.42;
-    const FR = R * 0.200;
-    const fl = R * 1.21;
+    //
+    // AND THEN CHECK THE ASPECT RATIO, because "separated" is not the same as
+    // "right". At R*0.200 on a span of R*1.50 with fl = R*1.45 the fingers came
+    // out 3.5 times longer than wide and the paw read as a human hand in a
+    // glove. Crop docs/reference-rear.png to a paw and measure: the visible
+    // lobes are about 1.5 times longer than wide. Fatter and shorter, with the
+    // span opened to keep the gap, is what makes it a bear's mitten.
+    const SPAN = R * 1.62;
+    const FR = R * 0.225;
+    const fl = R * 1.34;
     for (let i = 0; i < 4; i++) {
       const t = i / 3;
       const fx = (t - 0.5) * SPAN;
       const len = fl * (0.86 + 0.20 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.36;
+      const splay = (t - 0.5) * 0.24;
       // CURL POINTS THE TIPS AT +z, AND +z IS AWAY FROM THE ONLY CAMERA THIS
       // GAME HAS. At 0.46 the tips swung 21 mm behind the palm and hid inside
       // its own silhouette from directly behind. 0.18 keeps the paw's forward
@@ -1148,11 +1164,12 @@ export default class Character {
         const c = (k / nC) * (Math.PI / 2);
         ring(shaft + rTip * Math.sin(c), Math.max(rTip * 0.10, rTip * Math.cos(c)));
       }
-      // Rooted at -R*0.80, which is 9 mm INSIDE the palm shell even at the
-      // outer finger's outboard edge — the roots have to be buried or the base
-      // cap's rim shows as a step. The knuckle tori that used to sit at
+      // Rooted at -R*0.58, which is 19 mm INSIDE the palm shell even at the
+      // outer finger's outboard EDGE (x = 0.112, where the shell is only at
+      // -0.082, not at the -0.117 the centre line would suggest) — the roots
+      // have to be buried THERE or the base cap's rim shows as a step. The knuckle tori that used to sit at
       // -R*1.34 are deleted: they were inside the old palm and rendered nothing.
-      g.at(fx * s, -R * 0.80, 0.010, 0, 0, splay * s);
+      g.at(fx * s, -R * 0.58, 0.010, 0, 0, splay * s);
       g.add(tube(rings, this.sd, true, true, 1, 3));
     }
 
