@@ -53,11 +53,75 @@
 //     budget to the compositor. The panels are near-opaque gradients instead,
 //     which is both cheaper and a better read against a black hall.
 //
+//  6. `visibility` IS INHERITED AND A CHILD CAN OVERRIDE IT. `.svu-hud` goes
+//     `opacity:0; visibility:hidden` off-phase, and every powerup chip carries
+//     its own `visibility:visible` when active. MEASURED with the panels up:
+//     phase 'paused', hud visibility 'hidden', chip visibility 'visible',
+//     chip rect 18,703 112x35 — the chips are still laid out and still
+//     visible in their own right. THE ONLY THING KEEPING THEM OFF THE PAUSE
+//     PANEL IS THE HUD'S opacity:0, which clips the whole subtree. That is
+//     deliberate, because it lets the chips fade out with the rest of the HUD
+//     instead of popping. But if anyone ever drops the HUD's opacity and
+//     leaves only the visibility toggle, three powerup chips will float over
+//     the pause panel and the results screen. Keep the opacity.
+//
 // Also: env(safe-area-inset-*) has never been observed non-zero in this
 // harness (no notch), so every use of it is `calc(env(...) + a real number)`
 // and never relied on alone. And storage APIs are NOT available where this
 // ships — `best` lives in a module variable and dies with the tab. Do not
 // reach for localStorage.
+//
+// ---------------------------------------------------------------------------
+// THE POWERUP CHIPS. Contract: `ctx.get('play').pw` — see the header of
+// src/play/powerups.js. Three slots in a FIXED order (MAGNET, SHIELD, GLIDE),
+// never reallocated, so this file can hold three DOM rows that map 1:1 to them
+// and never search, sort or rebuild anything.
+//
+//  - THE STACK RESERVES ALL THREE ROWS AND HIDES THE INACTIVE ONES with
+//    `visibility`, not `display`. A chip therefore always appears in the same
+//    place, so where a thing is becomes a second channel on top of what it
+//    says. `display:none` collapsed the stack and made two powerups running
+//    down together into a row that jumped every time one ended.
+//
+//  - BOTTOM LEFT, measured against shots/phone.png. Distance owns the top
+//    left, stars the top right, SOUND/PAUSE the bottom right, and the runner
+//    occupies x 115..290 of 390 from y 415 down. The bottom-left corner is the
+//    only piece of a portrait frame that is neither furniture nor track: it is
+//    dark pavement, so a near-black chip with a gold hairline reads on it and
+//    covers nothing the player has to see.
+//
+//  - THE SHIELD IS A CHARGE, NOT A CLOCK, so it is not drawn as one. Magnet
+//    and glide get a hairline that DRAINS left to right on remaining/total.
+//    The shield gets a HELD state instead: gold-washed field, gold border at
+//    double the strength, a filled gold lozenge before the word, and a bar
+//    that sits full and lit and never moves. Three signals, no clock.
+//
+//  - THE SPEND IS THE WHOLE POINT. An absorbed hit that looks like nothing
+//    reads as a bug — the player expected to die and did not. So a spend gets
+//    a full-frame GOLD flash (0.34s) plus the chip flaring to ABSORBED and
+//    holding for 0.9s after the charge is gone. GOLD, not red: red in this
+//    game is always a hazard edge (see the colour contract) and a save is not
+//    a hazard. It is detected by POLLING `pw.lastSpent`, which is exactly what
+//    that field is for — the END event payload is pooled and a poll cannot
+//    miss the edge, only be one frame late.
+//
+//  - COST, MEASURED. The per-frame work is three slot reads, one float compare
+//    and, at most, one `style.transform` write per timed chip. The write is
+//    QUANTISED to whole percent, which caps a bar at 100 writes for the entire
+//    life of the powerup NO MATTER WHAT THE FRAME RATE IS: 200 real frames
+//    with a 7s magnet and a 9s glide both run all the way down produced 185
+//    style writes against a ceiling of 200. At 60fps that is 100 writes over
+//    7s instead of 420. The 101 transform strings are BUILT ONCE in init
+//    (`_sx`) so the frame path allocates nothing at all.
+//
+//    Note for whoever measures this next: `loop.advance()` CANNOT measure it.
+//    advance() runs every simulation step first and then every render step, so
+//    the remaining time is constant across the whole render batch and one
+//    fastForward produces exactly one write however long it was. Use
+//    waitFrames() and the real loop. And in Blink the CSS property accessors
+//    are own properties of each `element.style` INSTANCE, not of
+//    CSSStyleDeclaration.prototype, and the own descriptor has no `set` to
+//    chain to — a MutationObserver on the style attribute is the way to count.
 
 import { EV } from '../core/ctx.js';
 
@@ -66,6 +130,14 @@ let BEST_METRES = 0;
 let BEST_STARS = 0;
 
 const MILESTONE_EVERY = 500;
+
+/** Slot order is the powerup contract's order and is never anything else. */
+const PW_SHIELD = 1;
+const PW_SLOTS = 3;
+/** How long the spent shield chip stays up shouting after the charge is gone. */
+const SPEND_HOLD = 0.9;
+/** How long the full-frame gold flash lasts. Matches the CSS fade-out. */
+const SPEND_FLASH = 0.34;
 
 export default class Ui {
   constructor(ctx) {
@@ -91,6 +163,23 @@ export default class Ui {
     this._edgeT = 0;
     this._edgeSeq = -1;
     this._starT = 0;
+
+    // --- powerup chips. Fixed length 3, in the contract's slot order. ---
+    /** Which chips are currently up, so the class only gets touched on a change. */
+    this._pwOn = [false, false, false];
+    /** Last fill written per chip, in whole percent. -1 means "never written". */
+    this._pwFill = [-1, -1, -1];
+    /** pw.lastSpent as last seen. The spend edge is a poll, not an event. */
+    this._spentAt = -1;
+    this._spentT = 0;
+    this._flashT = 0;
+    /**
+     * 101 pre-built transform strings, 0% .. 100%. The alternative is building
+     * a string every time a bar moves, which is an allocation in the frame
+     * path, which is the one thing ARCHITECTURE.md §4.1 forbids outright.
+     */
+    this._sx = new Array(101);
+    for (let i = 0; i <= 100; i++) this._sx[i] = `scaleX(${i / 100})`;
   }
 
   // ---- boot ------------------------------------------------------------
@@ -108,6 +197,9 @@ export default class Ui {
     // are deterministic or they are worthless, so opacity transitions are off
     // in capture mode.
     if (this.ctx.config.captureMode) this.root.classList.add('svu-nofade');
+    // The debug readout lives in the bottom-left corner and so does the chip
+    // stack. Only one of them can have it, and in debug mode the chips move up.
+    if (this.ctx.config.showDebug) this.root.classList.add('svu-dbg');
     this._applyPhase();
     this._syncMute();
   }
@@ -266,6 +358,90 @@ export default class Ui {
 .svu-edge-l { left: 0; }
 .svu-edge-r { right: 0; }
 .svu-edge.svu-on { opacity: .9; }
+
+.svu-pw {
+  position: absolute;
+  left: calc(env(safe-area-inset-left, 0px) + 18px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.svu-chip {
+  min-width: 112px;
+  padding: 7px 11px 6px;
+  border: 1px solid rgba(216,169,63,.34);
+  background: rgba(6,5,4,.88);
+  border-radius: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .22s ease, visibility 0s linear .22s;
+}
+.svu-chip.svu-on {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity .22s ease, visibility 0s linear 0s;
+}
+
+.svu-chip-d {
+  margin-right: .5em;
+  font-size: 1.05em;
+  color: #e8c979;
+  letter-spacing: 0;
+}
+
+.svu-chip-l {
+  font-size: 10px;
+  letter-spacing: .26em;
+  text-indent: .26em;
+  text-align: center;
+  white-space: nowrap;
+  color: rgba(242,236,225,.84);
+}
+
+.svu-chip-t {
+  margin-top: 7px;
+  height: 2px;
+  background: rgba(216,169,63,.18);
+}
+.svu-chip-f {
+  display: block;
+  height: 100%;
+  background: #d8a93f;
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
+.svu-chip-hold {
+  border-color: rgba(232,201,121,.82);
+  background: rgba(26,19,7,.90);
+}
+.svu-chip-hold .svu-chip-l { color: #f4e2b4; }
+.svu-chip-hold .svu-chip-t { background: rgba(216,169,63,.28); }
+.svu-chip-hold .svu-chip-f {
+  background: #e8c979;
+  box-shadow: 0 0 7px rgba(232,201,121,.85);
+}
+
+.svu-chip-spent {
+  border-color: rgba(246,232,196,.96);
+  background: rgba(232,201,121,.34);
+}
+.svu-chip-spent .svu-chip-l { color: #fffaf0; }
+.svu-chip-spent .svu-chip-t { background: rgba(246,232,196,.34); }
+.svu-chip-spent .svu-chip-f { background: rgba(246,232,196,.42); box-shadow: none; }
+
+.svu-pwflash {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgba(246,232,196,.92);
+  background: rgba(216,169,63,.30);
+  opacity: 0;
+  transition: opacity .34s ease;
+}
+.svu-pwflash.svu-on { opacity: 1; transition: opacity .04s ease; }
 
 .svu-debug {
   position: absolute;
@@ -442,15 +618,19 @@ export default class Ui {
   background: linear-gradient(180deg, rgba(216,169,63,0) 0%, rgba(216,169,63,.40) 50%, rgba(216,169,63,0) 100%);
 }
 
+#svu-ui.svu-dbg .svu-pw { bottom: calc(env(safe-area-inset-bottom, 0px) + 46px); }
+
 #svu-ui.svu-nofade .svu-panel,
 #svu-ui.svu-nofade .svu-hud,
 #svu-ui.svu-nofade .svu-toast,
+#svu-ui.svu-nofade .svu-chip,
+#svu-ui.svu-nofade .svu-pwflash,
 #svu-ui.svu-nofade .svu-cta {
   transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .svu-panel, .svu-hud, .svu-toast { transition: none; }
+  .svu-panel, .svu-hud, .svu-toast, .svu-chip, .svu-pwflash { transition: none; }
 }
 `;
     const style = document.createElement('style');
@@ -476,6 +656,21 @@ export default class Ui {
   <div class="svu-toast" id="svuToast"></div>
   <div class="svu-edge svu-edge-l" id="svuEdgeL"></div>
   <div class="svu-edge svu-edge-r" id="svuEdgeR"></div>
+  <div class="svu-pwflash" id="svuPwFlash"></div>
+  <div class="svu-pw" id="svuPw">
+    <div class="svu-chip" id="svuChip0">
+      <div class="svu-chip-l"><span id="svuChipT0">MAGNET</span></div>
+      <div class="svu-chip-t"><i class="svu-chip-f" id="svuChipF0"></i></div>
+    </div>
+    <div class="svu-chip svu-chip-hold" id="svuChip1">
+      <div class="svu-chip-l"><span class="svu-chip-d">&#9670;</span><span id="svuChipT1">SHIELD</span></div>
+      <div class="svu-chip-t"><i class="svu-chip-f" id="svuChipF1"></i></div>
+    </div>
+    <div class="svu-chip" id="svuChip2">
+      <div class="svu-chip-l"><span id="svuChipT2">GLIDE</span></div>
+      <div class="svu-chip-t"><i class="svu-chip-f" id="svuChipF2"></i></div>
+    </div>
+  </div>
   <div class="svu-tools">
     <button class="svu-tool" id="svuMute" type="button" aria-label="Sound">SOUND</button>
     <button class="svu-tool" id="svuPause" type="button" aria-label="Pause">PAUSE</button>
@@ -553,6 +748,12 @@ export default class Ui {
       ovBest: $('#svuOvBest'),
       newBest: $('#svuNewBest'),
       again: $('#svuAgain'),
+      pwFlash: $('#svuPwFlash'),
+      // Fixed-length arrays indexed by the powerup contract's slot number.
+      // Built once; nothing here is ever searched for again.
+      chip: [$('#svuChip0'), $('#svuChip1'), $('#svuChip2')],
+      chipT: [$('#svuChipT0'), $('#svuChipT1'), $('#svuChipT2')],
+      chipF: [$('#svuChipF0'), $('#svuChipF1'), $('#svuChipF2')],
     };
   }
 
@@ -671,6 +872,22 @@ export default class Ui {
     }
   }
 
+  /**
+   * Capture affordance, never used in play. The shield-spend cue is 0.34s of
+   * flash and 0.9s of chip, which is long enough to matter in the hand and far
+   * too short to grade from a frame that lands wherever the software renderer
+   * happened to get to. A pose calls pw.absorb() for real — so the POLL path
+   * is what lights this up, not a special case — and then this holds it open.
+   */
+  previewSpend() {
+    const play = this.ctx.tryGet('play');
+    const pw = play && play.pw;
+    if (pw) this._spentAt = pw.lastSpent;
+    this._onSpend();
+    this._spentT = 1e6;
+    this._flashT = 1e6;
+  }
+
   setPaused(v) {
     if (v && this.phase !== 'run') return;
     if (!v && this.phase !== 'paused') return;
@@ -737,6 +954,18 @@ export default class Ui {
     this.els.stars.textContent = '0';
     this.els.dist.textContent = '0';
     this.els.toast.classList.remove('svu-on');
+
+    // A RUN_START means every slot is empty and no END events are coming, so
+    // the chips are cleared here rather than waited for.
+    this._spentAt = -1;
+    this._flashT = 0;
+    this.els.pwFlash.classList.remove('svu-on');
+    this._clearSpend();
+    for (let k = 0; k < PW_SLOTS; k++) {
+      this._pwOn[k] = false;
+      this._pwFill[k] = -1;
+      this.els.chip[k].classList.remove('svu-on');
+    }
   }
 
   // ---- sound -----------------------------------------------------------
@@ -792,6 +1021,7 @@ export default class Ui {
         }
       }
       this._pollNearMiss();
+      this._pollPowerups(play);
     }
 
     if (this._toastT > 0) {
@@ -808,6 +1038,14 @@ export default class Ui {
         this.els.edgeL.classList.remove('svu-on');
         this.els.edgeR.classList.remove('svu-on');
       }
+    }
+    if (this._flashT > 0) {
+      this._flashT -= dtReal;
+      if (this._flashT <= 0) this.els.pwFlash.classList.remove('svu-on');
+    }
+    if (this._spentT > 0) {
+      this._spentT -= dtReal;
+      if (this._spentT <= 0) this._clearSpend();
     }
 
     this._syncMute();
@@ -841,6 +1079,81 @@ export default class Ui {
     if (side <= 0) this.els.edgeL.classList.add('svu-on');
     if (side >= 0) this.els.edgeR.classList.add('svu-on');
     this._edgeT = 0.22;
+  }
+
+  /**
+   * The powerup chips. Reads `play.pw` — the contract in the header of
+   * src/play/powerups.js — and writes DOM only where something changed.
+   *
+   * THE SPEND IS CHECKED FIRST, deliberately. Do it after the slot loop and
+   * the shield chip vanishes for one frame before ABSORBED lights up, because
+   * `slot.active` is already false by the time the poll sees the spend.
+   */
+  _pollPowerups(play) {
+    const pw = play.pw;
+    if (!pw || !pw.slots) return;
+    const slots = pw.slots;
+
+    // Never trust a hardcoded label over the contract. One pass, once.
+    if (!this._pwNamed) {
+      this._pwNamed = true;
+      for (let k = 0; k < PW_SLOTS; k++) {
+        if (slots[k] && slots[k].name) this.els.chipT[k].textContent = slots[k].name;
+      }
+    }
+
+    // `lastSpent` is ctx.time of the last shield spend, or -1. A poll cannot
+    // miss the edge, only be a frame late — and -1 can never trigger it, which
+    // is what makes a reset safe whichever order the RUN_START listeners run.
+    if (pw.lastSpent >= 0 && pw.lastSpent !== this._spentAt) {
+      this._spentAt = pw.lastSpent;
+      this._onSpend();
+    }
+
+    // Picking a new shield up inside the 0.9s hold would otherwise leave the
+    // chip saying ABSORBED while a live charge is sitting in the slot. Spawns
+    // are 420m apart so this is nearly unreachable, which is exactly why it
+    // would never be found later.
+    if (this._spentT > 0 && slots[PW_SHIELD].active) this._clearSpend();
+
+    for (let k = 0; k < PW_SLOTS; k++) {
+      const s = slots[k];
+      if (!s) continue;
+      // The spent shield keeps its chip up after the charge is gone: an
+      // indicator that disappears at the instant of the save has nothing left
+      // to say about the save.
+      const on = s.active || (k === PW_SHIELD && this._spentT > 0);
+      if (on !== this._pwOn[k]) {
+        this._pwOn[k] = on;
+        this.els.chip[k].classList.toggle('svu-on', on);
+      }
+      if (!on) continue;
+      // A charge has no clock and is not drawn as one — its bar sits full.
+      const f = s.unit === 's' && s.total > 0
+        ? (s.remaining / s.total) * 100
+        : 100;
+      const pct = f <= 0 ? 0 : (f >= 100 ? 100 : Math.round(f));
+      if (pct !== this._pwFill[k]) {
+        this._pwFill[k] = pct;
+        this.els.chipF[k].style.transform = this._sx[pct];
+      }
+    }
+  }
+
+  _onSpend() {
+    this._spentT = SPEND_HOLD;
+    this._flashT = SPEND_FLASH;
+    this.els.pwFlash.classList.add('svu-on');
+    this.els.chip[PW_SHIELD].classList.add('svu-chip-spent');
+    this.els.chipT[PW_SHIELD].textContent = 'ABSORBED';
+  }
+
+  _clearSpend() {
+    this._spentT = 0;
+    this.els.chip[PW_SHIELD].classList.remove('svu-chip-spent');
+    const play = this.ctx.tryGet('play');
+    const s = play && play.pw && play.pw.slots && play.pw.slots[PW_SHIELD];
+    this.els.chipT[PW_SHIELD].textContent = (s && s.name) || 'SHIELD';
   }
 
   _debug(play) {

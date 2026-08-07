@@ -395,6 +395,203 @@ const POSES = [
     settle: 0.2,
     note: 'the shield cage in portrait',
   },
+  // ---- the powerup HUD -------------------------------------------------
+  //
+  // All three chips at once is not the common case, it is the WORST case: the
+  // only state in which the stack is as tall as it can get, and the only one
+  // that can crowd anything. The two clocks are deliberately put at very
+  // different fills — a shot in which both bars happen to be full says nothing
+  // about whether a bar drains.
+  {
+    name: 'phone-hud-pw',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const pw = window.SVU.ctx.get('play').pw;
+      pw.grant(0);
+      pw.grant(1);
+      pw.grant(2);
+      pw._magnetT = 1.6;    // late in a 7.0s clock — bar nearly run out
+      pw._glideT = 6.8;     // early in a 9.0s clock — bar nearly full
+    },
+    settle: 0.2,
+    note: 'all three powerup chips in portrait — the worst case for the HUD stack',
+  },
+  {
+    name: 'hud-pw',
+    viewport: 'desktop',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const pw = window.SVU.ctx.get('play').pw;
+      pw.grant(0);
+      pw.grant(1);
+      pw.grant(2);
+      pw._magnetT = 1.6;
+      pw._glideT = 6.8;
+    },
+    settle: 0.2,
+    note: 'all three powerup chips on a laptop',
+  },
+  {
+    // The shield is spent for REAL here — grant, then absorb — so what is
+    // photographed is the poll path that runs in play, not a special case that
+    // exists only for the camera. previewSpend() only holds it open.
+    name: 'phone-pw-spend',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const S = window.SVU;
+      const pw = S.ctx.get('play').pw;
+      pw.grant(2);
+      pw._glideT = 6.8;
+      pw.grant(1);
+      pw.absorb();
+      S.ctx.get('ui').previewSpend();
+    },
+    settle: 0.2,
+    note: 'the instant the shield is spent, held open — gold flash and ABSORBED',
+  },
+  // ---- MOTION, WHICH A STILL FRAME CANNOT SHOW ---------------------------
+  //
+  // The hoops are told apart at range by how they MOVE, not by their emblem —
+  // magnet throbs at 1.6Hz, glide bobs at 0.42Hz, shield is dead still. That
+  // was measured in metres and never once watched, because every tool in this
+  // project produces one frozen frame.
+  //
+  // THE PATTERN: two poses identical in every respect except the MOTION PHASE,
+  // then diff the PNGs.
+  //     npm run shots -- --match pw-bob
+  //
+  // FOUR THINGS TO KNOW BEFORE COPYING THIS FOR THE OTHER TWO KINDS.
+  //
+  //  1. THE IDLE MOTION ONLY EVER TOUCHES hoops[_liveKind], and poseHoop()
+  //     calls _retire(), which sets _liveKind to -1. A hoop placed with
+  //     poseHoop alone IS FROZEN — the pw-lineup poses photograph three dead
+  //     hoops. Set _liveKind/_liveS/_liveX by hand, as below, or there is no
+  //     motion to capture. Only one hoop can be live, so a motion pair can
+  //     only ever be about ONE kind.
+  //
+  //  2. SET THE PHASE, DO NOT OFFSET IT. The first version of this pair put B
+  //     half a bob period after A, reasoning that half a period inverts the
+  //     sine. It does — sin(x+pi) = -sin(x) — and the displacement is therefore
+  //     2*A*|sin(x)|, which is ZERO when the base phase happens to sit at the
+  //     middle of the swing. It did. Cross-correlating the two frames gave a
+  //     displacement of exactly 0 device pixels and the pair proved nothing.
+  //     Both poses now snap ctx.time to an ABSOLUTE phase — A to the top of
+  //     the bob, B to the bottom — so the travel is the full 2*BOB_AMP every
+  //     time, whatever the pose's base time is.
+  //
+  //  3. READ THE PAIR BY CROSS-CORRELATION IN A WINDOW, NOT BY DIFFING THE
+  //     WHOLE FRAME. `compare -metric AE` returns 837227 and means nothing:
+  //     the software renderer's own jitter changes 1.9% of the frame by
+  //     itself, and snapping ctx.time also moves everything else that is time
+  //     driven, the run cycle included. Slide one frame over the other inside
+  //     a box around the hoop and take the offset that minimises the mean
+  //     absolute difference. That returned a clean 28 device px with the
+  //     next-best offsets 1px either side, i.e. an unambiguous answer:
+  //
+  //       a = L(shots/pw-bob-a.png); b = L(shots/pw-bob-b.png)
+  //       win = a[640:880, 330:450]
+  //       min over dy of |win - b[640+dy:880+dy, 330:450]|.mean()
+  //
+  //  4. MEASURED SCREEN AMPLITUDES at 23m in portrait, taken FROM THE RENDERED
+  //     PIXELS. Do not take them from a projection: Babylon only refreshes
+  //     boundingBox.vectorsWorld as part of a render, so projecting it from
+  //     outside the render loop reports the 1.55m hoop as 3 pixels tall, and
+  //     V3.Project already returns CSS pixels — dividing by devicePixelRatio
+  //     on top of that halves every number.
+  {
+    name: 'pw-bob-a',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(2, s, play.x);
+      pw._liveKind = 2; pw._liveS = s; pw._liveX = play.x;
+      const P = 1 / 0.42;
+      S.ctx.time = Math.ceil(S.ctx.time / P) * P + P * 0.25;
+      pw.renderUpdate();
+    },
+    settle: 0.02,
+    note: 'glide hoop at 23m, bob phase A — diff against pw-bob-b',
+  },
+  {
+    name: 'pw-bob-b',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(2, s, play.x);
+      pw._liveKind = 2; pw._liveS = s; pw._liveX = play.x;
+      const P = 1 / 0.42;
+      S.ctx.time = Math.ceil(S.ctx.time / P) * P + P * 0.75;
+      pw.renderUpdate();
+    },
+    settle: 0.02,
+    note: 'the same frame half a bob later — the diff is the motion',
+  },
   {
     name: 'gameover',
     viewport: 'phone',
