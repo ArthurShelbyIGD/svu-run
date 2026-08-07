@@ -592,7 +592,78 @@ try {
   check('high preset boots clean', h.errors.length === 0, h.errors.slice(0, 3).join(' | '));
   check('high preset renders', hs.frames >= 3 && hs.activeMeshes > 5,
     `${hs.frames} frames, ${hs.activeMeshes} meshes`);
+
+  // ---- the quality governor --------------------------------------------
+  //
+  // WHAT THIS CAN AND CANNOT PROVE. It cannot prove the game gets faster —
+  // this harness renders through SwiftShader and its frame timings are
+  // meaningless. What it CAN prove, honestly, is the state machine: fed
+  // synthetic slow frames the governor walks all the way down to 'potato',
+  // applies each step to the live scene without throwing, and never walks back
+  // up. That is the part that was broken (it stopped at 'low' and did not fire
+  // until 2.5s), and it is the part a real device cannot conveniently test.
+  //
+  // Deliberately the last thing done on this page: it mutates the preset.
+  const gov = await h.page.evaluate(() => {
+    const S = window.SVU;
+    const g = S.loop.quality;
+    const start = S.config.presetName;
+    // The governor is off on this page because ?q=high FORCED the preset.
+    // Arm it by hand and feed it 80ms frames — 12.5fps.
+    g.enabled = true; g._warm = 99; g._n = 0; g._elapsed = 0; g.batches = 0;
+    for (let i = 0; i < 400; i++) g.frame(80);
+    const down = S.config.presetName;
+    const q = S.config.q;
+    const scaling = S.engine.getHardwareScalingLevel();
+    const bloom = S.pipeline.bloomEnabled;
+    // One-directional: no amount of fast frames may take it back up.
+    g.enabled = true; g._warm = 99; g._n = 0; g._elapsed = 0; g.batches = 0;
+    for (let i = 0; i < 400; i++) g.frame(4);
+    return {
+      start, down, up: S.config.presetName, steps: g.steps,
+      tier: q.name, props: q.propDensity, scaling, bloom,
+    };
+  });
+  check('quality governor steps all the way down to potato',
+    gov.start === 'high' && gov.down === 'potato' && gov.steps === 3,
+    `${gov.start} -> ${gov.down} in ${gov.steps} steps`);
+  check('potato applies half render scale and kills bloom',
+    gov.scaling === 2 && gov.bloom === false && gov.props === 0.3,
+    `scaling ${gov.scaling}, bloom ${gov.bloom}, propDensity ${gov.props}`);
+  check('potato reports the cheap detail tier to other subsystems',
+    gov.tier === 'low', `q.name=${gov.tier}`);
+  check('quality governor never steps back up', gov.up === 'potato',
+    `after 400 fast frames: ${gov.up}`);
+  check('stepping quality down on a live scene throws nothing',
+    h.errors.length === 0, h.errors.slice(0, 3).join(' | '));
   await h.context.close();
+
+  // ---------------- potato preset boots and renders ---------------------
+  console.log('\npotato preset  (390x844 @2x, q=potato)');
+  const pot = await openGame(browser, { viewport: 'phone', query: 'q=potato&seed=1' });
+  await waitFrames(pot.page, 3);
+  const pots = await readState(pot.page);
+  check('potato preset boots clean', pot.errors.length === 0, pot.errors.slice(0, 3).join(' | '));
+  check('potato preset renders', pots.frames >= 3 && pots.activeMeshes > 5,
+    `${pots.frames} frames, ${pots.activeMeshes} active meshes`);
+  const potq = await pot.page.evaluate(() => {
+    const S = window.SVU;
+    return {
+      preset: S.config.presetName,
+      scaling: S.engine.getHardwareScalingLevel(),
+      bloom: S.pipeline.bloomEnabled,
+      fxaa: S.pipeline.fxaaEnabled,
+      w: S.engine.getRenderWidth(),
+      particles: S.config.q.maxParticles,
+      auto: S.config.autoQuality,
+    };
+  });
+  check('potato boots with no full-screen passes',
+    potq.preset === 'potato' && potq.bloom === false && potq.fxaa === false &&
+    potq.scaling === 2 && potq.particles === 40,
+    `${potq.w}px wide, bloom ${potq.bloom}, fxaa ${potq.fxaa}, ${potq.particles} particles`);
+  check('a forced preset is left alone by the governor', potq.auto === false);
+  await pot.context.close();
 
   // ---------------- touch input on a phone viewport ---------------------
   console.log('\ntouch  (390x844 @2x)');
@@ -618,6 +689,116 @@ try {
   const after = await readState(m.page);
   check('swipe changes lane', after.player.lane !== before.player.lane,
     `lane ${before.player.lane} -> ${after.player.lane}`);
+
+  // ---- input latency: the swipe must not wait for the finger to lift ----
+  //
+  // THIS IS THE ONE THAT MATTERS, and it is the one thing about the latency
+  // fix this harness can honestly measure. Frame timings here are meaningless
+  // (SwiftShader), but "does an intent exist before touchend" is exact.
+  //
+  // The old code decided what a gesture meant only in touchend, so nothing at
+  // all happened until the finger came up — the whole duration of the swipe,
+  // 150-250ms, was dead time before the game was even told. This dispatches a
+  // touchstart and ONE touchmove past the threshold, and no touchend, and
+  // requires the intent to already be queued.
+  await m.page.addScriptTag({
+    content: `window.__mkTouch = function (type, x, y, id) {
+      const c = document.getElementById('c');
+      const t = new Touch({ identifier: id || 1, target: c, clientX: x, clientY: y });
+      const empty = type === 'touchend' || type === 'touchcancel';
+      c.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, cancelable: true, touches: empty ? [] : [t],
+        changedTouches: [t], targetTouches: empty ? [] : [t],
+      }));
+    };`,
+  });
+
+  const moveOnly = await m.page.evaluate(() => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    S.ctx.restart();
+    S.ctx.get('coll').enabled = false;
+    play._touchId = null;
+    play._qLen = 0;
+    const inTurn = play.inTurnZone;      // must be false or LEFT means "turn"
+    window.__mkTouch('touchstart', 300, 500);
+    window.__mkTouch('touchmove', 258, 502);   // 42px left, past the 26px gate
+    // Read BEFORE any touchend exists, and before any simulation step.
+    const queuedNow = play._qLen;
+    const head = play.buffered;
+    const stillDown = play._touchId !== null;
+    S.loop.advance(0.3, 0);
+    return { queuedNow, head, stillDown, inTurn, target: play.laneTarget, lane: play.lane };
+  });
+  check('a swipe fires on touchmove, with no touchend at all',
+    moveOnly.inTurn === false && moveOnly.queuedNow === 1 && moveOnly.head === 1 &&
+    moveOnly.stillDown === true && moveOnly.target === 0,
+    `queued ${moveOnly.queuedNow} intent(s) with the finger still down, lane -> ${moveOnly.target}`);
+
+  // ---- two swipes in one gesture, both land ----
+  //
+  // "I can't change lanes quickly." The origin re-arms where the first swipe
+  // was recognised, so the second needs no lift, and the queue is deep enough
+  // that the second does not overwrite the first.
+  const twoSwipes = await m.page.evaluate(() => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    S.ctx.restart();
+    S.ctx.get('coll').enabled = false;
+    play._touchId = null;
+    play._qLen = 0;
+    play.lane = play.laneTarget = 2;    // start at the right-hand lane
+    play.laneT = 1;
+    const inTurn = play.inTurnZone;
+    let lanes = 0;
+    const off = S.ctx.on('player:lane', () => lanes++);
+    window.__mkTouch('touchstart', 300, 500);
+    window.__mkTouch('touchmove', 258, 500);   // swipe 1: left
+    window.__mkTouch('touchmove', 216, 500);   // swipe 2: left again, no lift
+    const queuedNow = play._qLen;
+    S.loop.advance(0.3, 0);
+    off();
+    return { queuedNow, lanes, target: play.laneTarget, inTurn };
+  });
+  check('two swipes in one gesture both land',
+    twoSwipes.inTurn === false && twoSwipes.queuedNow === 2 &&
+    twoSwipes.lanes === 2 && twoSwipes.target === 0,
+    `${twoSwipes.queuedNow} queued, ${twoSwipes.lanes} lane changes, lane 2 -> ${twoSwipes.target}`);
+
+  // ---- the buffer still expires ----
+  //
+  // The queue must not turn into a memory. A jump pressed while airborne (and
+  // past the coyote window) cannot be served, so it waits — and if it is still
+  // waiting when the player lands, it fires a jump nobody asked for. It has to
+  // age out first.
+  const expiry = await m.page.evaluate(() => {
+    const S = window.SVU;
+    const play = S.ctx.get('play');
+    S.ctx.restart();
+    S.ctx.get('coll').enabled = false;
+    let jumps = 0;
+    const off = S.ctx.on('player:jump', () => jumps++);
+    play.pushIntent(3);                 // JUMP from the ground — serves at once
+    S.loop.advance(0.15, 0);            // airborne, past coyoteTime
+    const airborne = play.state;
+    play.pushIntent(3);                 // cannot be served: it must queue
+    const queuedNow = play._qLen;
+    const window_ = play.bufferWindow;
+    S.loop.advance(0.35, 0);            // longer than the window, still in air
+    const afterWindow = play._qLen;
+    const stillAir = play.state;
+    S.loop.advance(0.9, 0);             // land and run on
+    off();
+    return { airborne, queuedNow, afterWindow, stillAir, jumps, state: play.state, window: window_ };
+  });
+  check('an unservable intent buffers, then expires',
+    expiry.airborne === 1 && expiry.queuedNow === 1 && expiry.stillAir === 1 &&
+    expiry.afterWindow === 0 && expiry.jumps === 1 && expiry.state === 0,
+    `buffered for ${expiry.window.toFixed(3)}s then dropped; ${expiry.jumps} jump(s) total`);
+  check('the input buffer is bounded',
+    expiry.window >= 0.14 - 1e-6 && expiry.window <= 0.30 + 1e-6,
+    `window ${expiry.window.toFixed(3)}s (floor 0.14, ceiling 0.30)`);
+
   await m.context.close();
 
 } catch (err) {
