@@ -68,6 +68,13 @@ export class Writer {
     return this;
   }
 
+  /** Uniformly scale everything written so far. Build-time only. Normals are
+   *  unchanged by a uniform scale, so they are left alone. */
+  scale(k) {
+    for (let i = 0; i < this.p.length; i++) this.p[i] *= k;
+    return this;
+  }
+
   /** Translate everything written so far. Build-time only. */
   shift(dx, dy, dz) {
     for (let i = 0; i < this.p.length; i += 3) {
@@ -223,22 +230,45 @@ function heater(hw, top, shoulder, tip, steps) {
 }
 
 /**
- * SWEPT WINGS — one continuous span, thick at the hub and raked up to thin
- * tips. Twice as wide as it is tall; that ratio is the read.
+ * SWEPT WINGS — TWO separate blades with a gap between them, not one span.
+ *
+ * The first version was a single continuous strip from tip to tip, and the
+ * close-up capture settled the argument in a second: it read as a crescent, a
+ * banana, anything but wings. One shape cannot be two wings. Splitting it and
+ * leaving 0.10m of dark bed down the middle costs nothing at distance (where
+ * the read is the wide, flat, upswept aspect ratio, which is unchanged) and
+ * buys the whole emblem at close range.
+ *
+ * Each blade is rooted near the centre and rakes up and out, thick at the root
+ * and thin at the tip. Returns one [A,B] pair per blade.
  */
-function wings(halfSpan, steps) {
-  const A = [], B = [];
-  for (let k = -steps; k <= steps; k++) {
-    const u = k / steps;                       // -1 .. 1
-    const s = Math.abs(u);
-    const x = u * halfSpan;
-    A.push([x, 0.085 + 0.105 * Math.pow(s, 1.5)]);        // top edge
-    B.push([x, -0.105 + 0.225 * Math.pow(s, 2.2)]);       // bottom edge
+function wings(root, tip, steps) {
+  const out = [];
+  for (let side = -1; side <= 1; side += 2) {
+    const A = [], B = [];
+    for (let k = 0; k <= steps; k++) {
+      const t = k / steps;
+      const x = side * (root + (tip - root) * t);
+      A.push([x, 0.050 + 0.200 * Math.pow(t, 1.15)]);     // leading edge
+      B.push([x, -0.105 + 0.290 * Math.pow(t, 1.50)]);    // trailing edge
+    }
+    out.push([A, B]);
   }
-  return [A, B];
+  return out;
 }
 
 export const EMBLEM = { HORSESHOE: 0, HEATER: 1, WINGS: 2 };
+
+/**
+ * Outside diameter of the hoop, in metres. ONE number sizes the whole pickup —
+ * tube, bed and emblem are all derived from it below.
+ *
+ * 1.55m is 5.2x the 0.30m star, and inside a 2.4m lane it is a gate the runner
+ * runs THROUGH rather than a token beside the line. See the measured pixel
+ * table in buildHoop for why 1.30 was not enough. play/powerups.js reads this
+ * to size its grab box, so the two can never drift apart.
+ */
+export const HOOP_OD = 1.55;
 
 /**
  * A powerup pickup: gold hoop, dark bed, gold emblem.
@@ -246,14 +276,36 @@ export const EMBLEM = { HORSESHOE: 0, HEATER: 1, WINGS: 2 };
  * THE THREE-LAYER SANDWICH IS THE WHOLE POINT, and it is the fix for the one
  * thing that came out weak last build — "in portrait at 23m the ring reads but
  * the emblem does not". The failure was not emblem-against-background, it was
- * emblem-against-RING: at 23m a 1.3m gold hoop is 44 CSS px across and a gold
- * emblem inside it merges with it into one undifferentiated gold blob.
+ * emblem-against-RING: a gold emblem inside a gold hoop merges with it into
+ * one undifferentiated gold blob.
  *
  * So the bed goes in between. A dark, matte, non-metallic plate filling most
  * of the hoop's interior separates the two golds by VALUE, which is the one
  * channel that survives distance, bloom and a 390px-wide frame. The emblem is
  * then a bright figure alone in a dark field, and bloom — which erodes a dark
  * figure on a bright ground — fattens it instead.
+ *
+ * HOW BIG IT ACTUALLY IS, MEASURED rather than assumed — projected with
+ * Vector3.Project onto the 390x844 phone frame, which is also the frame the
+ * game RENDERS at there (q.scale 1.0), so these are real rendered pixels and
+ * a 2x screenshot shows twice as many. Distances are ahead of the PLAYER; the
+ * chase camera sits 6m further back again:
+ *
+ *      1.30m hoop, 23m ahead  ->  36 px wide,  emblem span ~20 px
+ *      1.55m hoop, 23m ahead  ->  43 px wide,  emblem span ~26 px
+ *      1.55m hoop, 12m ahead  ->  67 px wide,  emblem span ~40 px
+ *
+ * The hoop went from 1.30 to 1.55 on the strength of that table: it is still
+ * comfortably inside a 2.4m lane, and at 1.55 it is a GATE the runner passes
+ * through rather than a token it passes near — which is a stronger read than
+ * any emblem, at any distance. The emblem is a confirmation at 12-15m, where
+ * the player still has time to change lane at every speed the game reaches; at
+ * 23m the distinguishing channel is the idle motion (see MOTION in
+ * powerups.js), which costs no pixels at all.
+ *
+ * The three profiles are therefore chosen for ASPECT RATIO first and detail
+ * second, because aspect survives to about 6px: the horseshoe is round with a
+ * notch, the heater is tall and narrow, the wings are twice as wide as tall.
  *
  * NO EMISSIVE BEADS ON THE HOOP. At 23m they are 2px and add nothing; at 12m
  * they read as white stones bezel-set into metal, which is the colour
@@ -271,13 +323,12 @@ export function buildHoop(scene, mat, q, emblem) {
 
   // Babylon's torus `thickness` is the TUBE DIAMETER and `diameter` is the
   // centreline diameter, so the outside diameter is diameter + thickness.
-  const OD = 1.30;                 // outside diameter — 4.3x the 0.30m star
-  const tubeR = 0.070;
-  const rInner = OD * 0.5 - tubeR * 2;   // 0.51 — the hole in the hoop
+  const tubeR = HOOP_OD * 0.050;                  // 0.078 at OD 1.55
+  const rInner = HOOP_OD * 0.5 - tubeR * 2;       // 0.62 — the hole in the hoop
 
-  const tess = q.name === 'low' ? 14 : 22;
+  const tess = q.name === 'low' ? 16 : 24;
   const ring = CreateTorus('pwRing',
-    { diameter: OD - tubeR * 2, thickness: tubeR * 2, tessellation: tess }, scene);
+    { diameter: HOOP_OD - tubeR * 2, thickness: tubeR * 2, tessellation: tess }, scene);
   ring.material = mat.get('goldLeaf');
   ring.rotation.x = Math.PI / 2;   // torus is authored in XZ; stand it up in XY
   a.add(ring);
@@ -285,21 +336,30 @@ export function buildHoop(scene, mat, q, emblem) {
   // Bed: an annulus rather than a disc, with a 2cm hole at dead centre that
   // nobody will ever see, because a disc built as a triangle fan and a disc
   // built as an annulus shade identically and this reuses `strip`.
-  // 0.42 against the hoop's 0.51 hole leaves a 9cm open annulus.
+  // rBed against the hoop's rInner leaves a 7cm ring of open air, so the hoop
+  // still reads as OPEN — you can see the track through it.
+  const rBed = rInner - 0.075;
   const bedSides = q.name === 'low' ? 20 : 30;
-  bed.strip(circle(0.02, bedSides), circle(0.42, bedSides), 0.030, true);
+  bed.strip(circle(0.02, bedSides), circle(rBed, bedSides), 0.034, true);
 
-  // The emblem stands ~5cm proud of the bed, on the player's side. Every
-  // profile is sized to stay inside the bed's 0.42 radius.
+  // The emblem stands ~6cm proud of the bed, on the player's side. The
+  // profiles below are authored against a 0.42 bed radius and then scaled to
+  // whatever this hoop's bed actually is, so the whole pickup resizes from the
+  // single HOOP_OD constant.
+  // Every profile is authored to stay inside a 0.42 radius, so the whole
+  // emblem clears the bed's rim at any hoop size. `parts` is one [A,B] pair
+  // per solid piece — the wings are two, everything else is one.
+  const em = rBed / 0.42;
   const steps = q.name === 'low' ? 8 : 14;
-  let prof;
-  if (emblem === EMBLEM.HORSESHOE) prof = horseshoe(0.145, 0.285, -0.215, steps * 2);
-  else if (emblem === EMBLEM.HEATER) prof = heater(0.235, 0.275, 0.050, -0.330, steps);
-  else prof = wings(0.355, steps);
+  let parts;
+  if (emblem === EMBLEM.HORSESHOE) parts = [horseshoe(0.145, 0.285, -0.215, steps * 2)];
+  else if (emblem === EMBLEM.HEATER) parts = [heater(0.235, 0.275, 0.050, -0.330, steps)];
+  else parts = wings(0.050, 0.320, steps);
 
   const w2 = new Writer();
-  w2.strip(prof[0], prof[1], 0.050);
-  w2.shift(0, 0, -0.038);
+  for (let i = 0; i < parts.length; i++) w2.strip(parts[i][0], parts[i][1], 0.050);
+  w2.scale(em);
+  w2.shift(0, 0, -(0.017 + 0.050 * em * 0.5));
   gold.merge(w2);
 
   const mesh = a.build('pwHoop');

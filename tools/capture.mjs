@@ -230,6 +230,114 @@ const POSES = [
     camera: [0, 1.75, 5.4, 0, 1.15, 12],
     note: 'the props close up — craft check on obstacles and stars',
   },
+  // ---- the powerups -----------------------------------------------------
+  //
+  // THE ONLY QUESTION THESE POSES ANSWER: at the distance a player must decide
+  // to change lane, can you tell WHICH powerup it is? The hoop itself reads
+  // easily — it is 1.30m of gold against a black hall. The emblem inside it is
+  // the part that failed last build, because a gold emblem inside a gold hoop
+  // has no value difference and value is the only channel that survives 23
+  // metres, a 390px frame and a bloom pass. Hence the dark stone bed.
+  //
+  // All three at once, one per lane, because "visible" is not the test —
+  // "distinguishable from the other two" is.
+  {
+    name: 'pw-lineup',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(0, s, -2.4);   // MAGNET, left lane
+      pw.poseHoop(1, s, 0);      // SHIELD, centre
+      pw.poseHoop(2, s, 2.4);    // GLIDE, right
+      // One star at the same distance for scale: the hoop must not be
+      // mistakable for the thing that is worth ten points.
+      track._spawnStar(1, 1.15, play.z + 14);
+    },
+    settle: 0.1,
+    note: 'all three powerup hoops at 23m — can you tell which is which?',
+  },
+  {
+    name: 'phone-pw-lineup',
+    viewport: 'phone',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 23;
+      pw.poseHoop(0, s, -2.4);
+      pw.poseHoop(1, s, 0);
+      pw.poseHoop(2, s, 2.4);
+      track._spawnStar(1, 1.15, play.z + 14);
+    },
+    settle: 0.1,
+    note: 'THE emblem test — three hoops at 23m in portrait, where they are 44px across',
+  },
+  {
+    name: 'pw-near',
+    viewport: 'desktop',
+    time: 14,
+    setup: () => {
+      const S = window.SVU;
+      const track = S.ctx.get('track');
+      const play = S.ctx.get('play');
+      const pw = play.pw;
+      for (let i = track.obstacles.length - 1; i >= 0; i--) track._park(track.obstacles[i]);
+      track.obstacles.length = 0;
+      for (let i = track.stars.length - 1; i >= 0; i--) track._park(track.stars[i]);
+      track.stars.length = 0;
+      const s = play.z + 12;
+      pw.poseHoop(0, s, -2.4);
+      pw.poseHoop(1, s, 0);
+      pw.poseHoop(2, s, 2.4);
+    },
+    settle: 0.1,
+    camera: [0, 1.75, 5.4, 0, 1.30, 12],
+    note: 'the hoops close up — craft check on the emblems and the bed',
+  },
+  {
+    // FROM THE REAL CHASE CAMERA, deliberately. The previous cage was two
+    // rings in the same plane — a single gold line up the runner's back from
+    // dead astern — and it graded fine from a posed three-quarter view, which
+    // is exactly how it shipped. No `camera` field here: this is what the
+    // player sees.
+    name: 'pw-shield',
+    viewport: 'desktop',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('play').pw.grant(1);
+    },
+    settle: 0.2,
+    note: 'the shield cage on the runner, from the chase camera — the only view that counts',
+  },
+  {
+    name: 'phone-pw-shield',
+    viewport: 'phone',
+    time: 14,
+    framing: [26, 45],
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('play').pw.grant(1);
+    },
+    settle: 0.2,
+    note: 'the shield cage in portrait',
+  },
   {
     name: 'gameover',
     viewport: 'phone',

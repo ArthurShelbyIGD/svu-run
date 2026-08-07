@@ -49,7 +49,7 @@
 
 import { Rng } from '../core/rng.js';
 import { EV } from '../core/ctx.js';
-import { buildHoop, buildCage, EMBLEM } from './pwgeom.js';
+import { buildHoop, buildCage, EMBLEM, HOOP_OD } from './pwgeom.js';
 
 export const PW = { MAGNET: 0, SHIELD: 1, GLIDE: 2 };
 export const PW_NAME = ['MAGNET', 'SHIELD', 'GLIDE'];
@@ -90,11 +90,17 @@ const SPAWN_AHEAD = 140;
 /** Metres behind the player before an uncollected hoop is retired. */
 const RETIRE_BEHIND = 24;
 
-/** Hoop centre height, and the grab box around it. */
-const HOOP_Y = 1.30;
-const GRAB_X = 1.05;     // playerRadius 0.42 + hoop half-width 0.65
+/**
+ * Hoop centre height, and the grab box around it.
+ *
+ * The box is derived from HOOP_OD so that resizing the mesh cannot silently
+ * leave a hoop you can run through without collecting. Lane spacing is 2.4m
+ * and GRAB_X is 1.20, so a hoop can never be taken from the next lane along.
+ */
+const HOOP_Y = 1.35;
+const GRAB_X = 0.42 + HOOP_OD * 0.5;   // playerRadius + hoop half-width
 const GRAB_Z = 0.80;
-const GRAB_Y = 0.90;     // vertical half-window about HOOP_Y
+const GRAB_Y = 0.90;                   // vertical half-window about HOOP_Y
 
 /**
  * Idle motion, per kind. This is half the "which powerup is it" read and the
@@ -393,6 +399,34 @@ export default class Powerups {
     const kind = this._liveKind;
     this._retire();
     this.grant(kind);
+  }
+
+  /**
+   * Place a hoop for a screenshot pose, without touching the live pickup or
+   * the spawn schedule. Tools only — nothing in the game calls this.
+   *
+   * The three hoops are separate meshes precisely so a pose can show all three
+   * at once, which is the only way to check that they are distinguishable from
+   * each other rather than merely visible.
+   */
+  poseHoop(kind, s, x, y) {
+    // The live pickup uses the SAME three meshes, and renderUpdate keeps
+    // re-placing the live one every frame. Posing one of the three while it is
+    // live put the "third hoop" 110m up the track and produced a lineup shot
+    // with two hoops in it — measured, after the shot looked wrong.
+    this._retire();
+    const track = this.ctx.tryGet('track');
+    const m = this.hoops[kind];
+    const yy = y === undefined ? HOOP_Y : y;
+    if (track) {
+      track.path.toWorldExact(s, x, yy, this._w);
+      m.position.set(this._w[0], this._w[1], this._w[2]);
+      m.rotation.y = track.path.yawExactAt(s);
+    } else {
+      m.position.set(x, yy, s);
+    }
+    m.setEnabled(true);
+    return m;
   }
 
   _emitStart(kind, duration) {
