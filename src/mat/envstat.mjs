@@ -147,6 +147,7 @@ if (argv.includes('--cape')) {
   // adds four analytic lamps, a clear coat and a tone map — but it is the part
   // of the render env.js is responsible for, isolated.
   const vals = [];
+  const capeDirs = [];
   for (let iu = 0; iu < 220; iu++) {
     // azimuth around the bell: +-78 degrees off straight-back is what a
     // straight-on elevation actually shows before the sides turn edge-on.
@@ -168,8 +169,27 @@ if (argv.includes('--cape')) {
       if (d <= 0.03) continue;                // back-facing at this camera
       const rx = 2 * d * nx - vx, ry = 2 * d * ny - vy, rz = 2 * d * nz - vz;
       vals.push(sampleDir(rx, ry, rz));
+      const rl = Math.hypot(rx, ry, rz);
+      let az = (Math.atan2(rz / rl, rx / rl) * 180) / Math.PI;
+      if (az < 0) az += 360;
+      capeDirs.push([az, (Math.asin(ry / rl) * 180) / Math.PI]);
     }
   }
+  // WHERE the cape looks, as a 2-D histogram, because that is what decides
+  // where a card has to go. Azimuth in env.js's convention, elevation in
+  // degrees. Anything outside the cells this prints is invisible to the cape.
+  const grid = new Map();
+  for (const [ax, ay] of capeDirs) {
+    const k = `${Math.floor(ax / 15) * 15},${Math.floor(ay / 10) * 10}`;
+    grid.set(k, (grid.get(k) || 0) + 1);
+  }
+  const top = [...grid.entries()].sort((a, b) => b[1] - a[1]).slice(0, 16);
+  console.log('cape mirror directions (az deg, el deg) -> % of cape samples');
+  for (const [k, n] of top) {
+    console.log(`  az ${k.split(',')[0].padStart(4)}..  el ${k.split(',')[1].padStart(4)}..` +
+      `  ${((100 * n) / capeDirs.length).toFixed(1).padStart(5)}%`);
+  }
+
   vals.sort((a, b) => a - b);
   const q = (p) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
   console.log(`cape mirror sample  n ${vals.length}`);

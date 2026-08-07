@@ -398,11 +398,56 @@ export default class Materials {
     m.invertNormalMapY = true;      // see the note in pave() — one convention
 
     m.metallicTexture = this._rawTex('pol_orm', this._polish.orm, this._polishSize, false, tile);
-    m.useRoughnessFromMetallicTextureGreen = true;
     m.useMetallnessFromMetallicTextureBlue = true;
     m.useAmbientOcclusionFromMetallicTextureRed = true;
-    // roughness above SCALES the map, whose own range is about 0.03..0.08.
-    m.roughness = roughness / 0.055;
+
+    // ROUGHNESS IS SET DIRECTLY, AND THE ORM'S ROUGHNESS CHANNEL IS NOT USED.
+    // This line used to read `m.roughness = roughness / 0.055`, on the reading
+    // that `useRoughnessFromMetallicTextureGreen` makes the map's green channel
+    // (0.03..0.08) a multiplier that the material scales. It does not, in this
+    // Babylon build, and the consequence was not subtle: EVERY MATERIAL THIS
+    // FUNCTION MAKES HAD NO ENVIRONMENT REFLECTION AT ALL — the face, the
+    // hands, the boots, the wing, the cape.
+    //
+    // How that was established, because it is worth being able to repeat:
+    //
+    //  1. env.js grew a PROBE mode that fills the room with a sphere whose
+    //     colour encodes its own direction. Shot with the analytic lights off
+    //     (`--only env-back-nodir`), every surface becomes a false-colour map
+    //     of what it reflects. The pavé, the floor, the columns and the boots
+    //     all lit up. The cape was PURE BLACK: mean RGB 3.5/255 over 38681
+    //     masked pixels, 98.6% of them below luminance 32.
+    //  2. Bisecting the material in-page against `engine.readPixels` — which
+    //     costs two seconds a variant instead of forty for a screenshot —
+    //     `environmentIntensity = 8` changed the frame by ZERO counts, while
+    //     `metallicTexture = null` took the cape from 30 to 165. Something was
+    //     multiplying the environment term by nothing.
+    //  3. Sweeping `m.roughness` with the map still bound: 0.8 -> 94, 0.9 ->
+    //     71, 0.95 -> 60, 1.0 -> 46, and then 1.05, 1.09, 1.55, 2.45, 3, 9 and
+    //     18 ALL -> 46. A value above 1 does not scale anything; it saturates.
+    //     If the green channel were really being multiplied in, m.roughness 3
+    //     and m.roughness 18 would be two visibly different surfaces (0.17 and
+    //     0.99) and they are the same pixel. Setting
+    //     useRoughnessFromMetallicTextureAlpha = false, so green would win
+    //     outright, changed nothing either.
+    //
+    // So `roughness` is used raw and clamped into [0,1], and every material
+    // here was running at a clamped 1.0 — fully rough — while its name and its
+    // parameter both said mirror. That is the real reason the cape reads as
+    // satin, and it is why "the boots are missing", "the hands are two rounded
+    // blobs" and "matte white plastic eggs with zero specular" have all
+    // survived several passes of tuning the thing that was not the variable.
+    //
+    // Leaving `useRoughnessFromMetallicTextureGreen` unset is deliberate and
+    // safe in both directions: if a later Babylon starts honouring these flags,
+    // the ALPHA channel takes precedence over green and the polish ORM's alpha
+    // is 255, so the multiply would be by exactly 1.0 and this value still
+    // means what it says.
+    //
+    // ARCHITECTURE §7 applies to how these surfaces now LOOK — the harness is
+    // least trustworthy about mirrors. It does not apply to the bug: a
+    // roughness of 2.45 is out of range on any renderer.
+    m.roughness = roughness;
 
     m.freeze();
     this.cache.set(name, m);
