@@ -687,6 +687,31 @@ try {
     pwDet.same && pwDet.rngSame,
     `${pwDet.chunks} chunks, ${pwDet.n} placed objects identical with and without powerups`);
 
+  // A pickup that does nothing is worse than no pickup, because the player
+  // spent a lane change on it.
+  const pwHeld = await g.page.evaluate(() => {
+    const S = window.SVU;
+    const ctx = S.ctx;
+    const play = ctx.get('play');
+    const pw = play.pw;
+    ctx.restart();
+    ctx.config.captureMode = true;
+    ctx.get('coll').enabled = false;
+    const kinds = [];
+    for (let trial = 0; trial < 8; trial++) {
+      pw.shield = true;                       // holding a shield, always
+      pw._retire();
+      pw._nextS = play.z + 150;
+      for (let i = 0; i < 60 * 60 && pw._liveKind < 0; i++) S.loop.advance(1 / 60, 0);
+      kinds.push(pw._liveKind);
+    }
+    ctx.config.captureMode = false;
+    return { kinds, shields: kinds.filter((k) => k === 1).length };
+  });
+  check('a shield is never offered to a player already holding one',
+    pwHeld.shields === 0 && pwHeld.kinds.length === 8,
+    `8 spawns while shielded, kinds ${pwHeld.kinds.join('')} (1 would be a shield)`);
+
   const pwCollect = await g.page.evaluate(() => {
     const S = window.SVU;
     const ctx = S.ctx;
