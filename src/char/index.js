@@ -1212,7 +1212,11 @@ export default class Character {
       const t = i / 3;
       const fx = (t - 0.5) * SPAN;
       const len = fl * (0.86 + 0.20 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.24;
+      // SPLAY GROUPS THEM, IT DOES NOT FAN THEM. At 0.24 the tips ended 33 mm
+      // apart and the straight-on rear elevation read as a fork. The reference
+      // paw's lobes stay a bundle and only their TIPS part; 0.18 keeps ~27 mm
+      // at the tips, which is still four times the knuckle gap.
+      const splay = (t - 0.5) * 0.18;
       // CURL POINTS THE TIPS AT +z, AND +z IS AWAY FROM THE ONLY CAMERA THIS
       // GAME HAS. At 0.46 the tips swung 21 mm behind the palm and hid inside
       // its own silhouette from directly behind. 0.18 keeps the paw's forward
