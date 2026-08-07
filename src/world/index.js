@@ -9,6 +9,43 @@
 //              room swings around the player instead of sitting still
 //   props.js — a 24m bay of procedural architecture, thin-instanced along the
 //              path and recycled behind the player
+//
+// ---------------------------------------------------------------------------
+// A ZONE IS A ROOM, NOT A FILTER. Everything below is data in zones.js, read
+// and blended here: key direction / intensity / colour, ambient, shadow
+// darkness, fog density, and (in props.js, per bay) the height of the vault
+// and how far away the far side of the hall is.
+//
+// THREE THINGS MEASURED WHILE BUILDING IT, so nobody has to argue about them
+// again. All from the five `zoneN` capture poses, which are one straight, one
+// seed and one obstacle lineup with the zone as the only variable:
+//
+// 1. THE CHARACTER DOES NOT TAKE THE ROOM'S COLOUR, and does not need a
+//    neutral key of its own. Head patch across Vault / Ruby / Sapphire /
+//    Emerald / Gilt: rgb(205,196,182) (197,196,180) (206,200,190)
+//    (210,206,188) (235,225,207), saturation 0.115 / 0.141 / 0.080 / 0.103 /
+//    0.122. It is LESS saturated in Emerald than in the zone the owner signed
+//    off. The portrait rig in attachPortraitRig is four point lights at 8-30
+//    against a key of 5-8.6 and it simply wins; the earlier build where the
+//    figure read green did not have it.
+//
+// 2. THE COLOUR CONTRACT SURVIVES ALL FIVE ROOMS. Clustering the 26m lineup
+//    by hue, red-hazard mean vs gold mean:
+//        Vault    (182,40,79)  vs (156,127,58)
+//        Ruby     (120,28,53)  vs (158,126,56)
+//        Sapphire (200,48,94)  vs (161,138,69)
+//        Emerald  (146,37,66)  vs (140,125,55)
+//        Gilt     (217,82,100) vs (145,121,67)
+//    Worst case is Gilt, gold light on gold trim, and even there G/R is 0.38
+//    for the hazard against 0.83 for the gold. They never converge because
+//    `keyC` is not allowed to — see THE READABILITY BUDGET in zones.js.
+//
+// 3. THE Z SIGN OF A KEY IS AN EXPOSURE CONTROL, not a style choice. In a
+//    chase camera a key with negative z lights the faces turned away from the
+//    player. Ruby and Emerald shipped their first pass that way and measured
+//    43.7 and 51.0 whole-frame mean against Vault's 55.8, with the obstacle
+//    lineup at 37.7 and 42.9 against 80. Fixed by raking the key forward:
+//    52.9 and 59.9, lineup 57.9 and 56.7.
 
 import {
   DirectionalLight, HemisphericLight, PointLight, ShadowGenerator,

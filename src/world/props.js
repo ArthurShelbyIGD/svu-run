@@ -23,6 +23,24 @@
 // fight that, the bay's shafts are sized to swallow them: minimum shaft radius
 // is 0.37m everywhere against the track cylinder's 0.36m -> 0.275m taper, so
 // the plain cylinder sits entirely inside the fluted one and never shows.
+// THAT IS ALSO WHY COLUMN SPACING IS NOT A ZONE DIAL. COL_STEP is 8m because
+// track/'s COLUMN_SPACING is 8m; move one and the other leaves a bare pink
+// cylinder standing in a carved colonnade at every corner. The rhythm dials a
+// zone does get are the ones nothing else owns: the transverse vault's height
+// and cadence, and the distance and height of the silhouette bands.
+//
+// WHICH PARTS OF A BAY BELONG TO THE ZONE. Three matrices per bay, not one:
+//   bayBufs    everything whose proportions are fixed (cornice, aisle, floor)
+//   vaultBufs  the transverse arch, scaled about its springing and optionally
+//              skipped — this is the object at the vanishing point
+//   silBufs    the mid and far depth bands, scaled out and up
+// All three read zoneAt(bay midpoint), never zoneAt(player), because a bay is
+// placed once up to 184m ahead and is never touched again.
+//
+// A RULE THIS FILE LEARNED THE HARD WAY: a large additive billboard must reach
+// zero alpha at EVERY edge of its own quad. See _buildShafts — one 0.42 stop
+// sitting on a quad boundary was the hard horizontal line across the top of
+// the portrait frame that went unexplained for three rounds.
 
 import {
   MeshBuilder, Mesh, Matrix, Vector3, Quaternion, StandardMaterial,
@@ -688,11 +706,20 @@ export default class Props {
     // quad, about 1.2m of world height, ramps in from nothing. At the
     // distances a shaft is actually seen that is a couple of hundred pixels of
     // gradient, which is far too gradual to read as an edge.
+    //
+    // The foot costs the beam about eight percent of its total alpha, and in
+    // portrait — where a shaft twelve metres ahead fills the upper half of the
+    // frame — that measured as zone 1's median dropping from 42.9 to 39.7.
+    // Zone 1 is the calling card and does not get to pay for someone else's
+    // bug, so the area is put back ABOVE the foot, by holding the beam's waist
+    // fuller for longer. That is the one part of the quad with no boundary
+    // anywhere near it, so it cannot bring the seam back.
     const v = c.createLinearGradient(0, 0, 0, size);
     v.addColorStop(0.00, 'rgba(255,244,220,0)');
     v.addColorStop(0.06, 'rgba(255,243,218,0.13)');
-    v.addColorStop(0.16, 'rgba(255,242,215,0.42)');
-    v.addColorStop(0.50, 'rgba(255,232,190,0.16)');
+    v.addColorStop(0.16, 'rgba(255,242,215,0.44)');
+    v.addColorStop(0.34, 'rgba(255,238,205,0.30)');
+    v.addColorStop(0.55, 'rgba(255,232,190,0.16)');
     v.addColorStop(1.00, 'rgba(255,225,175,0)');
     c.fillStyle = v;
     c.fillRect(0, 0, size, size);
