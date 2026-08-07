@@ -346,10 +346,10 @@ export default class Ui {
 }
 
 .svu-chip {
-  min-width: 106px;
+  min-width: 112px;
   padding: 7px 11px 6px;
-  border: 1px solid rgba(216,169,63,.30);
-  background: rgba(8,7,6,.58);
+  border: 1px solid rgba(216,169,63,.34);
+  background: rgba(6,5,4,.88);
   border-radius: 2px;
   opacity: 0;
   visibility: hidden;
@@ -362,14 +362,14 @@ export default class Ui {
 }
 
 .svu-chip-d {
-  margin-right: .55em;
-  font-size: .82em;
+  margin-right: .5em;
+  font-size: 1.05em;
   color: #e8c979;
   letter-spacing: 0;
 }
 
 .svu-chip-l {
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .26em;
   text-indent: .26em;
   text-align: center;
@@ -391,10 +391,10 @@ export default class Ui {
 }
 
 .svu-chip-hold {
-  border-color: rgba(216,169,63,.66);
-  background: rgba(216,169,63,.13);
+  border-color: rgba(232,201,121,.82);
+  background: rgba(26,19,7,.90);
 }
-.svu-chip-hold .svu-chip-l { color: #e8c979; }
+.svu-chip-hold .svu-chip-l { color: #f4e2b4; }
 .svu-chip-hold .svu-chip-t { background: rgba(216,169,63,.28); }
 .svu-chip-hold .svu-chip-f {
   background: #e8c979;

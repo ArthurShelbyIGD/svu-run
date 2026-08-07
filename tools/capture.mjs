@@ -382,6 +382,19 @@ const POSES = [
     time: 14,
     framing: [26, 45],
     setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
       const pw = window.SVU.ctx.get('play').pw;
       pw.grant(0);
       pw.grant(1);
@@ -398,6 +411,19 @@ const POSES = [
     time: 14,
     framing: [26, 45],
     setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
       const pw = window.SVU.ctx.get('play').pw;
       pw.grant(0);
       pw.grant(1);
@@ -417,6 +443,19 @@ const POSES = [
     time: 14,
     framing: [26, 45],
     setup: () => {
+      // A CAPTURE CAN COME BACK AS THE LOADING SPLASH. shell/template.html
+      // removes #boot on a chain of WALL-CLOCK timers (60ms poll, up to 500ms
+      // hold, a 500ms fade, then a 600ms removal) that starts when SVU.ready
+      // flips — and openGame returns the instant it flips, after which every
+      // step here is a long synchronous evaluate that starves those timers.
+      // phone-hud-pw came back as a cream card with SVU RUN on it, 20KB
+      // instead of 1.6MB, and the run still exited 0. Worse than a blank is a
+      // HALF-FADED splash: a milky wash over a real frame, which grades as
+      // "the lighting is wrong". A pose cannot fix this for poses that have no
+      // setup — the central fix belongs in the capture loop, in tools/, which
+      // this agent does not own. Flagged to the lead.
+      const boot = document.getElementById('boot');
+      if (boot) boot.remove();
       const S = window.SVU;
       const pw = S.ctx.get('play').pw;
       pw.grant(2);
