@@ -1085,47 +1085,94 @@ export default class Character {
     // polRhodium only works on masses big enough to catch the portrait rig —
     // the gloves and the boots.
 
-    // palm — a rounded slab, wider than deep
-    g.at(0, -R * 0.66, 0.004, 0, 0, 0, 1.0, 1.08, 0.70);
+    // WHY THIS HAND WAS ONE SMOOTH EGG FOR SEVERAL ROUNDS, and how to not do it
+    // again. The owner played the build and said "we lost the hands with
+    // fingers along the way, they seem to be like the boots, some kind of shape
+    // with rounded edges". The fingers had never been lost. They were built,
+    // placed, lit and BRIGHT — luminance sampled across the glove ran 150-226
+    // of 255, among the brightest things in frame. Two hypotheses were chased
+    // and both are wrong, so do not chase them a third time:
+    //   * NOT lighting. See the luminance above.
+    //   * NOT normal averaging across the merge. Geo.add gives every part its
+    //     own vertex range and only offsets indices, so ComputeNormals cannot
+    //     average across parts. Splitting the fingers out changes nothing.
+    // It was arithmetic, in two places, and both are now spelled out below.
+    // The pose that shows it is `char-hand` in tools/capture.mjs — the hands
+    // are 40 px in every other shot, which is exactly why this survived.
+
+    // THE PALM WAS EATING THE FINGERS. It ran from +R*0.42 down to -R*1.74
+    // while the longest fingertip only reached -R*2.15, so 44 mm of an 85 mm
+    // finger was ever outside the palm and the knuckle tori at -R*1.34 were
+    // entirely inside it — five rings a hand rendering nothing. The palm is
+    // now 55% of the hand and the fingers are the other 45%, which is what
+    // docs/reference-rear.png shows: a paw whose lower half is lobes.
+    g.at(0, -R * 0.44, 0.004, 0, 0, 0, 1.0, 0.72, 0.70);
     g.add(ellipsoid({ rx: R, e1: 0.72, e2: 0.66, su: this.sd + 6, sv: this.sd + 2 }));
 
-    const fl = R * 0.72;
+    // THE SUBTRACTION THAT WELDED THEM TOGETHER. Finger radius was R*0.265 —
+    // 57.2 mm across — laid on a 4-finger span of R*1.06, which is a 38.2 mm
+    // centre pitch. GAP = MINUS 19.1 mm. Every finger interpenetrated its
+    // neighbour by a third of its own diameter, so four fingers were one welded
+    // slab with four faint ripples down it.
+    //   radius R*0.200 -> 43.2 mm across
+    //   span   R*1.42  -> 51.1 mm pitch
+    //   gap    +7.9 mm at the knuckle, ~33 mm at the tips once splay opens them
+    // DO THAT SUBTRACTION before touching either number.
+    const SPAN = R * 1.42;
+    const FR = R * 0.200;
+    const fl = R * 1.21;
     for (let i = 0; i < 4; i++) {
       const t = i / 3;
-      const fx = (t - 0.5) * R * 1.06;
-      const len = fl * (0.80 + 0.30 * Math.sin(Math.PI * (0.25 + t * 0.6)));
-      const splay = (t - 0.5) * 0.26;
-      const curl = 0.46;
+      const fx = (t - 0.5) * SPAN;
+      const len = fl * (0.86 + 0.20 * Math.sin(Math.PI * (0.25 + t * 0.6)));
+      const splay = (t - 0.5) * 0.36;
+      // CURL POINTS THE TIPS AT +z, AND +z IS AWAY FROM THE ONLY CAMERA THIS
+      // GAME HAS. At 0.46 the tips swung 21 mm behind the palm and hid inside
+      // its own silhouette from directly behind. 0.18 keeps the paw's forward
+      // curl and leaves the tips somewhere they can be seen.
+      const curl = 0.18;
+      const rTip = FR * 0.80;
+      const shaft = len - rTip;
       const rings = [];
-      const n = 5;
-      for (let k = 0; k <= n; k++) {
-        const f = k / n;
-        const ang = curl * f * f;
-        rings.push([
-          0,
-          -len * f,
-          Math.sin(ang) * len * 0.55,
-          R * 0.265 * (1 - 0.20 * f),
-          R * 0.265 * (1 - 0.20 * f),
-        ]);
+      const ring = (a, r) => {
+        const f = a / len;
+        rings.push([0, -a, Math.sin(curl * f * f) * len * 0.55, r, r]);
+      };
+      const nS = 5, nC = 3;
+      for (let k = 0; k <= nS; k++) ring(shaft * (k / nS), FR + (rTip - FR) * (k / nS));
+      // HEMISPHERICAL TIPS. A linear taper into tube()'s flat end cap leaves a
+      // 35 mm disc across the end of every finger, and four discs pointed down
+      // the camera's axis read as four CLAWS. The last three rings are a
+      // hemisphere of the tip radius, so each finger ends in a dome instead.
+      for (let k = 1; k <= nC; k++) {
+        const c = (k / nC) * (Math.PI / 2);
+        ring(shaft + rTip * Math.sin(c), Math.max(rTip * 0.10, rTip * Math.cos(c)));
       }
-      g.at(fx * s, -R * 1.36, 0.012, 0, 0, splay * s);
+      // Rooted at -R*0.80, which is 9 mm INSIDE the palm shell even at the
+      // outer finger's outboard edge — the roots have to be buried or the base
+      // cap's rim shows as a step. The knuckle tori that used to sit at
+      // -R*1.34 are deleted: they were inside the old palm and rendered nothing.
+      g.at(fx * s, -R * 0.80, 0.010, 0, 0, splay * s);
       g.add(tube(rings, this.sd, true, true, 1, 3));
-      if (!this.lowQ) {
-        g.at(fx * s, -R * 1.34, 0.014, Math.PI / 2, 0, splay * s);
-        g.add(torus(R * 0.21, 0.013, this.sd, 5, null, 0.8));
-      }
     }
 
-    // thumb — shorter, thicker, swung out and forward
+    // THUMB — A LOBE, NOT A SPUR. Swung 1.05 rad off a base at R*0.76 it threw
+    // a tapered stick 29 mm clear of the palm's outline, and in the hand
+    // capture it read as a horn growing out of the wrist. Shorter, thicker,
+    // rooted further in and swung less: it now breaks the palm's outline by
+    // about 9 mm, which is a thumb on a mitten.
     const trings = [];
-    const tn = 4, tl = R * 0.76;
-    for (let k = 0; k <= tn; k++) {
-      const f = k / tn;
-      trings.push([0, -tl * f, Math.sin(0.5 * f * f) * tl * 0.5,
-        R * 0.27 * (1 - 0.24 * f), R * 0.27 * (1 - 0.24 * f)]);
+    const tl = R * 0.60, tR = R * 0.30, tTip = tR * 0.78, tShaft = tl - tTip;
+    const tring = (a, r) => {
+      const f = a / tl;
+      trings.push([0, -a, Math.sin(0.5 * f * f) * tl * 0.5, r, r]);
+    };
+    for (let k = 0; k <= 3; k++) tring(tShaft * (k / 3), tR + (tTip - tR) * (k / 3));
+    for (let k = 1; k <= 3; k++) {
+      const c = (k / 3) * (Math.PI / 2);
+      tring(tShaft + tTip * Math.sin(c), Math.max(tTip * 0.10, tTip * Math.cos(c)));
     }
-    g.at(s * R * 0.76, -R * 0.88, 0.030, -0.30, 0, s * 1.05);
+    g.at(s * R * 0.46, -R * 0.72, 0.026, -0.26, 0, s * 0.70);
     g.add(tube(trings, this.sd, true, true, 1, 3));
 
     g.toMesh(`glove${s}`, scene, this._rhodMat(mat), wrist);

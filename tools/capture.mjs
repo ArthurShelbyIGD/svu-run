@@ -88,6 +88,32 @@ const POSES = [
     note: 'straight-on rear elevation — the direct A/B against docs/reference-rear.png',
   },
   {
+    // THE HANDS ARE 40 PIXELS IN EVERY OTHER POSE. That is exactly why four
+    // fingers welded into one slab survived several review passes: at 40px a
+    // correct hand and a rounded blob are the same picture. This frames ONE
+    // hand at about a metre, from behind and slightly outboard, so the finger
+    // GAPS are what the shot is about.
+    //
+    // THE NUMBERS ARE MEASURED, NOT GUESSED. A first attempt sat behind the
+    // FIGURE at 1.45m and returned a picture of the skirt with two 90px blobs
+    // at the edges — i.e. the very shot that let the defect through. These are
+    // the world bounds of mesh `glove1` at t=4s, seed=1, the same instant this
+    // pose freezes:
+    //     x 0.494 .. 0.914   y 0.446 .. 0.902   z (play.z + 0.171) .. (+0.486)
+    // so the hand centre is play + (0.704, 0.674, 0.328) and it is 42cm across.
+    // Camera 0.95m back in z and 19 degrees up (the chase camera's own pitch),
+    // pushed 0.18m outboard so the background behind the fingers is the dark
+    // hall rather than the skirt — gaps only read against something.
+    // If the arm-swing animation or handR changes, RE-MEASURE: dump
+    // scene.getMeshByName('glove1').getBoundingInfo().boundingBox after a
+    // 4-second fastForward and re-derive these six numbers.
+    name: 'char-hand',
+    viewport: 'desktop',
+    time: 4,
+    camera: [0.88, 1.00, -0.62, 0.70, 0.675, 0.33],
+    note: 'ONE hand, filling the frame — the only pose in which fingers are gradeable',
+  },
+  {
     name: 'jump',
     viewport: 'desktop',
     time: 5,
