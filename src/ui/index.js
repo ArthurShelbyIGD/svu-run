@@ -93,11 +93,23 @@
 //    that field is for — the END event payload is pooled and a poll cannot
 //    miss the edge, only be one frame late.
 //
-//  - COST. The per-frame work is three slot reads, one float compare and, at
-//    most, one `style.transform` write per timed chip — and that write only
-//    happens when the fill changes by a whole percent, which is ~14 writes a
-//    second rather than 60. The 101 transform strings are BUILT ONCE in init
+//  - COST, MEASURED. The per-frame work is three slot reads, one float compare
+//    and, at most, one `style.transform` write per timed chip. The write is
+//    QUANTISED to whole percent, which caps a bar at 100 writes for the entire
+//    life of the powerup NO MATTER WHAT THE FRAME RATE IS: 200 real frames
+//    with a 7s magnet and a 9s glide both run all the way down produced 185
+//    style writes against a ceiling of 200. At 60fps that is 100 writes over
+//    7s instead of 420. The 101 transform strings are BUILT ONCE in init
 //    (`_sx`) so the frame path allocates nothing at all.
+//
+//    Note for whoever measures this next: `loop.advance()` CANNOT measure it.
+//    advance() runs every simulation step first and then every render step, so
+//    the remaining time is constant across the whole render batch and one
+//    fastForward produces exactly one write however long it was. Use
+//    waitFrames() and the real loop. And in Blink the CSS property accessors
+//    are own properties of each `element.style` INSTANCE, not of
+//    CSSStyleDeclaration.prototype, and the own descriptor has no `set` to
+//    chain to — a MutationObserver on the style attribute is the way to count.
 
 import { EV } from '../core/ctx.js';
 
@@ -1085,6 +1097,12 @@ export default class Ui {
       this._spentAt = pw.lastSpent;
       this._onSpend();
     }
+
+    // Picking a new shield up inside the 0.9s hold would otherwise leave the
+    // chip saying ABSORBED while a live charge is sitting in the slot. Spawns
+    // are 420m apart so this is nearly unreachable, which is exactly why it
+    // would never be found later.
+    if (this._spentT > 0 && slots[PW_SHIELD].active) this._clearSpend();
 
     for (let k = 0; k < PW_SLOTS; k++) {
       const s = slots[k];
