@@ -1688,7 +1688,26 @@ export default class Character {
       // the albedo comes back down by that ratio. Albedo is the one lever that
       // moves the whole histogram together, which makes it the right one for a
       // median and the wrong one for a shape.
-      { r: 0.235, g: 0.238, b: 0.251 },
+      // FIFTH MEASUREMENT, and this one undoes the previous four.
+      //
+      // Every number above was tuned against a material that WAS NOT
+      // REFLECTING THE ENVIRONMENT AT ALL. mat.polished() set
+      // `m.roughness = roughness / 0.055`, on the reading that the ORM's
+      // green channel scales it; it does not, so the value clamped to 1.0
+      // and every material that factory makes — the face, the hands, the
+      // boots, the wing, this cape — got zero environment specular. All the
+      // light was coming from world/'s point lights, so each round the
+      // albedo came down to stop those lamps blowing the median out. Four
+      // measurements, each correct, all compensating for one bug.
+      //
+      // With the reflection restored, 0.235 measured p50 26.9 against the
+      // reference's 93.0 while p95 landed at 221.0 against 209.4 — the
+      // highlights were right and everything else was black. That is the
+      // signature of a mirror with nothing to reflect but a dark hall, not
+      // of an albedo that needs lowering. Scaled back up to put the median
+      // where the reference has it; the ribs were already clipping, so p95
+      // barely moves.
+      { r: 0.845, g: 0.856, b: 0.903 },
       // DO NOT LOWER THIS AGAIN WITHOUT READING THE NEXT PARAGRAPH.
       //
       // The reasoning that says "a tighter GGX lobe concentrates the same energy
