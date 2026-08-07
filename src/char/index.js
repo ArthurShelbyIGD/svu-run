@@ -597,10 +597,33 @@ export default class Character {
     // so it covers the ~6 cm slot between the arm and the torso. Measured:
     // the body's half-width at shoulderY is 0.252 and the arm's inner edge is
     // 0.314; the hood, which is 0.40 wide at that height, backs the rest.
+    // THE HEM BAND HAD THE WRIST CUFF'S BUG, and it survived four rounds only
+    // because the skirt covers it. torus() in geom.js builds its centreline in
+    // the XZ plane — its axis is ALREADY Y — so a band round a body that stands
+    // up the Y axis needs NO rotation. The `Math.PI / 2` that used to be here
+    // tipped the axis onto Z. Measured world bbox before the fix:
+    //     x 688 mm   y 629 mm   z 121 mm
+    // i.e. a hoop standing in the plane of the screen and threaded THROUGH the
+    // hips, not a band around them. Same tell as the cuff: one extent an order
+    // of magnitude smaller than the other two.
+    //
+    // AND THE RADIUS WAS WRONG TOO, which the rotation had been hiding. Once
+    // the hoop lies flat its radius matters, and P.bodyW * 0.845 = 269 mm is
+    // the body's half-width near the WAIST — bodySurf at the band's own height
+    // is 148 mm, so an un-rotated band of the old radius would have floated
+    // 12 cm clear of the fabric all the way round. It is measured off the
+    // surface it sits on instead, exactly as the zip is, so it stays on the
+    // cloth if the body profile is ever retuned. HEM_V is solved, not guessed:
+    // bodySurf puts y at bodyH*cos((0.10 + 0.86v)pi), so v for -0.965 bodyH is
+    // the line below. Tube 30 -> 17 mm, because a 30 mm tube on a 151 mm band
+    // is a hula hoop, not a hem.
+    const HEM_V = (Math.acos(-0.965) / Math.PI - 0.10) / 0.86;
+    const hx = [0, 0, 0], hz = [0, 0, 0];
+    bodySurf(0.25, HEM_V, hx);   // u = 0.25 -> the +X flank: hx[0] is half-width
+    bodySurf(0.00, HEM_V, hz);   // u = 0    -> the +Z flank: hz[2] is half-depth
     const t = new Geo();
-    // hem band at the bottom of the onesie
-    t.at(0, P.bodyY - P.bodyH * 0.965, 0, Math.PI / 2, 0, 0, 1.0, 1.0, 0.90);
-    t.add(torus(P.bodyW * 0.845, 0.030, this.su, this.sd, null, 0.75));
+    t.at(0, P.bodyY + hx[1], 0, 0, 0, 0, 1.0, 1.0, hz[2] / hx[0]);
+    t.add(torus(hx[0] * 1.02, 0.017, this.su, this.sd, null, 0.85));
     t.toMesh('onesieTrim', this.ctx.scene, this._rhodMat(mat), body);
 
     // --- gold: the zip with real teeth, and its pull ---
