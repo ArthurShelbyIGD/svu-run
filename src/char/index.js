@@ -1103,12 +1103,33 @@ export default class Character {
       // being the yoke edge and the hem wire. In silver the sleeve ran straight
       // into the glove as one undifferentiated pale mass. The sleeve's grains
       // ride in the same mesh, so the whole forearm's gold is one draw call.
+      // ...except that for several rounds it was not visible at all, and the
+      // reason is a one-token bug worth naming because the same token appears
+      // elsewhere in this file. torus() in geom.js builds its centreline circle
+      // in the XZ PLANE — its axis is ALREADY Y — so a band round a limb that
+      // hangs down the Y axis needs NO rotation. The `Math.PI / 2` that used to
+      // be here tipped the axis onto Z, which turns the band into a hoop
+      // standing up in the plane of the screen: measured local bbox
+      // 177 x 179 x 25 mm, i.e. a flat annulus 18 cm tall threaded through the
+      // wrist rather than a 3 cm band around it. Almost all of it was inside
+      // the sleeve and the palm, so what reached the camera was two gold
+      // slivers at the edges, and every capture read as "the gold cuff is too
+      // small" rather than "the gold cuff is side-on".
+      // THE TELL: if a torus is invisible, print its bounding box before you
+      // resize it. A hoop seen edge-on has one extent an order of magnitude
+      // smaller than the other two.
+      // (The onesie hem band near the end of _buildTorso has the same rotation
+      // and the same problem. It is left alone here only because the skirt
+      // covers it completely — it is on the list, not forgiven.)
       const gc = new Geo();
-      gc.at(0, -P.foreLen + 0.006, 0.006, Math.PI / 2);
+      gc.at(0, -P.foreLen + 0.020, 0, 0, 0, 0, 1, 1, 0.94);
       // A BAND, not a bracelet. At a 0.028 tube it stood 2.4 cm proud of a 7 cm
       // wrist and, in champagne on a champagne setting bed, read as a fat ring
-      // hanging loose off the arm.
-      gc.add(torus(P.armR * 0.72, 0.017, this.sd + 6, 6, null, 0.85));
+      // hanging loose off the arm. The sleeve is 74 mm across where this sits,
+      // so R*0.73 with a 14 mm tube stands 14 mm proud — a rim on the sleeve,
+      // which is what the reference has. The z scale matches the sleeve's own
+      // 0.94 so the band is the same ellipse the arm is.
+      gc.add(torus(P.armR * 0.73, 0.014, this.sd + 6, 6, null, 0.80));
 
       const fs = new Geo();
       fs.at(0, 0, 0);
