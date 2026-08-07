@@ -138,9 +138,12 @@ export default class Play {
     };
 
     const move = (e) => {
-      // Unconditional, and before any early-out: this listener is also what
-      // stops the page scrolling and rubber-banding under the finger.
-      if (e.cancelable) e.preventDefault();
+      // Belt and braces against page scroll and rubber-banding. The shell
+      // already sets `touch-action: none` and `overscroll-behavior: none` on
+      // both body and canvas, which is what actually does the work; this
+      // catches anything that slips past. Touch only — preventDefault on every
+      // desktop mousemove would be rude for no benefit.
+      if (e.changedTouches && e.cancelable) e.preventDefault();
       if (this._touchId === null) return;
       const t = this._pickTouch(e);
       if (t) this._recognise(t.clientX, t.clientY);
@@ -160,9 +163,12 @@ export default class Play {
 
     const cancel = () => { this._touchId = null; };
 
-    // passive:false on touchstart too — Chrome will not let a non-passive
-    // touchmove cancel scrolling that a passive touchstart already conceded.
-    canvas.addEventListener('touchstart', down, { passive: false });
+    // touchstart stays PASSIVE. A non-passive touchstart listener makes the
+    // browser wait for this handler before it can decide what the gesture is,
+    // which is latency paid on every single touch — and there is nothing to
+    // cancel here anyway, because `touch-action: none` in the shell has
+    // already told the compositor the page does not scroll.
+    canvas.addEventListener('touchstart', down, { passive: true });
     canvas.addEventListener('touchmove', move, { passive: false });
     canvas.addEventListener('touchend', up, { passive: true });
     canvas.addEventListener('touchcancel', cancel, { passive: true });
