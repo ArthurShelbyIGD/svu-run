@@ -212,6 +212,27 @@ export function stoneField(surf, o) {
   const rows = Math.max(1, Math.round(mer / (pitch * 0.868)));
   let count = 0;
 
+  // THE TRAP IN THIS LOOP, and it has cost a day. The ROW COUNT comes from arc
+  // length (`mer`, above) but the row POSITIONS are uniform in v — so this is
+  // only correct while v is arc-proportional. Hand it a piecewise surface whose
+  // v is not, and it puts the right total number of rows on the part while
+  // spacing them wrongly: wherever v moves fastest in metres per unit v, the
+  // rows stretch apart and you get a bare patch, and wherever it moves slowest
+  // they bunch up and overlap.
+  //
+  // How it presented, so it is recognisable next time: the sleeve's shoulder
+  // dome is 41% of the meridian's ARC and had been given 17% of v, so its rows
+  // came out two and a half times too far apart and the shoulder wore a bare
+  // 128 mm crown. It looks exactly like a v0 that is too high, and lowering v0
+  // does not fix it — v0 only moves where the field STARTS, not how v is
+  // distributed inside it.
+  //
+  // THE FIX IS AT THE CALLER, not here: give each piece of a piecewise surface
+  // a share of v equal to its share of the meridian's arc length, and quote the
+  // measurement in a constant next to it (`SH = 0.41`, `EH = 0.35` in
+  // char/index.js). Doing it here instead would mean re-parameterising an
+  // arbitrary callback by arc length on every part, which costs more than it
+  // saves and would silently change every existing surface's stone layout.
   for (let r = 0; r < rows; r++) {
     const v = v0 + (v1 - v0) * ((r + 0.5) / rows);
     const ring = ringLength(surf, v, 40, uOpen);

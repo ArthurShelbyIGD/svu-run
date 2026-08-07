@@ -548,12 +548,26 @@ export default class Character {
     g.toMesh('onesieStones', this.ctx.scene, this._stoneMat(mat), body);
 
     // --- metal garment furniture ---
+    //
+    // THE SHOULDER CAPS ARE GONE. Two `polRhodium` ellipsoids used to sit here,
+    // "small masses where the sleeves meet the body", and they are the other
+    // half of the owner's complaint: "the same goes for the shoulders — some
+    // kind of shape with rounded edges". Crop docs/reference-rear.png to a
+    // shoulder and there is NO shoulder hardware at all: the pavé sleeve runs
+    // straight up and meets the pavé yoke, and the sleeve's own top is a
+    // rounded pavé dome. Two smooth mirror blobs interrupting that was a
+    // fourth-order restatement of this project's oldest mistake — putting a
+    // small mirror part in a black hall and expecting it to read as jewellery.
+    //
+    // THEY WERE LOAD-BEARING, THOUGH, so do not just delete them: surface()
+    // emits an OPEN grid, which makes the sleeve a pipe, and the cap was what
+    // capped it. Removing the cap alone leaves a tube with its mouth pointing
+    // at the ceiling. The sleeve now closes itself — see the dome at the top of
+    // upperSurf in _buildArms, which is also wider than the shaft (1.20 armR)
+    // so it covers the ~6 cm slot between the arm and the torso. Measured:
+    // the body's half-width at shoulderY is 0.252 and the arm's inner edge is
+    // 0.314; the hood, which is 0.40 wide at that height, backs the rest.
     const t = new Geo();
-    // shoulder caps: small masses where the sleeves meet the body
-    for (const s of [-1, 1]) {
-      t.at(s * P.shoulderX * 0.90, P.shoulderY - 0.010, 0, 0, 0, s * -0.30);
-      t.add(ellipsoid({ rx: 0.104, ry: 0.092, rz: 0.100, e1: 0.85, su: this.sd + 4, sv: this.sd }));
-    }
     // hem band at the bottom of the onesie
     t.at(0, P.bodyY - P.bodyH * 0.965, 0, Math.PI / 2, 0, 0, 1.0, 1.0, 0.90);
     t.add(torus(P.bodyW * 0.845, 0.030, this.su, this.sd, null, 0.75));
@@ -995,21 +1009,60 @@ export default class Character {
       pivot.parent = body;
       pivot.position.set(s * P.shoulderX, P.shoulderY, 0);
 
+      // BOTH SLEEVES ARE CLOSED SOLIDS NOW, and that is the whole point of the
+      // piecewise form below. surface() emits an OPEN grid — no caps, ever — so
+      // a sleeve built as a simple tapered cylinder is a PIPE with a mouth at
+      // each end. The shoulder mouth pointed at the ceiling and was hidden by a
+      // smooth mirror cap that the owner then read as a blob (see _buildTorso);
+      // the elbow mouth pointed up-and-back at a camera that sits 19 degrees
+      // ABOVE the character and rendered as a hard dark ellipse on the outside
+      // of each elbow, which had been read as "an elbow pad" for several rounds
+      // and never named. Nobody had named it because a pipe mouth in shadow
+      // looks exactly like a part you meant to put there.
+      //
+      // Each sleeve therefore ends in a DOME, expressed in its own surface so
+      // the stone field walks over it from the same definition and the pavé
+      // runs unbroken across the joint — which is also what
+      // docs/reference-rear.png shows.
+      //
+      // SH IS AN ARC SHARE, NOT A GUESS. stoneField lays rows at uniform v but
+      // COUNTS them from arc length, so a piecewise surface whose v is not
+      // arc-proportional gets a bald patch wherever v moves fastest. See the
+      // row loop in pave.js. Measured on these numbers, the dome is 0.156 m of
+      // a 0.384 m meridian: 0.41. Give it 0.41 of v. If rTop, the taper or
+      // upperLen move, RECOMPUTE IT — at the naive 0.17 the crown came out
+      // with a bare 128 mm cap that lowering v0 does not fix.
+      const SH = 0.41;
+      const rTop = P.armR * 1.20;   // wider than the shaft, so it also closes
+                                    // the ~6 cm slot between arm and torso
       const upperSurf = (u, v, out) => {
-        const y = -P.upperLen * v;
-        const r = P.armR * (1.06 - 0.20 * v);
         const ph = u * TWO_PI;
+        let r, y, bow = 0;
+        if (v < SH) {
+          const a = (v / SH) * (Math.PI / 2);   // 0 at the pole, pi/2 at the equator
+          r = rTop * Math.sin(a);
+          y = rTop * 0.65 * Math.cos(a);
+        } else {
+          const w = (v - SH) / (1 - SH);
+          r = rTop + (P.armR * 0.88 - rTop) * w;
+          y = -P.upperLen * w;
+          bow = Math.sin(w * Math.PI) * 0.012;
+        }
         out[0] = r * Math.sin(ph);
         out[1] = y;
-        out[2] = r * 0.94 * Math.cos(ph) + Math.sin(v * Math.PI) * 0.012;
+        out[2] = r * 0.94 * Math.cos(ph) + bow;
       };
       const ub = new Geo();
       ub.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
-      ub.add(surface(upperSurf, this.sd + 8, this.sd + 2, 2, 1));
+      ub.add(surface(upperSurf, this.sd + 8, this.sd + 6, 2, 1));
       ub.toMesh(`upperBed${s}`, scene, this._bedMat(mat), pivot);
       const us = new Geo();
       us.at(0, 0, 0);
-      this._stones(us, upperSurf, { v0: 0.10, v1: 0.94, cy: -P.upperLen * 0.5 });
+      // v0 0.10 -> 0.015. v0 is now measured from the POLE of the dome, not
+      // from the top of a cylinder, and 0.10 of the meridian at the pole is a
+      // 59 mm bald disc on top of the shoulder — pointed straight at a camera
+      // that looks down at it.
+      this._stones(us, upperSurf, { v0: 0.015, v1: 0.93, cy: -P.upperLen * 0.5 });
       us.toMesh(`upperStones${s}`, scene, this._stoneMat(mat), pivot);
 
       // elbow joint
@@ -1017,17 +1070,32 @@ export default class Character {
       elbow.parent = pivot;
       elbow.position.set(0, -P.upperLen, 0);
 
+      // The elbow crown. Same construction, same reason, its own arc share:
+      // the dome here is 0.122 m of a 0.340 m meridian, so EH = 0.35. It is
+      // centred on the elbow node's ORIGIN, which is also where the upper
+      // arm's lower mouth sits, so one dome closes both pipes at every bend
+      // angle the animation asks for.
+      const EH = 0.35;
+      const rElb = P.armR * 1.05;
       const foreSurf = (u, v, out) => {
-        const y = -P.foreLen * v;
-        const r = P.armR * (0.94 - 0.24 * v);
         const ph = u * TWO_PI;
+        let r, y;
+        if (v < EH) {
+          const a = (v / EH) * (Math.PI / 2);
+          r = rElb * Math.sin(a);
+          y = rElb * 0.35 * Math.cos(a);
+        } else {
+          const w = (v - EH) / (1 - EH);
+          r = rElb + (P.armR * 0.70 - rElb) * w;
+          y = -P.foreLen * w;
+        }
         out[0] = r * Math.sin(ph);
         out[1] = y;
         out[2] = r * 0.94 * Math.cos(ph);
       };
       const fb = new Geo();
       fb.at(0, 0, 0, 0, 0, 0, 0.97, 1, 0.97);
-      fb.add(surface(foreSurf, this.sd + 8, this.sd + 2, 2, 1));
+      fb.add(surface(foreSurf, this.sd + 8, this.sd + 6, 2, 1));
       fb.toMesh(`foreBed${s}`, scene, this._bedMat(mat), elbow);
       // THE WRIST CUFF IS GOLD. docs/reference-rear.png puts a gold band where
       // each pavé sleeve meets the silver hand, and from behind it is one of
@@ -1044,7 +1112,10 @@ export default class Character {
 
       const fs = new Geo();
       fs.at(0, 0, 0);
-      this._stones(fs, foreSurf, { v0: 0.06, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
+      // v0 0.06 -> 0.015: same reason as the shoulder. 0.06 of the meridian
+      // measured from the elbow crown's pole leaves a 56 mm bald cap on the
+      // outside of the elbow, which is the exact spot the camera looks at.
+      this._stones(fs, foreSurf, { v0: 0.015, v1: 0.92, cy: -P.foreLen * 0.5 }, gc);
       fs.toMesh(`foreStones${s}`, scene, this._stoneMat(mat), elbow);
       gc.toMesh(`cuff${s}`, scene, this._goldMat(mat), elbow);
 
