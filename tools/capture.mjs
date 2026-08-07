@@ -388,6 +388,7 @@ function zonePoses() {
       `;
       out.push({
         name: `${vp === 'phone' ? 'phone-' : ''}zone${k + 1}`,
+        __body: body,
         viewport: vp,
         time: 14,
         setup: new Function(body),
@@ -396,6 +397,26 @@ function zonePoses() {
       });
     }
   }
+  // THE HALFWAY SHOT. A hard cut at a zone boundary reads as a bug, so the
+  // crossfade has to be gradeable and not just assertable. Vault runs 0-620m
+  // and the blend into Ruby starts at 620-150 = 470m, so 545m is exactly half
+  // way: the key light is mid-swing between raking left and raking right, the
+  // ceiling is mid-way between Vault's round vault and Ruby's squat one, and
+  // the air is half red. If this frame looks like a coherent room, the
+  // transition is doing its job.
+  for (const vp of ['desktop', 'phone']) {
+    out.push({
+      name: `${vp === 'phone' ? 'phone-' : ''}zone-blend`,
+      viewport: vp,
+      time: 14,
+      setup: new Function(out[0].__body.replace(
+        /setZoneBias\([^)]*\)/, 'setZoneBias(545 - play.z)',
+      )),
+      settle: 0.1,
+      note: `the Vault -> Ruby crossfade at its midpoint, 545m, ${vp}`,
+    });
+  }
+  for (const p of out) delete p.__body;
   return out;
 }
 

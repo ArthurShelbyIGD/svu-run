@@ -73,6 +73,18 @@ import Props from './props.js';
  * The great-circle path is the same path the normalised lerp took — halfway
  * between two opposed rakes is overhead, and there is no way round that — so
  * this changes only the timing, which is the part that was wrong.
+ *
+ * KNOWN TRADE-OFF, visible in the `zone-blend` capture pose. Because the arc
+ * goes over the top, the key is near-vertical for a couple of seconds in the
+ * middle of the Vault-to-Ruby crossfade, and for those seconds the columns
+ * stop laying bars across the road — the exact complaint the raking key was
+ * chosen to answer. It looks like a room at noon rather than like a bug, so it
+ * is left alone. The alternative is interpolating azimuth and elevation
+ * separately, which keeps the rake all the way across; it was not taken
+ * because swinging the azimuth the short way passes through dead front
+ * lighting (shadows hidden behind their own casters) and the long way through
+ * dead back lighting (the whole room in shade, which is the mistake Ruby and
+ * Emerald already made once). Worth revisiting if the flat moment is called.
  */
 function slerpDir(out, a, b, t) {
   let ax = a[0], ay = a[1], az = a[2];
