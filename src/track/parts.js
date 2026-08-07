@@ -341,7 +341,10 @@ export function buildLow(scene, mat, q, s) {
     gold.prismAxis('x', 0, 0.265, 0, 0.272, 0.272, 0.11, sides, phase, 0.018);
     for (const sx of [-1, 1]) {
       gold.prismAxis('x', sx * 0.868, 0.265, 0, 0.155, 0.155, 0.034, sides, phase, 0.010);
-      a.w(mat.get('ruby')).gem(sx * 0.888, 0.265, 0, 0.030, 0.070, 0.070);
+      // White, not ruby. See the colour contract in src/mat/index.js: red on
+      // the track means hazard-line, and a jewel-coloured gem at knee height
+      // on an obstacle reads as a pickup the player cannot actually take.
+      a.w(mat.get('gemWhite')).gem(sx * 0.888, 0.265, 0, 0.030, 0.070, 0.070);
     }
   }
   return a.build('obLow');
@@ -413,7 +416,13 @@ export function buildHigh(scene, mat, q, s) {
     // They used to sit on the rail's front face, over the cord, and each one
     // punched a dark notch out of the one line on this object that has to be
     // unbroken. Nothing goes in front of the lit line.
-    const ruby = a.w(mat.get('ruby'));
+    // THESE WERE RUBIES AND THAT WAS THE BUG THE OWNER FOUND BY PLAYING.
+    // They sit at y=1.345 and this rail's underside — the slide line — is at
+    // 1.17, so a row of jewels flashed past at head height on the one move
+    // where the player is committed and cannot correct. He could not tell
+    // whether they were collectible. Anything a player might reach for must
+    // not be a treasure colour unless they can actually have it.
+    const ruby = a.w(mat.get('gemWhite'));
     for (let i = 0; i < nBar; i += 2) {
       const x = -0.78 + (1.56 * i) / (nBar - 1);
       ruby.gem(x, 1.345, 0, 0.052, 0.058, 0.052);
@@ -490,7 +499,13 @@ export function buildFull(scene, mat, q, s) {
   // room, so the centrepiece of the whole object captured as a black diamond.
   // rubyGlow carries its own light, which is both what a lit vitrine does and
   // the only version of this that survives the corridor going dark.
-  if (detail) glow.gem(0, wy, -0.295, 0.155, 0.185, 0.045);
+  //
+  // WHITE, THOUGH, NOT RED. A 31cm glowing red gem at chest height on a dodge
+  // obstacle was the single most "collect me" object in the game, and the
+  // whole point of the colour contract is that red on the track means hazard.
+  // Same lit-exhibit effect, a colour that reads as behind glass rather than
+  // as loose treasure.
+  if (detail) a.w(mat.get('gemWhiteGlow')).gem(0, wy, -0.295, 0.155, 0.185, 0.045);
 
   // NO WAY THROUGH, SAID IN THE SAME VOCABULARY AS THE OTHER TWO. LOW draws
   // one lit line at the height that hurts and HIGH draws two. This one has no
@@ -583,7 +598,10 @@ export function buildCornerPad(scene, mat, q, w) {
     dark.collar(0, 0.020, 0, 1.72, 1.96, 0.018, 28);
     gold.collar(0, 0.020, 0, 1.18, 1.36, 0.016, 28);
     gold.collar(0, 0.020, 0, 0.44, 0.58, 0.016, 24);
-    a.w(mat.get('ruby')).gem(0, 0.080, 0, 0.22, 0.085);
+    // White. A 44cm red gem lying loose on the floor, mid-lane, at a corner
+    // where the player is already looking down at their feet, is the most
+    // collectible-looking object it is possible to build.
+    a.w(mat.get('gemWhite')).gem(0, 0.080, 0, 0.22, 0.085);
   }
   const mesh = a.build('cornerPad');
   mesh.receiveShadows = true;

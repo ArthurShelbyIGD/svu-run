@@ -580,6 +580,29 @@ export default class Materials {
       { tile: 6.0, bump: 0.45, roughScale: 0.95 });
     this.metal('ruby',       PALETTE.ruby,       0.10);
 
+    // COLOUR IS A CONTRACT WITH THE PLAYER, AND WE BROKE IT.
+    //
+    // The owner played the build and could not tell whether the red gems on the
+    // portcullis were collectible. They never were — they are welded to an
+    // obstacle — but this is a game about collecting treasure, and a jewel reads
+    // as "take me" whatever the author intended. Worse, those bosses sat at
+    // y=1.345 with the slide gap's underside at 1.17, so they flashed past at
+    // head height on the one move where the player is committed and cannot
+    // correct. A player who trusts the colour steers into the hazard.
+    //
+    // So the track now speaks three colours and only three:
+    //    GOLD, free-standing in a lane        -> collect it
+    //    RED, always a line or a cord         -> hazard, this is the edge
+    //    WHITE DIAMOND, bezel-set into metal  -> scenery, you cannot have it
+    //
+    // White is not a compromise: the character is pavé-set white diamond, so a
+    // diamond-set vault is more on-brief than a ruby-set one, and it leaves red
+    // free to mean exactly one thing. The overhead column finials keep their
+    // ruby — five metres up is unreachable enough to be unambiguous.
+    //
+    // If you add a prop, pick from those three. Do not invent a fourth.
+    this.metal('gemWhite', { r: 0.880, g: 0.905, b: 0.945 }, 0.06);
+
     // The track floor is NOT a mirror, and that is a deliberate correction.
     //
     // It shipped at roughness 0.09 — polished rhodium — which looked correct in
@@ -616,6 +639,15 @@ export default class Materials {
     this.enamel('earInner', PALETTE.earInner, 0.42);
     this.glow('catchlight', { r: 1, g: 1, b: 1 }, 1.35);
     this.glow('rubyGlow', PALETTE.ruby, 0.55);
+
+    // The vitrine's centrepiece. It has to GLOW — see the note at its call site:
+    // `ruby` is metallic at roughness 0.10, i.e. a red mirror, and a mirror in
+    // an unlit case reflects an unlit room, so the centrepiece of the whole
+    // object captured as a black diamond. But a big glowing red gem at chest
+    // height on a dodge obstacle was the single most "collect me" object in the
+    // game. Same lit-exhibit effect, in a colour that reads as behind glass
+    // rather than as loose treasure.
+    this.glow('gemWhiteGlow', { r: 0.900, g: 0.940, b: 1.000 }, 0.50);
 
     // The wing membrane is a single-sided sheet, so it must render from both
     // faces or it disappears whenever the character turns.
