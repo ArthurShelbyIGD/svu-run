@@ -136,9 +136,19 @@ export const ZONES = [
     // a strong red hemispheric bounce and the densest fog after Emerald. The
     // key itself stays warm-white, or the hazard cords would stop being the
     // only red thing in the frame.
-    key: [0.86, -0.30, -0.42], keyI: 7.4,
+    //
+    // THE Z SIGN IS THE EXPOSURE DIAL, and it cost a round to notice. The
+    // camera sits behind the player looking down +z, so a key with a negative
+    // z component lights the faces turned AWAY from the camera and everything
+    // on screen is its own dark side. The first Ruby had z = -0.42 and
+    // measured a whole-frame mean of 43.7 against Vault's 55.8, with the
+    // obstacle lineup at lum 37.7 against 80 — a moody room, and an unfair
+    // one. The x sign is what makes a zone's light feel different; the z sign
+    // just decides how much of the room you can see, and readability is not
+    // negotiable. Raked forward and hotter.
+    key: [0.88, -0.30, 0.24], keyI: 8.6,
     keyC: [1.00, 0.86, 0.72], keyS: [1.00, 0.90, 0.80],
-    ambI: 0.17, ambC: [0.95, 0.40, 0.40], ambG: [0.26, 0.06, 0.07],
+    ambI: 0.22, ambC: [0.95, 0.40, 0.40], ambG: [0.26, 0.06, 0.07],
     shadow: 0.10, fogD: 0.0166,
     rise: 0.80, every: 1, open: 0.80, high: 0.84,
   },
@@ -189,9 +199,12 @@ export const ZONES = [
     // because green is not one of the three contract colours and pushing green
     // light onto gold and onto red moves neither of them towards the other.
     // Low ceiling, low silhouettes: everything here has sagged.
-    key: [0.62, -0.66, -0.42], keyI: 5.9,
+    // Same z-sign correction as Ruby, and a hotter key on top, because this is
+    // the foggiest zone in the game and fog eats the far half of the frame
+    // before the light gets to it: first pass measured the lineup at lum 42.9.
+    key: [0.66, -0.62, 0.22], keyI: 7.0,
     keyC: [0.92, 1.00, 0.88], keyS: [0.94, 1.00, 0.92],
-    ambI: 0.19, ambC: [0.40, 0.90, 0.68], ambG: [0.06, 0.17, 0.12],
+    ambI: 0.24, ambC: [0.40, 0.90, 0.68], ambG: [0.06, 0.17, 0.12],
     shadow: 0.14, fogD: 0.0188,
     rise: 0.90, every: 1, open: 0.92, high: 0.76,
   },
