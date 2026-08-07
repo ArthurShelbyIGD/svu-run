@@ -26,6 +26,36 @@
 //
 // Parts are MERGED per material (geom.js), so the whole character is about a
 // dozen draw calls despite carrying ~600 individually cut stones.
+//
+// FOUR RULES THIS DIRECTORY KEEPS RE-LEARNING THE HARD WAY. Every one of them
+// cost at least a round, and all four are the same mistake wearing different
+// hats: reasoning about a rendered frame instead of measuring it.
+//
+//   1. GEOMETRY CAN BE PRESENT AND VISUALLY ABSENT. The cape read as a hole in
+//      the screen; the boots were "missing" while built, placed and visible; an
+//      elbow had an open pipe mouth aimed at the camera and was called "an
+//      elbow pad" for rounds; the hands "lost their fingers" that had never
+//      stopped being built. Before rebuilding anything that looks wrong, check
+//      whether it is there, and SAMPLE PIXELS before blaming the lighting.
+//
+//   2. surface() EMITS AN OPEN GRID. No caps, ever. Anything built from it is a
+//      PIPE, and both of its mouths will eventually point at a camera that sits
+//      19 degrees above and directly behind. Close them deliberately — see the
+//      shoulder and elbow domes in _buildArms — and never with a separate
+//      smooth cap, because a smooth mirror cap in a black hall is a blob, which
+//      is the complaint that started this round.
+//
+//   3. DO THE SUBTRACTION. The fingers were welded into one slab because a
+//      57 mm diameter was laid on a 38 mm pitch: a gap of MINUS 19 mm. Nobody
+//      had subtracted the two numbers in four review passes. Any time two parts
+//      are meant to have daylight between them, write the arithmetic down in a
+//      comment next to them, in millimetres.
+//
+//   4. IF A PART IS INVISIBLE, PRINT ITS BOUNDING BOX BEFORE YOU RESIZE IT. The
+//      gold wrist cuff had been treated as "too small" for a round. It was
+//      side-on: a torus rotated onto the wrong axis, 177 x 179 x 25 mm, a hoop
+//      threaded through the wrist rather than a band around it. One extent an
+//      order of magnitude smaller than the other two is the tell.
 
 import { TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
