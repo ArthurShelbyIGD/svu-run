@@ -1,176 +1,248 @@
-# Where this is, and what to do next
+# SVU RUN — where this is, and what to do next
 
-Paused 2 Aug 2026 at Anthony's request — he's on his main game for a few days
-and will pick this up later in the week. Everything is merged, gated and
-pushed. `main` is green at 55/55 and what is live is what is in the repo.
+Last updated 7 Aug 2026, during round 14.
 
-Read `ARCHITECTURE.md` first for how the thing is built. This file is only
-about what to do on the next working day.
-
----
-
-## The false affordance — fix this first, it is cheap and it is a real bug
-
-> "One thing I notice are red gem stones in front of one type of obstacle but
-> not certain if they are supposed to be collected or just visual. Impossible
-> to collect if that is the purpose as they are very close to the obstacle."
-
-They are decorative. Confirmed in `src/track/parts.js`: the ruby bosses on the
-`obHigh` portcullis rail (`ruby.gem(x, 1.345, ...)`, every other bar) and the
-exhibit gem inside the vitrine (`rubyGlow.gem(...)`) are obstacle geometry. The
-only collectible is `buildStar` — a gold star.
-
-But "decorative" is not a defence. This is a game about collecting jewels, and
-the obstacle has jewels stuck to it that glow. Colour plus glow reads as an
-affordance whatever the intent, and a player who trusts it steers INTO a
-hazard. Worse, the bosses sit at y=1.345 and the slide gap's underside is at
-1.17 — so they flash past right at head height on the one move where the
-player is committed and cannot correct.
-
-The confusion is the bug. Two ways out, pick one and be consistent everywhere:
-
-1. **Make them non-jewel.** Gold, steel, pearl — anything that is not the
-   colour of a pickup. Cheapest, and preserves the jewelled-vault look.
-2. **Make them real.** A genuine collectible tucked into the slide gap is a
-   good risk/reward beat, but only if it is actually reachable on the correct
-   line, and only if the reachable ones look different from the welded-on ones.
-
-Option 1 unless there is appetite for the gameplay work. Whichever is chosen,
-audit every red gem on every obstacle — the rail bosses, the vitrine exhibit,
-the column finials — and make the rule legible: **if it is a gem colour, you
-can take it; if you cannot take it, it is not a gem colour.**
-
-Anthony spotted this from play in a couple of minutes. It was invisible to
-55 passing checks and to every screenshot review.
+Read `ARCHITECTURE.md` first for how the thing is built. This file is the
+handover note: what is done, what is known, what is still wrong, and the traps
+that have already cost this project days.
 
 ---
 
-## Verified by ear, at last
+## Status
 
-Anthony has now heard the audio, which nobody had:
-
-> "The audio sounds ok, quiet a dark, almost war like, low pitched drone sound
-> with nice bright sounds playing when the stars get collected."
-
-So the generative bed and the star chimes both land. The drone reads darker and
-heavier than a jewel-vault setting implies — not wrong, but worth asking him
-whether he wants it lighter before anyone tunes it.
+`main` gates at **82 checks**. The game has: a five-zone jewelled corridor with
+per-zone light, air and architecture; a pavé-diamond character with separated
+fingers, boots and a fluted cape; three powerups with a HUD; a start screen,
+pause, results screen and in-run HUD; synthesised audio; and an input path that
+responds within one rendered frame of a swipe.
 
 ---
 
-## The open defect, in Anthony's words
+## The one lesson, and the six times it bit
 
-> "Looks like we lost the hands with fingers along the way at some point, they
-> seem to be like the boots, some kind of shape with rounded edges. The same
-> goes for the shoulders."
+**Reasoning about rendering gives wrong answers. Looking at rendered frames
+gives right answers. Measuring pixels beats both.**
 
-He is right, and this is the FOURTH instance of one recurring failure. Take the
-pattern seriously before touching geometry, because three previous passes have
-been spent rebuilding parts that were already correct:
+Every serious defect here was invisible to a green test suite and obvious in a
+screenshot. A specific sub-species has now appeared **six times**:
 
-**A detail in this world reads only if something in the room lights it.**
+> **Geometry that is technically present and visually absent.**
 
-The hall is black. There is no large bright surface. So:
+1. **The cape read as a hole in the screen** — dark chrome against a dark world.
+2. **The boots were "missing" for a whole pass** while built, placed and
+   visible. Measured five times too dark to see: `polRhodium` is a true mirror
+   and a mirror in a black hall is black.
+3. **The elbow had a hole in it.** `surface()` emits an OPEN pipe; `foreSurf`'s
+   mouth pointed straight at a camera sitting 19° above and rendered as a hard
+   black ellipse that had been read as "an elbow pad" for several rounds.
+4. **The wrist cuff was threaded THROUGH the wrist.** `torus()` builds its
+   centreline in XZ — axis already Y — and the code added another quarter turn.
+   Measured bbox 177 × 179 × 25 mm. It had been dismissed as "too small".
+5. **The shield cage had two rings in the same plane.** Babylon composes
+   Yaw·Pitch·Roll — roll first — so a pitch is applied about the axis the roll
+   already moved. From dead astern: one gold line up the runner's back. It
+   graded fine from a posed three-quarter view.
+6. **The onesie hem band was side-on AND 12 cm off the body** — the same
+   wrong-axis torus bug, plus a radius sampled at the waist rather than at the
+   band's own height. Hidden by the skirt, which is why it survived.
 
-- The cape rendered as a hole in the screen — diagnosed as material, was
-  geometry (flat-topped flutes, constant normals).
-- The boots "were missing" for a whole pass — they were built, placed and
-  visible, and measured five times too dark to see. `polRhodium` is a true
-  mirror, and a mirror in a black hall is black.
-- `src/char/index.js` already records the general rule, in `_buildGlove`:
-  *"a small mirror-metal detail in this world is a BLACK detail, because a
-  mirror shows you the room and the room is black. Small parts want the pale
-  champagne or the pavé, not polRhodium. polRhodium only works on masses big
-  enough to catch the portrait rig — the gloves and the boots."*
+**The tell for most of these is a bounding box with one extent an order of
+magnitude smaller than the other two.** Check that before rebuilding anything.
 
-That last clause is the bug. The gloves were exempted as "big enough" and they
-are not. Anthony's eye says they read as rounded blobs, and his eye is the
-acceptance test.
+### The corollary that saves the most time
 
-### So, concretely
+**Measure before you blame.** Three hypotheses died in minutes to pixel samples:
 
-**Hands.** The fingers exist — `_buildGlove` builds four fingers with five
-rings each, knuckle tori, and a swung thumb. Do NOT rebuild them. The question
-is why they merge into one mass at chase distance. Check, in this order:
+- "The fingers are unlit" — they were not. Luminance across the glove ran
+  150–226 of 255, among the brightest things in frame. They were
+  **interpenetrating**: a −19.1 mm gap, welded into one slab.
+- "Normal averaging is smoothing them together" — impossible. `Geo.add` gives
+  every part its own vertex range and only offsets indices.
+- "The yoke is too narrow" — it was already **47% wider** than the reference.
+  The defect was the shoulders, too wide and too high.
 
-1. Value separation. Sample the pixels: if adjacent fingers differ by only a
-   few percent, no amount of geometry will separate them. They need a darker
-   valley between them — either a dark seam in the setting, or a material with
-   a diffuse component that can actually shade.
-2. Normal averaging. The character is merged per material (`geom.js`) and
-   `ComputeNormals` averages across the merge. This is exactly what turned the
-   stone crowns into a field of pearls until the crown facets were flat-shaded
-   as detached quads. If the finger tubes are being smoothed into the palm,
-   split them.
-3. Finger radius `R * 0.265` with a 4-finger span of `R * 1.06` leaves almost
-   no gap. Widen the gap before widening the fingers.
-
-**Shoulders.** `shoulder caps: small masses where the sleeves meet the body`,
-around line 552. These are the rounded blobs he means. The reference has no
-shoulder hardware at all — the pavé sleeve simply meets the pavé yoke. Consider
-deleting the caps rather than restyling them, and check the reference before
-assuming they need to exist.
-
-**Grade against `docs/reference-rear.png` using the `char-back` pose**, not
-`char-rear`. `char-back` is the straight-on elevation and is the only
-directly comparable view; the three-quarter pose hides one arm and foreshortens
-the cape, and half the grading arguments in this project were made off it.
+The third was a hypothesis the lead handed down as fact. An agent overturned it
+by rescaling the reference and the capture to a common figure height and
+measuring landmarks in pixels. Do that.
 
 ---
 
-## The other open item
+## Rules discovered the hard way
 
-**The cape is satin, not mirror.** Measured p95/p50 = 1.50 against the
-reference's 2.28. The honest conclusion, recorded in `src/char/index.js`: the
-remaining gap is the ENVIRONMENT, not the material. The reference is a light
-tent — a big white card against black. Our hall has nothing bright and nothing
-large for a mirror to find. That is `src/mat/`'s cubemap, not the character's
-geometry.
-
-Caveat before anyone spends a day on it: `ARCHITECTURE.md` §7 says mirrors are
-the one thing this harness lies about. Verify on a real GPU first.
-
----
-
-## Not started
-
-- **Interface.** `src/ui/index.js` is still the 154-line day-one placeholder —
-  a bare number in the corner. Everything else now looks like a jewellery
-  advert; the interface looks like a debug overlay. Needs a real start screen
-  (the first thing anyone Anthony sends the link to will see), a game-over
-  screen with distance / stars / best, an in-run HUD legible in sunlight on a
-  phone, and small pickup / near-miss feedback in `src/fx/`. Mobile portrait is
-  the primary target; respect safe areas. This has been queued twice and never
-  run — do it first.
-- **Powerups.** Wing glide, ruby magnet, shield. All unimplemented.
-- **Measured mobile performance pass** on a real device. The harness renders
-  through SwiftShader and its frame timings mean nothing.
-- **Zone-specific prop variation.** Five zones exist; the props are the same in
-  all of them.
-
-## Unverified
-
-**Nobody has heard the audio.** It is merged and structurally verified — every
-effect produces real signal with sensible envelopes, the generative bed
-produces notes and chords, 36 voices start, nothing throws — but whether it
-sounds good is unknown. Anthony is the first person who will hear it. Ask him.
+- **A large additive billboard must reach zero alpha at every edge of its own
+  quad.** `DynamicTexture` uploads inverted, so canvas row 0 is the plane's
+  BOTTOM edge. A screen-filling light shaft went from 42% opaque to zero in zero
+  pixels and drew a hard line across the portrait frame. It defeated two agents
+  who each proved it was *not* the HUD before a third bisected it and confirmed
+  the row by arithmetic (predicted 425.3, measured 426).
+- **A small mirror-metal detail in this world is a BLACK detail**, because a
+  mirror shows you the room and the room is black. Small parts want pale
+  champagne or pavé, not `polRhodium`.
+- **Never `Texture.clone()` a RawTexture** — it does not carry pixel data. That
+  is why every pavé surface once rendered black.
+- **The floor must own its own value.** It shipped as a dark near-mirror and
+  rendered as wet black patent on real hardware, hiding all its construction.
+  It is now a diffuse dielectric — pale cut stone — so obstacles have a light
+  ground to silhouette against.
+- **Run `npm run check` UNPIPED and check the exit status.** Piping into grep
+  masks it; this project shipped red twice that way.
 
 ---
 
-## Operational notes for whoever picks this up
+## The colour contract
 
-- **This box has 2 cores, so a workflow runs at most 2 agents at once.** A
-  third is silently queued and may never start. Round 6 launched three; the
-  interface agent never ran. Launch two.
-- **The container gets reclaimed.** It happened at least three times. Agents
-  must commit and push after every meaningful change; GitHub is the source of
-  truth, not the working copy. Snapshot worktrees to `/root/backup/` on a
-  timer as well, since agents do not always push promptly.
-- **A workflow can be killed silently** — a context compaction aborted round 5
-  mid-flight and it went unnoticed for 15 minutes. The run's JSON at
-  `.claude/.../workflows/<runId>.json` only appears once the run TERMINATES;
-  if it exists, read its `status`.
-- **Run `npm run check` UNPIPED and check the exit status.** Piping it into
-  grep masks the status and this project has shipped red twice that way.
-- **Look at the frames.** Every serious defect here was invisible to a green
-  test suite and obvious in a screenshot.
+The track speaks three colours and only three:
+
+| | |
+|---|---|
+| **GOLD**, free-standing in a lane | collect it — stars and powerup hoops |
+| **RED**, always a line or a cord | hazard, this is the edge |
+| **WHITE DIAMOND**, bezel-set into metal | scenery, you cannot have it |
+
+This exists because the owner played the build and could not tell whether the
+red gems on the portcullis were collectible. They never were — but they sat at
+y=1.345 with the slide gap's underside at 1.17, i.e. **head height on the one
+move where the player is committed and cannot correct**. A player who trusts the
+colour steers into the hazard.
+
+White is not a compromise: the character is pavé-set white diamond, so a
+diamond-set vault is more on-brief than a ruby-set one, and it leaves red free
+to mean exactly one thing. Overhead column finials keep their ruby — five metres
+up is unambiguous.
+
+**Powerups obey it by SHAPE and SIZE, not a fourth colour**: a 1.55 m open gold
+hoop against the star's 0.30 m solid, with a dark bed behind each gold emblem
+for value separation. Do not put emissive white beads on them — at 12 m they
+read as white stones bezel-set into metal, which is the contract's exact phrase
+for scenery.
+
+---
+
+## Input and the low end
+
+The target device is the owner's own phone: **Ulefone Armor X12 — MediaTek
+Helio A22, PowerVR GE8320, 3 GB, Android 13.** He uses a rugged phone because he
+breaks flagships at work, so this is the floor the game must clear, not an
+unlucky sample. He has explicitly chosen **responsive over crisp**.
+
+The big win was not frame rate. **A swipe was only recognised on `touchend`**,
+so minimum input latency was the whole duration of the gesture — 150–250 ms —
+before the game was even told. Now recognised on `touchmove` at the 26 px
+threshold: measured **one rendered frame** from touch to lane change, where the
+old code produced nothing until the finger lifted. Also: the gesture re-arms
+without a lift, the intent buffer is a 3-deep ring that skips unservable
+entries, and the forgiveness window scales with measured frame time.
+
+There is a `potato` tier below `low` and a governor that reaches it in ~1 s
+instead of 5.5 s. **`post.js` `setPreset` never actually switched bloom or
+FXAA**, so every previous "low preset" performance conclusion was wrong.
+
+**Still open, and it is a lead call:** `main.js` builds
+`new Engine(canvas, true, {...}, false)` — `adaptToDeviceRatio` FALSE — so the
+backbuffer is sized from CSS pixels and ignores devicePixelRatio. A 390 CSS-px
+viewport gives 292 px at `low` and 195 px at `potato`; on a DPR-2/3 panel that
+is ~0.37 of native, upscaled ~2.7×. **That is the real cause of "not crisp."**
+The HUD is DOM/CSS and already sharp, so the softness is purely the 3D — and
+raising it costs frame rate, the opposite of what he asked for.
+**Recommendation: leave it. Do not change without asking him.**
+
+---
+
+## Tooling: what it can and cannot tell you
+
+Captures render through **SwiftShader**. They are faithful for geometry,
+silhouette, layout and gross colour. **Frame timings are meaningless.** And per
+`ARCHITECTURE.md` §7, mirrors are the one thing the harness actively lies about
+— any verdict on the cape or on polished metal is provisional until real
+hardware.
+
+Traps in the capture tooling, all found by being burned:
+
+- **Grade the character with `char-back`**, the straight-on rear elevation, not
+  the three-quarter `char-rear`. The latter hides one arm and foreshortens the
+  cape, and half the wrong conclusions here came from it.
+- **Every pose shoots zone 1 unless you set a zone bias.** Zones are chosen by
+  distance and 14 s of game time is ~200 m, while zones 2–5 begin at 620, 1240,
+  1860 and 2480 m. Two rounds of "the zones all feel the same" were graded off
+  screenshots physically incapable of showing four fifths of the game.
+- **The `obstacles` poses can photograph a wall** — their seek stops with the
+  "nearest obstacle" round a corner behind the backstop. Use `lineup`.
+- **Collectibles are not obstacles**, and capture mode disables collision, so
+  the player parks inside a star. Hide overlapping stars AFTER `setPaused` —
+  doing it before the last `advance()` achieves nothing, because track's
+  renderUpdate re-enables them every frame.
+- **A capture can come back as the loading splash and still exit 0.** The shell
+  removes `#boot` on wall-clock timers which long synchronous evaluates starve.
+  The dangerous case is a HALF-FADED splash: a milky wash over a real frame that
+  grades as "the lighting is wrong". A suspicious frame is ~20 KB, not 1.6 MB.
+- **`pw-lineup` photographs three FROZEN hoops** — idle motion only touches
+  `hoops[_liveKind]`, and `poseHoop()` calls `_retire()`, setting it to −1.
+- **Motion CAN be seen in stills**, via a matched pose pair at two ABSOLUTE bob
+  phases (`pw-bob-a` / `pw-bob-b`). The first attempt offset by half a period,
+  which inverts the sine and gives exactly zero travel — it looked like it
+  worked and proved nothing.
+
+---
+
+## Working practice that survived contact
+
+- **One agent per directory**, runtime access via `ctx.get(name)`, never imports
+  between subsystems.
+- **Brief agents with the ANSWER, not the question**, when a previous round
+  already found it. Rounds 11–13 rebuilt a lost day's work in a fraction of the
+  original time because the findings were handed over rather than rediscovered.
+- **Keep a before/after pair in `shots/base/`.** It is the only way to tell
+  improvement from motion.
+- **This box has 2 cores, so a workflow runs at most 2 agents.** A third is
+  silently queued and may never start.
+
+### Container recovery — this has happened twice
+
+The container is reclaimed without warning and rolls the **whole filesystem**
+back. Backing up inside it is not a backup: the first reclaim destroyed ~30
+commits *and* the bundles meant to protect them.
+
+**The only durable store is a file delivered to the user.** Procedure:
+
+```
+git fetch --all && git reset --hard origin/main
+# stage the bundle back from the user's machine, then:
+git fetch <bundle> 'refs/heads/*:refs/heads/recovered-*'
+git reset --hard recovered-main
+npm run build && npm run check
+```
+
+Deliver a bundle at the end of every round, and write it to the user's disk as
+well as into the conversation.
+
+---
+
+## Still wrong / not done
+
+- **The cape is satin where the reference is mirror** (p95/p50 1.50 vs 2.28).
+  The gap is the ENVIRONMENT: the reference is a light tent, our hall has
+  nothing large or bright for a mirror to find. Round 14 is on it — check its
+  result. Provisional until real hardware.
+- **Arm proportion** — hands sit slightly high against the reference's
+  mid-skirt.
+- **Best score does not survive a reload** — module variable, deliberate, since
+  storage APIs are unavailable in the shipping environment.
+- **`env(safe-area-inset-*)` has never been seen to resolve non-zero** — the
+  harness has no notch.
+- **The 0.34 s full-screen gold spend flash** is an extra full-screen composite
+  per frame and has never run on the target phone.
+- **Nobody has measured frame rate on real hardware.** The owner is the only
+  instrument.
+- Two cross-subsystem reaches, neither broken but both worth a look:
+  `coll/index.js` imports three constants from `play/powerups.js`; the magnet
+  animates `st.mesh.position` on track's pooled star meshes (never `st.z`,
+  which track sorts by).
+
+---
+
+## The standing constraint
+
+GitHub pushes from the cloud sandbox are refused by a git proxy
+(`not in this session's authorized repository set`) — a known, unresolved
+platform bug, not a repo or token problem. Reads work. Until it is fixed,
+handover is by git bundle.
