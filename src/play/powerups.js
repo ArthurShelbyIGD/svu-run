@@ -162,6 +162,12 @@ export default class Powerups {
     this._liveKind = -1;
     this._liveS = 0;
     this._liveX = 0;
+    // Capture-only: a hoop parked by poseHoop() that still needs its idle
+    // motion. Never set in play. See poseHoop().
+    this._posedKind = -1;
+    this._posedS = 0;
+    this._posedX = 0;
+    this._posedY = 0;
     this._nextS = FIRST_SPAWN_S;
     this._lastKind = -1;
 
@@ -215,6 +221,7 @@ export default class Powerups {
     this.magnet = this.shield = this.glide = false;
     this.lastSpent = -1;
     this._liveKind = -1;
+    this._posedKind = -1;
     this._nextS = FIRST_SPAWN_S;
     this._lastKind = -1;
     if (this.hoops) {
@@ -455,6 +462,26 @@ export default class Powerups {
       m.position.set(x, yy, s);
     }
     m.setEnabled(true);
+
+    // A POSED HOOP MUST STILL BREATHE, OR THE MOTION POSES PHOTOGRAPH CORPSES.
+    //
+    // Idle motion in renderUpdate only ever touches hoops[_liveKind], and the
+    // _retire() above sets _liveKind to -1 — so every hoop placed by this
+    // function was frozen. `pw-lineup` therefore showed three dead hoops, and
+    // anyone grading the idle motion off it was looking at geometry that
+    // cannot move. That matters because motion is the ONLY channel that
+    // distinguishes the three at range: the emblem stops resolving somewhere
+    // around 15-20m, and past that the throb, the bob and the stillness are
+    // the whole language.
+    //
+    // Recorded in a separate slot rather than by reviving _liveKind, because
+    // _liveKind also gates the pickup and collision paths. This is presentation
+    // only, it is written by nothing but capture poses, and it is cleared by
+    // reset(), so no gameplay path can see it.
+    this._posedKind = kind;
+    this._posedS = s;
+    this._posedX = x;
+    this._posedY = yy;
     return m;
   }
 
@@ -498,6 +525,24 @@ export default class Powerups {
       }
       // SHIELD is deliberately dead still. In a set of three, one that does
       // not move is as distinctive as one that does.
+    }
+
+    // The same motion, applied to a hoop parked by poseHoop(). See the note
+    // there: without this the motion poses photograph frozen geometry, and
+    // motion is the only thing that separates the three at range.
+    if (this._posedKind >= 0 && this._posedKind !== this._liveKind) {
+      const pm = this.hoops[this._posedKind];
+      if (this._posedKind === PW.MAGNET) {
+        const k = 1 + Math.sin(t * THROB_HZ * Math.PI * 2) * THROB_AMP;
+        pm.scaling.set(k, k, k);
+      } else if (this._posedKind === PW.GLIDE) {
+        const dy = Math.sin(t * BOB_HZ * Math.PI * 2) * BOB_AMP;
+        const track = this.ctx.tryGet('track');
+        if (track) {
+          track.path.toWorldExact(this._posedS, this._posedX, this._posedY + dy, this._w);
+          pm.position.set(this._w[0], this._w[1], this._w[2]);
+        }
+      }
     }
 
     if (this.shield) {
