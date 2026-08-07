@@ -220,6 +220,56 @@ const POSES = [
     settle: 2.5,
     note: 'results screen',
   },
+  // ---- interface ------------------------------------------------------
+  //
+  // Capture mode deliberately skips the start screen (otherwise every pose is
+  // a title card), so these poses put it back up by hand. ui/ turns its
+  // opacity transitions off in capture mode, so what is grabbed is the settled
+  // state rather than whatever fraction of a fade the software renderer
+  // happened to reach.
+  {
+    name: 'start',
+    viewport: 'phone',
+    time: 5,
+    framing: [26, 45],
+    setup: () => { window.SVU.ctx.get('ui').showStart(); },
+    settle: 0.1,
+    note: 'the start screen in portrait — the first thing anyone sees',
+  },
+  {
+    name: 'start-wide',
+    viewport: 'desktop',
+    time: 5,
+    framing: [26, 45],
+    setup: () => { window.SVU.ctx.get('ui').showStart(); },
+    settle: 0.1,
+    note: 'the start screen on a laptop',
+  },
+  {
+    name: 'paused',
+    viewport: 'phone',
+    time: 12,
+    framing: [26, 45],
+    setup: () => { window.SVU.ctx.get('ui').setPaused(true); },
+    settle: 0.1,
+    note: 'the pause panel in portrait',
+  },
+  {
+    name: 'gameover-wide',
+    viewport: 'desktop',
+    time: 8,
+    setup: () => {
+      const S = window.SVU;
+      S.ctx.get('coll').enabled = true;
+      const play = S.ctx.get('play');
+      const track = S.ctx.get('track');
+      const t = track.obstacles.find((o) => o.kind === 2 && o.z > play.z + 6);
+      if (t) { play.lane = play.laneTarget = t.lane; play.laneT = 1; }
+      else play.kill('capture');
+    },
+    settle: 2.5,
+    note: 'the results screen on a laptop',
+  },
   {
     name: 'corner',
     viewport: 'desktop',

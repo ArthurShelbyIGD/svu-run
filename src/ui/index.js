@@ -103,6 +103,10 @@ export default class Ui {
     // the start screen, live run humming away behind it.
     this.phase = this.ctx.config.captureMode ? 'run' : 'start';
     this._begun = this.phase === 'run';
+    // A panel caught mid-fade is a stale screenshot with extra steps. Captures
+    // are deterministic or they are worthless, so opacity transitions are off
+    // in capture mode.
+    if (this.ctx.config.captureMode) this.root.classList.add('svu-nofade');
     this._applyPhase();
     this._syncMute();
   }
@@ -286,7 +290,7 @@ export default class Ui {
 }
 
 .svu-title {
-  font-size: clamp(32px, 11.5vw, 76px);
+  font-size: clamp(30px, 10.8vw, 76px);
   font-weight: 400;
   line-height: 1.02;
   letter-spacing: .28em;
@@ -303,9 +307,9 @@ export default class Ui {
 .svu-rule-tight { margin: 20px 0; }
 
 .svu-sub {
-  font-size: clamp(9.5px, 2.7vw, 11.5px);
-  letter-spacing: .38em;
-  text-indent: .38em;
+  font-size: clamp(9px, 2.4vw, 11.5px);
+  letter-spacing: .30em;
+  text-indent: .30em;
   color: rgba(242,236,225,.56);
   line-height: 1.9;
 }
@@ -398,12 +402,12 @@ export default class Ui {
 
 .svu-hint {
   margin-top: 30px;
-  font-size: clamp(8.5px, 2.4vw, 10px);
-  letter-spacing: .26em;
-  text-indent: .26em;
+  font-size: clamp(8px, 2.2vw, 10.5px);
+  letter-spacing: .18em;
+  text-indent: .18em;
   color: rgba(242,236,225,.40);
   line-height: 2;
-  max-width: 30em;
+  max-width: 48em;
 }
 
 .svu-quiet {
@@ -424,6 +428,13 @@ export default class Ui {
 .svu-quiet:hover { color: rgba(242,236,225,.78); }
 
 .svu-quiet-row { display: flex; gap: 4px; }
+
+#svu-ui.svu-nofade .svu-panel,
+#svu-ui.svu-nofade .svu-hud,
+#svu-ui.svu-nofade .svu-toast,
+#svu-ui.svu-nofade .svu-cta {
+  transition: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .svu-panel, .svu-hud, .svu-toast { transition: none; }
