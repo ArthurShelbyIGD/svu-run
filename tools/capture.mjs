@@ -99,13 +99,13 @@ const POSES = [
     // at the edges — i.e. the very shot that let the defect through. These are
     // the world bounds of mesh `glove1` at t=4s, seed=1, the same instant this
     // pose freezes:
-    //     x 0.494 .. 0.914   y 0.446 .. 0.902   z (play.z + 0.171) .. (+0.486)
-    // so the hand centre is play + (0.704, 0.674, 0.328) and it is 42cm across.
+    //     x 0.498 .. 0.858   y 0.457 .. 0.838   z (play.z + 0.190) .. (+0.397)
+    // so the hand centre is play + (0.678, 0.647, 0.293) and it is 36cm across.
     // Camera 0.95m back in z and 19 degrees up (the chase camera's own pitch),
     // pushed 0.18m outboard so the background behind the fingers is the dark
     // hall rather than the skirt — gaps only read against something.
-    // If the arm-swing animation or handR changes, RE-MEASURE: dump
-    // scene.getMeshByName('glove1').getBoundingInfo().boundingBox after a
+    // If the arm-swing animation, the wrist cock or handR changes, RE-MEASURE:
+    // dump scene.getMeshByName('glove1').getBoundingInfo().boundingBox after a
     // 4-second fastForward and re-derive these six numbers.
     name: 'char-hand',
     viewport: 'desktop',
