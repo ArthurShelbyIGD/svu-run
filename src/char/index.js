@@ -27,8 +27,8 @@
 // Parts are MERGED per material (geom.js), so the whole character is about a
 // dozen draw calls despite carrying ~600 individually cut stones.
 //
-// FOUR RULES THIS DIRECTORY KEEPS RE-LEARNING THE HARD WAY. Every one of them
-// cost at least a round, and all four are the same mistake wearing different
+// SIX RULES THIS DIRECTORY KEEPS RE-LEARNING THE HARD WAY. Every one of them
+// cost at least a round, and all six are the same mistake wearing different
 // hats: reasoning about a rendered frame instead of measuring it.
 //
 //   1. GEOMETRY CAN BE PRESENT AND VISUALLY ABSENT. The cape read as a hole in
@@ -56,6 +56,25 @@
 //      side-on: a torus rotated onto the wrong axis, 177 x 179 x 25 mm, a hoop
 //      threaded through the wrist rather than a band around it. One extent an
 //      order of magnitude smaller than the other two is the tell.
+//
+//   5. NORMALISE AGAINST FIGURE HEIGHT, NOT AGAINST THE HEAD. The head is
+//      DELIBERATELY oversized — 14% wider relative to figure height than the
+//      reference's — so every ratio quoted in head radii or head half-widths
+//      carries that 14% as a silent error, and it compounds. "The collar's
+//      lower edge is 0.70 of the hood's width" is how the yoke ended up 47%
+//      wider than the reference's; "the cuff is 1.29 head half-widths" is how
+//      an arm that was already the right width came out looking 11% short and
+//      nearly got a 54-degree splay. The method that works: rescale the
+//      char-back capture and docs/reference-rear.png to the same figure height
+//      (ear top to sole), then compare landmarks in pixels and in percent of
+//      that height. The head is the ONE thing allowed to be off; measuring
+//      everything else against it spreads the exception over the whole figure.
+//
+//   6. AN OBSERVATION IS NOT A DIAGNOSIS. "The bib stops inboard of the sleeve
+//      tops" was true, and the fix was not to widen the bib — it was already
+//      half again too wide — but to bring the shoulders in and down under it.
+//      Two agents can agree on what a frame shows and still both be wrong
+//      about which number to move. Measure both sides of the comparison.
 
 import { TransformNode } from '../core/bjs.js';
 import { STATE } from '../play/index.js';
@@ -2040,10 +2059,22 @@ export default class Character {
       case STATE.SLIDE: {
         this.parts.legs[0].rotation.x = 1.32;
         this.parts.legs[1].rotation.x = 1.10;
-        this.parts.arms[0].rotation.x = -1.0;
-        this.parts.arms[1].rotation.x = -0.8;
-        this.parts.arms[0].rotation.z = -0.66;
-        this.parts.arms[1].rotation.z = 0.66;
+        // THE SLIDE IS THE POSE THE CAMERA IS WORST FOR. The body pitches
+        // forward 1.02 rad, so an arm swung back by another 1.0 ends up
+        // pointing almost straight AT a camera that sits 19 degrees above and
+        // directly behind — fully foreshortened, and with the shoulder now at
+        // 0.245 instead of 0.415 the captured frame showed two pale slivers
+        // either side of the skirt and no arm at all. Less swing, more splay:
+        // the arms go OUT, where a rear camera can see their length, instead
+        // of BACK, where it cannot.
+        this.parts.arms[0].rotation.x = -0.70;
+        this.parts.arms[1].rotation.x = -0.55;
+        // 0.92 was still not enough: measured on the char-back rig, the cape
+        // in a slide reaches |x| = 0.707 and the mitten only 0.722, so the
+        // whole arm was inside the skirt's outline. 1.10 rad puts the wrist at
+        // 0.245 + 0.350 x sin(1.10) = 0.557 local, mitten out past 0.76.
+        this.parts.arms[0].rotation.z = -1.10;
+        this.parts.arms[1].rotation.z = 1.10;
         bendA = bendB = -1.30;
         // scaled with the body, so the slide silhouette stays as low relative
         // to the character as it was before the presentation scale went in
