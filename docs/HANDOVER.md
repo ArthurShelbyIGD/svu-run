@@ -14,29 +14,30 @@ not always add git to the system PATH, but Git Bash always works.
 
 ---
 
-## The four lines
+## The lines
 
 You do not have this repo cloned locally, so start by cloning it:
 
 ```
 cd ~/Downloads
-git clone https://github.com/sonicboomsoundboy/svu-run.git
+git clone https://github.com/ArthurShelbyIGD/svu-run.git
 cd svu-run
-git fetch ~/Downloads/svu-catchup.bundle "refs/heads/*:refs/heads/*"
-git push origin --all
+git fetch ~/Downloads/svu-catchup.bundle main
+git merge --ff-only FETCH_HEAD
+git push origin main
 ```
 
 GitHub Pages rebuilds itself a minute or two later.
 
 **If you already cloned it on a previous day**, skip the clone and just run the
-last two lines from inside that folder — after a `git pull` first.
+last three lines from inside that folder — after a `git pull` first.
 
 ---
 
 ## Then test it
 
 ```
-https://sonicboomsoundboy.github.io/svu-run/svu-run.html
+https://arthurshelbyigd.github.io/svu-run/svu-run.html
 ```
 
 **Load it plain, with no `?q=` on the end.** Forcing a quality preset tells the
