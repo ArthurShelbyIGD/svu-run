@@ -1037,11 +1037,25 @@ try {
     `${latency.frames} rendered frames from touchmove to lane change ` +
     `(no touchend; frame COUNT is portable, frame TIME here is not)`);
 
-  // ---- two swipes in one gesture, both land ----
+  // ---- ONE ACTION PER GESTURE, and two gestures both land ----
   //
-  // "I can't change lanes quickly." The origin re-arms where the first swipe
-  // was recognised, so the second needs no lift, and the queue is deep enough
-  // that the second does not overwrite the first.
+  // THIS CHECK USED TO ASSERT THE OPPOSITE, AND IT WAS WRONG.
+  //
+  // It was written to prove that a second swipe needs no lift, because the
+  // gesture origin re-armed where the first was recognised. That sounded like
+  // a fix for "I can't change lanes quickly" and was actually a double-fire:
+  // the threshold is 26px, so ONE continuous 90px flick crosses it three times
+  // and moves three lanes. Reported from a real phone as "I can't get in the
+  // central lane, and when it works it's hard left or hard right" — from the
+  // middle, every swipe clamped to an edge and the centre became unreachable.
+  //
+  // The old test passed because it synthesised exactly two 42px steps and
+  // asserted two lane changes. It never synthesised a CONTINUOUS drag, which
+  // is the only thing a real finger produces. A test can lock a bug in as
+  // firmly as it can catch one, and this one did for a whole release.
+  //
+  // The contract now: one action per finger-down, and lifting starts a new
+  // gesture. tools/swipe-check.mjs covers the continuous-drag case directly.
   const twoSwipes = await m.page.evaluate(() => {
     const S = window.SVU;
     const play = S.ctx.get('play');
@@ -1054,18 +1068,25 @@ try {
     const inTurn = play.inTurnZone;
     let lanes = 0;
     const off = S.ctx.on('player:lane', () => lanes++);
+    // A CONTINUOUS DRAG, in small steps, the way a finger actually moves.
     window.__mkTouch('touchstart', 300, 500);
-    window.__mkTouch('touchmove', 258, 500);   // swipe 1: left
-    window.__mkTouch('touchmove', 216, 500);   // swipe 2: left again, no lift
-    const queuedNow = play._qLen;
-    S.loop.advance(0.3, 0);
+    for (let i = 1; i <= 9; i++) window.__mkTouch('touchmove', 300 - i * 10, 500);
+    const afterOneDrag = play._qLen;
+    // Lift, then a second gesture. This one SHOULD land.
+    window.__mkTouch('touchend', 210, 500);
+    window.__mkTouch('touchstart', 300, 500);
+    for (let i = 1; i <= 9; i++) window.__mkTouch('touchmove', 300 - i * 10, 500);
+    window.__mkTouch('touchend', 210, 500);
+    const afterTwoDrags = play._qLen;
+    S.loop.advance(0.6, 0);
     off();
-    return { queuedNow, lanes, target: play.laneTarget, inTurn };
+    return { afterOneDrag, afterTwoDrags, lanes, target: play.laneTarget, inTurn };
   });
-  check('two swipes in one gesture both land',
-    twoSwipes.inTurn === false && twoSwipes.queuedNow === 2 &&
-    twoSwipes.lanes === 2 && twoSwipes.target === 0,
-    `${twoSwipes.queuedNow} queued, ${twoSwipes.lanes} lane changes, lane 2 -> ${twoSwipes.target}`);
+  check('one gesture is one action, and a second gesture still lands',
+    twoSwipes.inTurn === false && twoSwipes.afterOneDrag === 1 &&
+    twoSwipes.afterTwoDrags === 2 && twoSwipes.lanes === 2 && twoSwipes.target === 0,
+    `a 90px drag queued ${twoSwipes.afterOneDrag} (not 3); two drags queued ` +
+    `${twoSwipes.afterTwoDrags}; ${twoSwipes.lanes} lane changes, lane 2 -> ${twoSwipes.target}`);
 
   // ---- the buffer still expires ----
   //

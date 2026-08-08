@@ -66,6 +66,8 @@ export default class Play {
     this._pTurn = { dir: 0 };
     this._touchId = null;
     this._touchStart = { x: 0, y: 0, t: 0 };
+    /** One action per finger-down. Cleared on touchstart. See _recognise. */
+    this._spent = false;
     this._handlers = [];
 
     // --- camera (pre-allocated, no per-frame Vector3 churn) ---
@@ -209,6 +211,7 @@ export default class Play {
   }
 
   _arm(x, y) {
+    this._spent = false;
     this._touchStart.x = x;
     this._touchStart.y = y;
     this._touchStart.t = performance.now();
@@ -223,6 +226,22 @@ export default class Play {
     const T = this.ctx.config.tune;
     const g = this._touchStart;
     const now = performance.now();
+
+    // ONE ACTION PER FINGER-DOWN, and this is not a limitation, it is the bug
+    // fix. The origin used to be re-armed at the point of recognition so that a
+    // second swipe could start without lifting — which sounds like a
+    // responsiveness win and is actually a double-fire: a single 80px flick
+    // crosses a 26px threshold THREE times, so one swipe moved three lanes.
+    //
+    // Reported from a real phone as "I can't get in the central lane, and when
+    // it works it's hard left or hard right". That is exactly this: from the
+    // middle lane, every swipe went straight to the far edge, and the centre
+    // became unreachable. It is invisible in the smoke suite, which pushes
+    // intents directly and never synthesises a continuous drag.
+    //
+    // Lifting the finger is not a real cost — it is what every runner in the
+    // genre does, and it is what a player's hand does anyway.
+    if (this._spent) return false;
 
     // A ROLLING window rather than a hard reject. If the finger has been down
     // longer than swipeMaxTime the gesture is not a swipe *yet* — re-arm where
@@ -241,7 +260,9 @@ export default class Play {
     if (adx > ady) this.pushIntent(dx > 0 ? INTENT.RIGHT : INTENT.LEFT);
     else this.pushIntent(dy > 0 ? INTENT.SLIDE : INTENT.JUMP);
 
-    // Re-arm at the point of recognition: the next swipe starts here, now.
+    // Spent until the finger lifts. The origin still moves so that the
+    // rest-then-flick path above measures from somewhere sensible.
+    this._spent = true;
     g.x = x; g.y = y; g.t = now;
     return true;
   }
