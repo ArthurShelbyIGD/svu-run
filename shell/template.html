@@ -176,6 +176,34 @@
 </div>
 
 <script>
+// GAMEPAD SHIM — MUST RUN BEFORE THE BUNDLE.
+//
+// Babylon polls navigator.getGamepads() while it is starting up. In any
+// embedded context that has not been granted the "gamepad" permission — an
+// iframe, a preview pane, some in-app browsers — that call does not return
+// empty, it THROWS a SecurityError, and it throws during boot, so the whole
+// game fails to start with:
+//
+//   boot failed SecurityError: Failed to execute 'getGamepads' on 'Navigator':
+//   Access to the feature "gamepad" is disallowed by permissions policy.
+//
+// Found in a screenshot of the file open in a preview pane, not by any test —
+// the harness runs top-level where the permission is granted, so every capture
+// and every smoke check passed while the shipped file refused to open. Worth
+// remembering: "works in the harness" and "works where a player opens it" are
+// different claims.
+//
+// The game has no gamepad support and wants none, so the safest fix is to make
+// the call answer honestly instead of exploding: there are no gamepads here.
+(function () {
+  try { navigator.getGamepads(); } catch (e) {
+    var empty = function () { return []; };
+    try { Object.defineProperty(navigator, 'getGamepads', { value: empty, configurable: true }); }
+    catch (e2) { try { navigator.getGamepads = empty; } catch (e3) {} }
+  }
+})();
+</script>
+<script>
 /*__SVU_BUNDLE__*/
 </script>
 <script>
